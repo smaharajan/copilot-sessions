@@ -1409,6 +1409,18 @@ class CSTest(StoreTest):
         self.assertEqual(final[(5, repo_x)].strip(), "acme")
         self.assertEqual(final[(6, repo_x)].strip(), "·")
 
+    def test_listing_dates_use_an_unambiguous_month_name(self):
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-date", "2026-09-11T12:31", "September", "r/a",
+             "/tmp", 1, 0),
+        ]
+        screen = Screen([ord("q")])
+        _listing_tui(screen, rows, "Sessions")
+
+        self.assertEqual(screen.frames[-1][(5, 5)].strip(), "11 Sep 2026")
+
     def test_enter_resumes_highlighted_row(self):
         """Enter acts on the row, and sorting keeps the highlight on it."""
         import curses

@@ -10,6 +10,7 @@ import sys
 import textwrap
 import time
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 from . import (
@@ -1559,7 +1560,7 @@ def _listing_tui(
                 on_cursor = offset + line - 5 == cursor
                 tag = _project_tag(repo, cwd)
                 values = [
-                    started[5:16],
+                    f"{date.fromisoformat(started[:10]):%d %b %Y}",
                     str(turns),
                     ui.fmt_aiu(nano_aiu),
                     *(
