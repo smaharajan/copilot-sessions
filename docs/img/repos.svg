@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="765" height="298" viewBox="0 0 765 298" role="img" aria-label="cs repos">
-  <rect width="765" height="298" rx="10" fill="#14161c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="765" height="317" viewBox="0 0 765 317" role="img" aria-label="cs repos">
+  <rect width="765" height="317" rx="10" fill="#14161c"/>
   <rect width="765" height="34.0" rx="10" fill="#1d2029"/>
   <rect y="24.0" width="765" height="10" fill="#1d2029"/>
   <circle cx="22" cy="17" r="6" fill="#ff5f56"/><circle cx="40" cy="17" r="6" fill="#ffbd2e"/><circle cx="58" cy="17" r="6" fill="#27c93f"/>
   <text x="382" y="22" fill="#8b93a7" font-size="12" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">cs repos</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="13.5">
     <text x="34.2" y="66.0" fill="#00afff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──</text>
-    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Repositories · 5</text>
+    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Repositories · 6</text>
     <text x="196.2" y="66.0" fill="#4e4e4e" textLength="550.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────</text>
     <text x="34.2" y="104.0" fill="#8a8a8a" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">repository                      </text>
     <text x="293.4" y="104.0" fill="#00afff" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sessions</text>
@@ -16,7 +16,7 @@
     <text x="293.4" y="142.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      10</text>
     <text x="366.3" y="142.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     55</text>
     <text x="431.1" y="142.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    49.1</text>
-    <text x="504.0" y="142.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-08-18</text>
+    <text x="504.0" y="142.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-12</text>
     <text x="601.2" y="142.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
     <text x="617.4" y="142.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="625.5" y="142.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -29,7 +29,7 @@
     <text x="293.4" y="161.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      10</text>
     <text x="366.3" y="161.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     48</text>
     <text x="431.1" y="161.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    78.8</text>
-    <text x="504.0" y="161.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-08-19</text>
+    <text x="504.0" y="161.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-13</text>
     <text x="601.2" y="161.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
     <text x="617.4" y="161.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="625.5" y="161.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -42,7 +42,7 @@
     <text x="293.4" y="180.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       9</text>
     <text x="366.3" y="180.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     54</text>
     <text x="431.1" y="180.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    24.6</text>
-    <text x="504.0" y="180.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-08-19</text>
+    <text x="504.0" y="180.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-13</text>
     <text x="601.2" y="180.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
     <text x="617.4" y="180.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="625.5" y="180.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -55,7 +55,7 @@
     <text x="293.4" y="199.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       8</text>
     <text x="366.3" y="199.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     46</text>
     <text x="431.1" y="199.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    61.8</text>
-    <text x="504.0" y="199.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-08-17</text>
+    <text x="504.0" y="199.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-11</text>
     <text x="601.2" y="199.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
     <text x="617.4" y="199.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="625.5" y="199.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -68,7 +68,7 @@
     <text x="293.4" y="218.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       8</text>
     <text x="366.3" y="218.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     44</text>
     <text x="431.1" y="218.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    93.6</text>
-    <text x="504.0" y="218.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-08-18</text>
+    <text x="504.0" y="218.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-12</text>
     <text x="601.2" y="218.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
     <text x="617.4" y="218.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="625.5" y="218.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██</text>
@@ -77,7 +77,14 @@
     <text x="666.0" y="218.0" fill="#00d7ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█</text>
     <text x="674.1" y="218.0" fill="#00d7d7" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▋</text>
     <text x="682.2" y="218.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">··</text>
-    <text x="34.2" y="256.0" fill="#8a8a8a" textLength="656.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sorted by sessions ↓  ·  --sort sessions|repo|turns|credits|active [--asc|--desc]</text>
-    <text x="34.2" y="275.0" fill="#8a8a8a" textLength="251.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">←/→ and s re-sort in the reader</text>
+    <text x="18.0" y="237.0" fill="#e6e6e6" textLength="275.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  acme/house-style                </text>
+    <text x="293.4" y="237.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       1</text>
+    <text x="366.3" y="237.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      1</text>
+    <text x="431.1" y="237.0" fill="#d787ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">       -</text>
+    <text x="504.0" y="237.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 2026-09-10</text>
+    <text x="601.2" y="237.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▎</text>
+    <text x="617.4" y="237.0" fill="#4e4e4e" textLength="81.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">··········</text>
+    <text x="34.2" y="275.0" fill="#8a8a8a" textLength="656.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sorted by sessions ↓  ·  --sort sessions|repo|turns|credits|active [--asc|--desc]</text>
+    <text x="34.2" y="294.0" fill="#8a8a8a" textLength="251.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">←/→ and s re-sort in the reader</text>
   </g>
 </svg>

@@ -569,6 +569,24 @@ def session_directories(conn: sqlite3.Connection) -> list[str]:
     )]
 
 
+def session_places(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """session id -> (directory, repository), for attributing work to a place.
+
+    Both halves, because neither is enough on its own. The repository is what
+    you would call the place out loud; the directory is what it actually is,
+    and it survives the remote being renamed or re-pointed, which on a long
+    lived checkout happens more than once.
+    """
+    repo = optional(conn, "sessions", "repository", default="''")
+    return {
+        row[0]: (row[1], row[2])
+        for row in conn.execute(
+            f"""SELECT id, COALESCE(cwd, ''), COALESCE({repo}, '')
+                FROM sessions"""
+        )
+    }
+
+
 def session_usage(conn: sqlite3.Connection, session_id: str) -> list[tuple]:
     """Per-model spend for one session: (model, events, nano_aiu). Empty if none."""
     if not _has_usage(conn):

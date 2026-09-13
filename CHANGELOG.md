@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that ships it, the row names it — `· in meeting-notes` — and `· not
   installed` is kept for the ones that really are nowhere. `cs skills <name>`
   answers for those too instead of refusing for want of a file.
+- **`cs skills --by-repo`** — which checkout each skill was actually reached
+  for in, from the load markers alone. `*` marks one the checkout does not
+  ship: it worked because of what you had installed, and a colleague cloning
+  the repository would not get it. Ninety of ninety-seven are borrowed on this
+  machine. Grouped by repository where the store recorded one, so a session
+  run in a subfolder does not become a second, skill-less row. Skills only —
+  agent profiles leave no marker to group, and the flag says so rather than
+  drawing an empty page.
+- `CS_AGENTS_HOME` moves the `~/.agents/skills` root. It sits beside the
+  Copilot home rather than inside it, so `COPILOT_HOME` does not move it, and
+  anything photographing or testing `cs` needs a way to keep the real one out
+  of the picture — the screenshot script now sets it.
 - `--json` and `--csv` carry `scope`, `state` and `sessions_loaded` per row
   and `disabled`, `ran` and `not_installed` totals. The existing `name` and
   `sessions_referencing` keys are unchanged.

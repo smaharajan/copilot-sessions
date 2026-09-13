@@ -24,6 +24,7 @@ Standard library only, like the package it documents.
 
 from __future__ import annotations
 
+import json
 import os
 import pty
 import re
@@ -58,6 +59,14 @@ SKILLS = ("commit", "code-review", "release-notes", "test-authoring", "adr",
 # never flat — a handful carry the work and the rest sit there.
 SKILL_USE = {"commit": 5, "code-review": 3, "release-notes": 2,
              "test-authoring": 2, "adr": 1}
+
+# A plugin pack, switched on, plus a skill switched off in settings and one
+# that ran in a checkout this machine does not have. The view reports all
+# three differently, and a screenshot of nine personal skills shows none of
+# it.
+PLUGIN = ("marketplace", "release-kit", ("changelog-draft", "tag-and-push"))
+DISABLED = ("dependency-audit",)
+ELSEWHERE = "house-style"
 
 AGENTS = ("triage", "docs-writer", "security-review")
 
@@ -196,6 +205,16 @@ def _seed(base: Path) -> None:
          (sid, 5, "and the cache?",
           "You could clear it yourself:\n```bash\nrm -rf ~/.cache/runner\n```")],
     )
+    conn.execute(
+        "INSERT INTO sessions VALUES ('gone-0001','/work/house-style',"
+        "'acme/house-style','github','main','Apply the house style',"
+        "datetime('now','-3 days'),datetime('now','-3 days'))"
+    )
+    conn.execute(
+        "INSERT INTO turns (session_id, turn_index, user_message, "
+        "assistant_response, timestamp) VALUES ('gone-0001',1,?,?,'t')",
+        (f'<skill-context name="{ELSEWHERE}">\nbody\n', "Applied."),
+    )
     conn.commit()
     conn.close()
 
@@ -207,6 +226,15 @@ def _seed_disk(home: Path, project: Path) -> None:
         folder.mkdir(parents=True, exist_ok=True)
         for name in entries:
             (folder / f"{name}.md").write_text(f"# {name}\n\nA {kind[:-1]}.\n")
+    marketplace, pack, shipped = PLUGIN
+    for name in shipped:
+        skill = home / "installed-plugins" / marketplace / pack / "skills" / name
+        skill.mkdir(parents=True, exist_ok=True)
+        (skill / "SKILL.md").write_text(f"# {name}\n\nFrom a plugin.\n")
+    (home / "settings.json").write_text(json.dumps({
+        "enabledPlugins": {f"{pack}@{marketplace}": True},
+        "disabledSkills": list(DISABLED),
+    }))
     (home / "AGENTS.md").write_text(
         "# Personal brief\n\n" + "Conventions that follow me between repos.\n" * 130)
     (home / "copilot-instructions.md").write_text(
@@ -229,6 +257,11 @@ def capture(argv: list[str], home: Path, cwd: Path, columns: int = 92) -> str:
     env = {
         **os.environ,
         "COPILOT_HOME": str(home),
+        # The cross-tool skills root sits beside the *real* home and does not
+        # follow COPILOT_HOME, so without this the photograph includes the
+        # names of whatever is in ~/.agents/skills — real ones, published,
+        # permanently, which is the one thing this script exists to prevent.
+        "CS_AGENTS_HOME": str(home / ".agents"),
         "COLUMNS": str(columns), "LINES": "60",
         "TERM": "xterm-256color",
         # `PAGER`, which is the variable `_page` actually reads. This said

@@ -275,7 +275,7 @@ backed by `context.instruction_paths()`) reads the instruction files on disk
 in both scopes and reports how much of each one Copilot actually gets.
 
 **It deliberately breaks the house pattern.** Every other inventory —
-`cs skills`, `cs profiles`, `cs hooks`, `cs mcp` — reports *configured versus
+`cs skills`, `cs profiles`, `cs hooks`, `cs mcp` — reports *installed versus
 used*. This one cannot: nothing references an instruction file, because it is
 loaded before the first prompt. Every session got all of it that fit. So the
 only reading worth printing is how much fit, which is why the view names two

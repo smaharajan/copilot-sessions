@@ -57,7 +57,7 @@ needs nothing beyond Python itself.
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text
     REFERENCE  ────────────────────────────────────────────────────────────
-     🎓  Skills            on disk versus actually referenced
+     🎓  Skills            what Copilot can load here versus used
      🤖  Agents            the same, for the agents you have defined
      📋  Instructions      what every session here is told before you type
      🔔  Hooks             what Copilot runs around a session, and what's missing
@@ -81,13 +81,21 @@ your thirty were ever reached for; the other nineteen are quietly rotting.
 ### 🎓 Which of your skills and agents are earning their keep
 
 Everyone accumulates skills. Nobody knows which ones they use. `cs skills`
-charts them by how many sessions reached for each — and tells a skill the CLI
-**demonstrably loaded** (`· N ran`, recorded in the turn) apart from one merely
-named in a prompt (inferred), because those are two different claims.
+counts every root Copilot actually loads from — yours, this repository's, the
+**enabled** plugins', the ones the CLI ships — charts them by how many sessions
+reached for each, and tells a skill the CLI **demonstrably loaded** (`· N ran`,
+recorded in the turn) apart from one merely named in a prompt (inferred),
+because those are two different claims.
 
-<img src="docs/img/skills.svg" alt="cs skills — skills on disk charted by how many sessions referenced each, with the never-referenced ones listed underneath" width="820">
+<img src="docs/img/skills.svg" alt="cs skills — skills Copilot can load here charted by how many sessions referenced each, with the switched-off and never-referenced ones listed underneath" width="820">
 
-`cs skills <name>` then lists the sessions that used it. `cs profiles` does the
+A skill switched off in `settings.json` gets its own heading rather than being
+filed as neglect, and one that ran but is not installed here still gets a row —
+named with the checkout that ships it where the store knows of one.
+
+`cs skills <name>` then lists the sessions that used it, and `cs skills
+--by-repo` regroups the whole thing by where each skill was reached for,
+marking the ones a checkout used but does not carry. `cs profiles` does the
 same for agents you have defined, `cs mcp` for tool servers, and `cs hooks`
 resolves every hook command against the disk to find the ones pointing at a
 script that no longer exists.

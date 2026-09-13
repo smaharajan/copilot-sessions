@@ -2898,8 +2898,11 @@ def _asset_names(kind: str) -> list[tuple[str, Path]]:
 
 
 def cmd_assets(kind: str, name: str | None = None, limit: int = 25,
-               sort_by: str | None = None, descending: bool | None = None) -> bool:
+               sort_by: str | None = None, descending: bool | None = None,
+               by_place: bool = False) -> bool:
     """The inventory, or — given a name — the sessions that reference it."""
+    if by_place:
+        return _page(_capture(_render_assets_by_place))
     if name:
         return _page(_capture(lambda: _render_asset_sessions(kind, name)))
     return _page_report(
@@ -3000,6 +3003,112 @@ def _asset_inventory(kind: str) -> dict:
         "elsewhere": elsewhere,
     }
 
+
+def _skills_by_place(conn) -> list[dict]:
+    """Which skills ran where, one entry per checkout, busiest first.
+
+    The other half of the inventory. `cs skills` answers "what can be loaded
+    here"; this answers "what did I actually reach for, and where" — which
+    for a store spread over sixty repositories is a different question with a
+    different answer.
+
+    Grouped by repository where the store recorded one, and by directory
+    where it did not. Grouping by directory alone splits a repository into a
+    row per folder you happened to be standing in — this store had one
+    appearing four times, three of the rows reporting that it shipped none of
+    the skills it plainly ships, because a subdirectory has no `.github`.
+
+    What a group ships is the union over every directory in it, for the same
+    reason: the skills are the repository's wherever inside it you were.
+    """
+    from collections import Counter
+
+    invoked = db.skills_invoked_by_session(conn)
+    places = db.session_places(conn)
+    found: dict[str, dict] = {}
+    for session_id, loaded in invoked.items():
+        directory, repository = places.get(session_id, ("", ""))
+        if not directory:
+            continue          # a session the store cannot place
+        place = found.setdefault(repository or directory, {
+            "name": repository or Path(directory).name,
+            "directories": set(), "sessions": 0, "skills": Counter(),
+        })
+        place["sessions"] += 1
+        place["skills"].update(loaded)
+        place["directories"].add(directory)
+    for place in found.values():
+        place["ships"] = set().union(
+            *(context.ships(directory) for directory in place["directories"])
+        ) if place["directories"] else set()
+    return sorted(found.values(),
+                  key=lambda place: (-place["sessions"], place["name"]))
+
+
+def _render_assets_by_place(limit: int = 20) -> None:
+    """`cs skills --by-repo` — where each skill was actually reached for."""
+    width = min(shutil.get_terminal_size().columns, 96)
+    inner = width - 4
+    conn = db.connect()
+    places = _skills_by_place(conn)
+    conn.close()
+
+    print()
+    if not places:
+        print(ui.rule(inner, "Skills by checkout"))
+        print()
+        print(f"  {ui.MUTED}No session in this store recorded loading a "
+              f"skill.{ui.RST}")
+        print()
+        return
+
+    total = sum(len(place["skills"]) for place in places)
+    own = sum(1 for place in places for name in place["skills"]
+              if name in place["ships"])
+    print(ui.rule(inner, f"Skills by checkout · {len(places)}"))
+    print()
+    print(ui.field("places", f"{len(places)} checkouts ran a skill", 11))
+    print(ui.field("borrowed", f"{total - own} of {total} came from outside "
+                               f"the checkout that used them", 11))
+    print()
+
+    for place in places[:limit]:
+        ran = place["skills"].most_common()
+        carried = sum(1 for name, _ in ran if name in place["ships"])
+        # 'all its own' is worth saying plainly: it is the state a repository
+        # should be in, and it is rare enough here to be news.
+        shape = (f"{len(ran)} skill{'s' if len(ran) != 1 else ''} · "
+                 + ("all its own" if carried == len(ran)
+                    else f"{carried} its own · {len(ran) - carried} borrowed"
+                    if carried else "none of its own"))
+        print(f"    {ui.MINT}{place['sessions']:>4}{ui.RST}  "
+              f"{ui.BOLD}{ui._fit(place['name'], inner - 34):<{inner - 34}}"
+              f"{ui.RST} {ui.MUTED}{shape}{ui.RST}")
+        # The skills themselves, on their own line: a repository with ten of
+        # them would otherwise push its own name off the window.
+        named = ", ".join(
+            f"{name} {count}" + ("" if name in place["ships"] else "*")
+            for name, count in ran[:6]
+        )
+        if len(ran) > 6:
+            named += f", +{len(ran) - 6}"
+        # A skill called `test-ainb` is one word; breaking it at the hyphen
+        # makes it read as two skills that do not exist.
+        for line in textwrap.wrap(named, inner - 10, break_on_hyphens=False):
+            print(f"          {ui.MUTED}{line}{ui.RST}")
+        print()
+
+    if len(places) > limit:
+        print(f"    {ui.MUTED}… and {len(places) - limit} more{ui.RST}")
+        print()
+    _why("Sessions that loaded a skill, grouped by the directory they ran "
+         "in — the CLI's own load marker, so this is recorded rather than "
+         "inferred. A checkout is named by the repository the store saw most "
+         "often for it, because a long-lived one collects several as its "
+         "remote is renamed. '*' marks a skill the checkout does not ship: "
+         "it worked because of what you had installed, and a colleague "
+         "cloning the repository would not get it.", inner)
+    print()
 
 def _render_assets(kind: str, limit: int, column: str = "sessions",
                    descending: bool = True) -> None:
@@ -5221,7 +5330,7 @@ _COMPLETION_COMMANDS = (
 # the three shells is a flag most people never discover.
 _COMPLETION_FLAGS = (
     "--json", "--csv", "--sort", "--asc", "--desc",
-    "--all", "--turn", "--asks", "--short",
+    "--all", "--turn", "--asks", "--short", "--by-repo",
 )
 
 
@@ -5284,6 +5393,7 @@ compdef _cs cs
             "complete -c cs -l asks -d 'list every request in order'",
             "complete -c cs -l turn -d 'one turn of a transcript'",
             "complete -c cs -l all -d 'every record, not just the window'",
+            "complete -c cs -l by-repo -d 'skills grouped by where they ran'",
         ]
         script = "\n".join(lines) + "\n"
     else:
@@ -6179,7 +6289,7 @@ def _home_items(period: int = 30) -> list[tuple[str, str, str, object, str]]:
         # (ui.menu_icon("context"), "Context",
         #  "what this repo hands the agent before you type",
         #  cmd_context, ""),
-        (ui.menu_icon("skills"), "Skills", "on disk versus actually referenced",
+        (ui.menu_icon("skills"), "Skills", "what Copilot can load here versus used",
          lambda: cmd_assets("skills"), ""),
         (ui.menu_icon("profiles"), "Agents",
          "the same, for the agents you have defined",
@@ -6989,7 +7099,9 @@ def cmd_help() -> None:
     cs agents [N|all]     Delegation: you vs main agent vs sub-agents
                           {ui.DIM}N is a number of days; 'all' is every record, however
                           old. Every title says which window it counted.{ui.RST}
-    cs skills             Skills on disk vs referenced in sessions
+    cs skills             Skills Copilot can load here vs referenced in
+                          sessions — yours, this repo's, the enabled plugins'
+                          '--by-repo' regroups it by where each one was run
     cs profiles           The same for the agents you have defined
     cs instructions       Instruction files every session here starts with,
                           and which are past the length Copilot reads
@@ -7044,6 +7156,7 @@ def cmd_help() -> None:
     · Listings count the skills a session referenced and the sub-agents it ran;
       sort with --sort skills or --sort agents.
     · Reads $COPILOT_HOME/session-store.db (default ~/.copilot), read-only.
+    · Skills also load from ~/.agents/skills; CS_AGENTS_HOME moves that root.
     · Colours are tuned for a dark terminal; CS_THEME=light for a pale one.
     · CS_GLYPHS=ascii swaps every emoji for a plain marker.
     · Empty & automated sessions hidden by default; 'cs all' shows them.
@@ -7354,6 +7467,16 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
 
     if cmd in ("skills", "profiles", "agent-profiles"):
         kind = "skills" if cmd == "skills" else "agents"
+        if "--by-repo" in rest:
+            if kind != "skills":
+                print("error: --by-repo needs load markers, which only skills "
+                      "leave — try 'cs skills --by-repo'", file=sys.stderr)
+                return 1
+            conn = db.connect()
+            places = _skills_by_place(conn)
+            conn.close()
+            export.emit(export.assets_by_place(places), fmt)
+            return 0
         gathered = _asset_inventory(kind)
         export.emit(export.assets(
             kind, gathered["names"], gathered["counts"],
@@ -7608,13 +7731,34 @@ def _dispatch(argv: list[str] | None = None) -> int:
         cmd_mcp(name, sort_by=sort_by, descending=descending)
     elif cmd in ("skills", "profiles", "agent-files"):
         kind = "skills" if cmd == "skills" else "agents"
-        _, sort_by, descending, name, _, error = _report_options(
-            rest, "assets", word=True
+        _, sort_by, descending, name, flags, error = _report_options(
+            rest, "assets", word=True, flags=("--by-repo",)
         )
         if error:
             print(f"error: {error}", file=sys.stderr)
             return 1
-        cmd_assets(kind, name, sort_by=sort_by, descending=descending)
+        if "--by-repo" in flags:
+            # Agent profiles leave no load marker, so there is nothing to
+            # group. Saying so beats drawing an empty page.
+            if kind != "skills":
+                print("error: --by-repo needs load markers, which only skills "
+                      "leave — try 'cs skills --by-repo'", file=sys.stderr)
+                return 1
+            # Refused rather than quietly ignored. A flag that is dropped on
+            # the floor is worse than one that is rejected: the reader gets
+            # an answer to a question they did not ask and no sign of it.
+            if name:
+                print(f"error: --by-repo lists every checkout, so it cannot "
+                      f"also be narrowed to '{name}' — use one or the other",
+                      file=sys.stderr)
+                return 1
+            if sort_by or descending is not None:
+                print("error: --by-repo is ordered by how much work each "
+                      "checkout did; --sort does not apply to it",
+                      file=sys.stderr)
+                return 1
+        cmd_assets(kind, name, sort_by=sort_by, descending=descending,
+                   by_place="--by-repo" in flags)
     elif cmd in ("help", "-h", "--help"):
         cmd_help()
     elif cmd in ("version", "-v", "--version"):

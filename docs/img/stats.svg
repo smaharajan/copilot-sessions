@@ -11,15 +11,15 @@
     <text x="34.2" y="104.0" fill="#00afff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
     <text x="42.3" y="104.0" fill="#e6e6e6" font-weight="600" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Activity</text>
     <text x="34.2" y="123.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">sessions </text>
-    <text x="107.1" y="123.0" fill="#e6e6e6" textLength="153.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">45 (45 interactive)</text>
+    <text x="107.1" y="123.0" fill="#e6e6e6" textLength="153.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">46 (46 interactive)</text>
     <text x="34.2" y="142.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">turns    </text>
-    <text x="107.1" y="142.0" fill="#e6e6e6" textLength="202.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">247 · 5.5 avg per session</text>
+    <text x="107.1" y="142.0" fill="#e6e6e6" textLength="202.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">248 · 5.4 avg per session</text>
     <text x="34.2" y="161.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">repos    </text>
-    <text x="107.1" y="161.0" fill="#e6e6e6" textLength="202.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5 · 28 days with activity</text>
+    <text x="107.1" y="161.0" fill="#e6e6e6" textLength="202.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">6 · 28 days with activity</text>
     <text x="34.2" y="180.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pace     </text>
     <text x="107.1" y="180.0" fill="#e6e6e6" textLength="234.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">1.7 sessions/day over 27 days</text>
     <text x="34.2" y="199.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">range    </text>
-    <text x="107.1" y="199.0" fill="#e6e6e6" textLength="186.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2026-07-23 → 2026-08-19</text>
+    <text x="107.1" y="199.0" fill="#e6e6e6" textLength="186.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2026-08-17 → 2026-09-13</text>
     <text x="34.2" y="237.0" fill="#00ffaf" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
     <text x="42.3" y="237.0" fill="#e6e6e6" font-weight="600" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">What it produced</text>
     <text x="34.2" y="256.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commits  </text>
@@ -106,7 +106,7 @@
     <text x="34.2" y="693.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">model    </text>
     <text x="107.1" y="693.0" fill="#e6e6e6" textLength="210.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">claude-opus-4.8 (78.2 AIU)</text>
     <text x="34.2" y="712.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">busiest  </text>
-    <text x="107.1" y="712.0" fill="#e6e6e6" textLength="186.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2026-08-18 (3 sessions)</text>
+    <text x="107.1" y="712.0" fill="#e6e6e6" textLength="186.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2026-09-10 (4 sessions)</text>
     <text x="34.2" y="731.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">detail   </text>
     <text x="107.1" y="731.0" fill="#e6e6e6" textLength="340.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cs cost · cs agents · cs skills · cs repos</text>
   </g>

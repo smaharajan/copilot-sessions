@@ -45,7 +45,7 @@ single line:
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text
     REFERENCE  ────────────────────────────────────────────────────────────
-     🎓  Skills            on disk versus actually referenced
+     🎓  Skills            what Copilot can load here versus used
      🤖  Agents            the same, for the agents you defined
      🔌  MCP servers       tool sources wired up, and which were used
      💡  Help              every command and every key
@@ -579,6 +579,38 @@ bare word match is worthless when skills are called `commit`, `plan` or
 
 Only skills leave a load marker, so `cs profiles` reports references alone and
 never claims a profile ran.
+
+#### `cs skills --by-repo` — where each one was actually reached for
+
+```
+  places     36 checkouts ran a skill
+  borrowed   90 of 97 came from outside the checkout that used them
+
+      68  shezze/meeting-notes       4 skills · all its own
+          meeting-note 55, roundup 14, focus 12, setup 1
+
+       7  ssmule/platform-tools      7 skills · 1 its own · 6 borrowed
+          beads 5, commit 2*, connect-dynatrace 1*, frontend-design 1*, +3
+```
+
+The inventory answers *what can be loaded here*. This answers *what did I
+reach for, and where* — a different question once a store covers sixty
+repositories. Rows are built from load markers only, so every figure is
+recorded rather than inferred, which is also why the flag is skills-only:
+agent profiles leave no marker to group.
+
+**`*` marks a skill the checkout does not ship.** It worked because of what
+*you* had installed; a colleague cloning the repository would not get it. Nine
+in ten here are borrowed, which is worth knowing before calling a repository
+self-contained.
+
+Grouped by repository where the store recorded one, and by directory where it
+did not — grouping by directory alone splits a repository into a row per
+folder you happened to be standing in, and the subfolder rows then report that
+it ships none of the skills it plainly ships. What a group ships is the union
+over every directory in it, and never your own kit: in `$HOME`,
+`.copilot/skills` matches a project pattern, which would otherwise read as
+sixty-nine skills your colleagues inherit.
 
 ### 📋 `cs instructions` — what the agent is told before you type
 
@@ -1182,6 +1214,7 @@ machine, and every view tells you masking is on.
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
 | 🎨 **Theme** | Colours are tuned for a dark terminal; `CS_THEME=light` restores the pastel palette for a light one |
+| 🎓 **Shared skills root** | Skills also load from `~/.agents/skills`, beside the Copilot home rather than inside it; `CS_AGENTS_HOME` points that root somewhere else |
 
 By default `cs` hides **empty** (zero-turn) sessions so the list stays useful.
 Scheduled runs can be hidden by prefix:

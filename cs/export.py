@@ -37,7 +37,7 @@ from . import db, redact
 # that `--help` never mentions.
 VIEWS = (
     "sessions", "search", "stats", "cost", "efficiency",
-    "delegation", "repos", "skills", "profiles",
+    "delegation", "repos", "skills", "skills-by-repo", "profiles",
 )
 
 # What someone actually types to reach each of those. The names above are what
@@ -278,6 +278,37 @@ def assets(kind: str, names: list[str], counts: dict[str, int],
                 "sessions_loaded": ran.get(name.lower(), 0),
             }
             for name in sorted(names, key=lambda n: (-counts.get(n, 0), n.lower()))
+        ],
+    }
+
+
+def assets_by_place(places: list[dict]) -> dict:
+    """Where each skill was reached for, one entry per checkout.
+
+    The same reading as `cs skills --by-repo` on screen. `borrowed` is the
+    part worth exporting: a skill a checkout used but does not carry works
+    for you and not for whoever clones it.
+    """
+    return {
+        "view": "skills-by-repo",
+        "places": len(places),
+        "skills_used": sum(len(place["skills"]) for place in places),
+        "borrowed": sum(1 for place in places for name in place["skills"]
+                        if name not in place["ships"]),
+        # One row per skill per checkout rather than a nested list. The same
+        # tidy shape the other payloads use, and the only one `--csv` can
+        # render: a cell holding a list of objects is a cell a spreadsheet
+        # cannot do anything with.
+        "usage": [
+            {
+                "checkout": place["name"],
+                "checkout_sessions": place["sessions"],
+                "skill": name,
+                "sessions": count,
+                "shipped_here": name in place["ships"],
+            }
+            for place in places
+            for name, count in place["skills"].most_common()
         ],
     }
 

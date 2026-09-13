@@ -481,6 +481,45 @@ def locate(names: set[str], directories: list[str]) -> dict[str, str]:
     return found
 
 
+def ships(directory: str | Path) -> set[str]:
+    """The skills a checkout carries itself, lowercased.
+
+    What separates a repository that equips its own work from one leaning on
+    whatever the person happened to have installed. The second kind works
+    beautifully until a colleague clones it.
+    """
+    root = Path(directory)
+    if not root.is_dir():
+        return set()
+    # Your own kit is not shipped by whatever directory you were standing in.
+    # Stand in your home and `.copilot/skills` matches a project pattern, so
+    # every personal skill counted as one the home directory carried — which
+    # would have read as sixty-nine skills a colleague would inherit. Only
+    # the personal skill directories are excluded, not the whole Copilot
+    # home: a repository that happens to sit inside it is still a repository.
+    mine = tuple(
+        root / relative for root in (hooks.home(), shared_home())
+        for kind, relative, _glob, _r in _PERSONAL + _SHARED
+        if kind == "skills"
+    )
+    found = set()
+    for item in _collect(root, "project",
+                         [p for p in _PROJECT if p[0] == "skills"]):
+        try:
+            reached = (item.path, item.path.resolve())
+        except OSError:
+            reached = (item.path,)
+        # Both the path walked and the file it points at. A personal skill is
+        # often a symlink into a repository — reaching it through
+        # `$COPILOT_HOME/skills` is what makes it yours, whatever it resolves
+        # to — and a repository can just as well link into the home.
+        if any(root_path in candidate.parents
+               for candidate in reached for root_path in mine):
+            continue
+        found.add(_asset_name(item.path).lower())
+    return found
+
+
 def instruction_paths(project: Path | None = None) -> list[Path]:
     """Every place an instruction file can live, project first then personal.
 
@@ -536,7 +575,11 @@ def gaps(found: dict) -> list[tuple[str, str, str]]:
                 "Add ## sections. A model skims structure the same way you "
                 "do, and an unsectioned wall gets read as one topic.",
             ))
-    if not any(item.kind == "skills" for item in items):
+    # Not the built-in ones. Copilot ships a handful inside its own package,
+    # so counting those means this advice can never fire again — on the one
+    # machine that needs it, which is the machine with no skills of its own.
+    if not any(item.kind == "skills" and item.scope != "builtin"
+               for item in items):
         out.append((
             "medium",
             "No skills anywhere",

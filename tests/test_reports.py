@@ -157,12 +157,15 @@ class DataFormatTest(StoreTest):
     def test_every_advertised_view_emits_json(self):
 
         from cs import export
-        # search is the one view that needs an argument before it has an
-        # answer; the rest stand alone.
-        extra = {"search": ("portal",)}
+        # Most views are reached by typing their own name. Three are not:
+        # `sessions` is `recent`, `search` needs an argument before it has an
+        # answer, and `skills-by-repo` is a flag on `skills` rather than a
+        # command of its own.
+        reach = {"sessions": ("recent",), "search": ("search", "portal"),
+                 "skills-by-repo": ("skills", "--by-repo")}
         for view in export.VIEWS:
-            args = ("recent",) if view == "sessions" else (view,)
-            code, out = self._run(*args, *extra.get(view, ()), "--json")
+            args = reach.get(view, (view,))
+            code, out = self._run(*args, "--json")
             self.assertEqual(code, 0, view)
             payload = json.loads(out)
             self.assertIn("view", payload, view)

@@ -1172,6 +1172,149 @@ class CSTest(StoreTest):
         self.assertIn("in platform-tools", out)
         self.assertNotIn("renamed", out)
 
+    def _session_at(self, session_id: str, directory: Path,
+                    repository: str = "") -> None:
+        """A session recorded as having been worked in one place."""
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute(
+            "INSERT INTO sessions (id, cwd, repository, summary, created_at,"
+            " updated_at) VALUES (?,?,?,'s','2026-01-01','2026-01-01')",
+            (session_id, str(directory), repository),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_by_repo_says_where_each_skill_was_reached_for(self):
+        """The other half of the inventory: not what is here, but what I used."""
+        repo = Path(self._tmp.name) / "meeting-notes"
+        (repo / ".github" / "skills" / "roundup").mkdir(parents=True)
+        (repo / ".github" / "skills" / "roundup" / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._session_at("place-one", repo, "me/meeting-notes")
+        self._loaded("roundup", session="place-one")
+
+        code, out = self._run("skills", "--by-repo")
+        self.assertEqual(code, 0)
+        self.assertIn("me/meeting-notes", out)
+        self.assertIn("roundup", out)
+        # It ships the skill it used, which is the state worth naming.
+        self.assertIn("all its own", out)
+
+    def test_by_repo_marks_a_skill_the_checkout_does_not_ship(self):
+        """It worked because of what you had installed, not what it carries."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills" / "commit"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("x")
+        repo = Path(self._tmp.name) / "borrower"
+        repo.mkdir()
+        self._session_at("place-two", repo, "me/borrower")
+        self._loaded("commit", session="place-two")
+
+        out = self._run("skills", "--by-repo")[1]
+        self.assertIn("none of its own", out)
+        self.assertIn("commit 1*", out)
+
+    def test_by_repo_keeps_one_repository_in_one_row(self):
+        """Working in a subfolder used to invent a second, skill-less repo."""
+        repo = Path(self._tmp.name) / "split"
+        (repo / ".github" / "skills" / "roundup").mkdir(parents=True)
+        (repo / ".github" / "skills" / "roundup" / "SKILL.md").write_text("x")
+        (repo / "docs").mkdir()
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._session_at("at-root", repo, "me/split")
+        self._session_at("at-sub", repo / "docs", "me/split")
+        self._loaded("roundup", session="at-root")
+        self._loaded("roundup", session="at-sub")
+
+        out = self._run("skills", "--by-repo")[1]
+        self.assertEqual(out.count("me/split"), 1)
+        self.assertIn("2 ", out.split("me/split")[0][-6:])   # both sessions
+        # And the subfolder does not drag the row down to 'none of its own':
+        # what a repository ships, it ships wherever inside it you stood.
+        self.assertIn("all its own", out)
+        self.assertNotIn("none of its own", out)
+
+    def test_your_own_kit_is_not_something_a_directory_ships(self):
+        """In $HOME, `.copilot/skills` matches a project pattern."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills" / "commit"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("x")
+
+        from cs import context
+        self.assertEqual(context.ships(Path(os.environ["COPILOT_HOME"]).parent),
+                         set())
+
+    def test_by_repo_is_refused_for_agents_which_leave_no_marker(self):
+        """Nothing to group, so say so rather than draw an empty page."""
+        code, err = self._run_err("profiles", "--by-repo")
+        self.assertEqual(code, 1)
+        self.assertIn("only skills leave", err)
+
+    def test_by_repo_refuses_what_it_cannot_also_do(self):
+        """A flag dropped on the floor answers a question nobody asked."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        for args, expected in (
+            (("skills", "commit", "--by-repo"), "one or the other"),
+            (("skills", "--by-repo", "--sort", "name"), "does not apply"),
+            (("skills", "--by-repo", "--desc"), "does not apply"),
+            (("profiles", "--by-repo"), "only skills leave"),
+        ):
+            with self.subTest(args=args):
+                code, err = self._run_err(*args)
+                self.assertEqual(code, 1)
+                self.assertIn(expected, err)
+
+    def test_by_repo_can_be_taken_as_data(self):
+        """The view's whole point is a number you can put in a spreadsheet."""
+        import json as js
+
+        repo = Path(self._tmp.name) / "meeting-notes"
+        (repo / ".github" / "skills" / "roundup").mkdir(parents=True)
+        (repo / ".github" / "skills" / "roundup" / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "skills" / "commit").mkdir(parents=True)
+        (Path(os.environ["COPILOT_HOME"]) / "skills" / "commit" / "SKILL.md").write_text("x")
+        self._session_at("data-one", repo, "me/meeting-notes")
+        self._loaded("roundup", session="data-one")
+        self._loaded("commit", session="data-one")
+
+        payload = js.loads(self._run("skills", "--by-repo", "--json")[1])
+        self.assertEqual(payload["view"], "skills-by-repo")
+        self.assertEqual(payload["borrowed"], 1)
+        rows = {row["skill"]: row for row in payload["usage"]}
+        self.assertTrue(rows["roundup"]["shipped_here"])
+        self.assertFalse(rows["commit"]["shipped_here"])
+        self.assertEqual(rows["roundup"]["checkout"], "me/meeting-notes")
+
+        # And flat, so a cell never holds a list of objects.
+        head, first, *_ = self._run("skills", "--by-repo", "--csv")[1].splitlines()
+        self.assertEqual(head, "checkout,checkout_sessions,skill,sessions,shipped_here")
+        self.assertNotIn("[", first)
+
+    def test_profiles_by_repo_is_refused_as_data_too(self):
+        """The screen refuses it; `--json` must not answer a different way."""
+        code, err = self._run_err("profiles", "--by-repo", "--json")
+        self.assertEqual(code, 1)
+        self.assertIn("only skills leave", err)
+
+    def test_the_no_skills_advice_ignores_the_ones_copilot_ships(self):
+        """Built-ins are not kit you chose, and counting them silenced it."""
+        pkg = Path(os.environ["COPILOT_HOME"]) / "pkg" / "darwin-arm64" / "1.0.1"
+        (pkg / "builtin-skills" / "github-pr-media").mkdir(parents=True)
+        (pkg / "builtin-skills" / "github-pr-media" / "SKILL.md").write_text("x")
+
+        from cs import context
+        found = context.audit()
+        self.assertTrue(any(item.kind == "skills" for item in found["items"]))
+        self.assertIn("No skills anywhere",
+                      [what for _severity, what, _fix in context.gaps(found)])
+
+        # And it goes quiet as soon as one is actually yours.
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills" / "commit"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("x")
+        self.assertNotIn("No skills anywhere",
+                         [what for _s, what, _f in context.gaps(context.audit())])
+
     def test_settings_that_will_not_parse_disable_nothing_and_say_so(self):
         """A config file it cannot read must not silently hide your kit."""
         skills = Path(os.environ["COPILOT_HOME"]) / "skills"

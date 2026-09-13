@@ -6,7 +6,7 @@
   <text x="382" y="22" fill="#8b93a7" font-size="12" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">cs audit</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="13.5">
     <text x="34.2" y="66.0" fill="#00afff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──</text>
-    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="243.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Security · 45 sessions scanned</text>
+    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="243.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Security · 46 sessions scanned</text>
     <text x="309.6" y="66.0" fill="#4e4e4e" textLength="437.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────</text>
     <text x="34.2" y="104.0" fill="#ff5f87" font-weight="600" textLength="137.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">● ACTION REQUIRED</text>
     <text x="50.4" y="123.0" fill="#e6e6e6" font-weight="600" textLength="672.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">1 session needs your action · 1 value pasted by you · 1 hardcoded in a session that</text>
@@ -32,7 +32,7 @@
     <text x="212.4" y="332.0" fill="#4e4e4e" textLength="534.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────</text>
     <text x="50.4" y="370.0" fill="#8a8a8a" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">last active  session    turn  seen  what     summary</text>
     <text x="50.4" y="389.0" fill="#8a8a8a" textLength="696.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────</text>
-    <text x="50.4" y="408.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">08-18 10:11 </text>
+    <text x="50.4" y="408.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">09-12 15:42 </text>
     <text x="155.7" y="408.0" fill="#5f87ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">9c0d1e2f </text>
     <text x="228.6" y="408.0" fill="#e6e6e6" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     2 </text>
     <text x="285.3" y="408.0" fill="#ff5f87" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    1</text>
@@ -40,7 +40,7 @@
     <text x="406.8" y="408.0" fill="#e6e6e6" textLength="202.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Retire the legacy runner</text>
     <text x="66.6" y="427.0" fill="#8a8a8a" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└ </text>
     <text x="82.8" y="427.0" fill="#d7af87" textLength="340.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git push --force` to drop the bad commit ✓</text>
-    <text x="50.4" y="446.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">08-18 10:11 </text>
+    <text x="50.4" y="446.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">09-12 15:42 </text>
     <text x="155.7" y="446.0" fill="#5f87ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">9c0d1e2f </text>
     <text x="228.6" y="446.0" fill="#e6e6e6" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     2 </text>
     <text x="285.3" y="446.0" fill="#ffaf00" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    1</text>
@@ -73,7 +73,7 @@
     <text x="82.8" y="674.0" fill="#8a8a8a" textLength="494.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      last active  session   found  turn  finding     summary</text>
     <text x="50.4" y="693.0" fill="#8a8a8a" textLength="696.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────</text>
     <text x="50.4" y="712.0" fill="#ff5f87" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">critical </text>
-    <text x="131.4" y="712.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">08-17 10:11 </text>
+    <text x="131.4" y="712.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">09-11 15:42 </text>
     <text x="236.7" y="712.0" fill="#5f87ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">a1b2c3d4 </text>
     <text x="317.7" y="712.0" fill="#ff5f87" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    1</text>
     <text x="358.2" y="712.0" fill="#e6e6e6" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     3  </text>
@@ -89,7 +89,7 @@
     <text x="82.8" y="845.0" fill="#8a8a8a" textLength="494.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      last active  session   found  turn  finding     summary</text>
     <text x="50.4" y="864.0" fill="#8a8a8a" textLength="696.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────</text>
     <text x="50.4" y="883.0" fill="#ff5f87" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">hardcoded</text>
-    <text x="131.4" y="883.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">08-16 10:11 </text>
+    <text x="131.4" y="883.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">09-10 15:42 </text>
     <text x="236.7" y="883.0" fill="#5f87ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">e5f6a7b8 </text>
     <text x="317.7" y="883.0" fill="#ffaf00" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    1</text>
     <text x="358.2" y="883.0" fill="#e6e6e6" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    24  </text>
@@ -105,7 +105,7 @@
     <text x="50.4" y="1016.0" fill="#8a8a8a" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">was run.</text>
     <text x="50.4" y="1054.0" fill="#8a8a8a" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">last active  session    turn  seen  what     summary</text>
     <text x="50.4" y="1073.0" fill="#8a8a8a" textLength="696.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────</text>
-    <text x="50.4" y="1092.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">08-18 10:11 </text>
+    <text x="50.4" y="1092.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">09-12 15:42 </text>
     <text x="155.7" y="1092.0" fill="#5f87ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">9c0d1e2f </text>
     <text x="228.6" y="1092.0" fill="#e6e6e6" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     5 </text>
     <text x="285.3" y="1092.0" fill="#ffaf00" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    1</text>

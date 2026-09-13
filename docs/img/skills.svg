@@ -1,66 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="765" height="488" viewBox="0 0 765 488" role="img" aria-label="cs skills">
-  <rect width="765" height="488" rx="10" fill="#14161c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="765" height="602" viewBox="0 0 765 602" role="img" aria-label="cs skills">
+  <rect width="765" height="602" rx="10" fill="#14161c"/>
   <rect width="765" height="34.0" rx="10" fill="#1d2029"/>
   <rect y="24.0" width="765" height="10" fill="#1d2029"/>
   <circle cx="22" cy="17" r="6" fill="#ff5f56"/><circle cx="40" cy="17" r="6" fill="#ffbd2e"/><circle cx="58" cy="17" r="6" fill="#27c93f"/>
   <text x="382" y="22" fill="#8b93a7" font-size="12" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">cs skills</text>
   <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="13.5">
     <text x="34.2" y="66.0" fill="#00afff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──</text>
-    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Skills · 9 on disk</text>
-    <text x="212.4" y="66.0" fill="#4e4e4e" textLength="534.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────</text>
-    <text x="34.2" y="104.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">configured </text>
-    <text x="123.3" y="104.0" fill="#e6e6e6" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">9</text>
-    <text x="34.2" y="123.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">referenced </text>
-    <text x="123.3" y="123.0" fill="#e6e6e6" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5 appear in at least one session</text>
-    <text x="34.2" y="142.0" fill="#8a8a8a" textLength="81.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">loaded    </text>
-    <text x="115.2" y="142.0" fill="#e6e6e6" textLength="243.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">1 were actually run by the CLI</text>
-    <text x="34.2" y="161.0" fill="#8a8a8a" textLength="81.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">idle      </text>
-    <text x="115.2" y="161.0" fill="#e6e6e6" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4 never referenced</text>
-    <text x="34.2" y="199.0" fill="#00afff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
-    <text x="42.3" y="199.0" fill="#e6e6e6" font-weight="600" textLength="291.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Most referenced skills · by sessions</text>
-    <text x="342.0" y="199.0" fill="#4e4e4e" textLength="405.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────</text>
-    <text x="50.4" y="218.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  42</text>
-    <text x="82.8" y="218.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  commit                               </text>
-    <text x="398.7" y="218.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="431.1" y="218.0" fill="#8787ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="463.5" y="218.0" fill="#5f87ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="495.9" y="218.0" fill="#0087ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="528.3" y="218.0" fill="#00afff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="560.7" y="218.0" fill="#00d7ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="593.1" y="218.0" fill="#00d7d7" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="625.5" y="218.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="666.0" y="218.0" fill="#00ffaf" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· 11 ran</text>
-    <text x="50.4" y="237.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  14</text>
-    <text x="82.8" y="237.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  code-review                          </text>
+    <text x="58.5" y="66.0" fill="#e6e6e6" font-weight="600" textLength="153.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Skills · 11 on disk</text>
+    <text x="220.5" y="66.0" fill="#4e4e4e" textLength="526.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────</text>
+    <text x="34.2" y="104.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">installed  </text>
+    <text x="123.3" y="104.0" fill="#e6e6e6" textLength="267.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">11  (9 personal · 2 from plugins)</text>
+    <text x="34.2" y="123.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">disabled   </text>
+    <text x="123.3" y="123.0" fill="#e6e6e6" textLength="251.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">1 switched off in settings.json</text>
+    <text x="34.2" y="142.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">referenced </text>
+    <text x="123.3" y="142.0" fill="#e6e6e6" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">6 appear in at least one session</text>
+    <text x="34.2" y="161.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ran        </text>
+    <text x="123.3" y="161.0" fill="#e6e6e6" textLength="299.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2 run by the CLI · 1 not on this disk</text>
+    <text x="34.2" y="180.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">idle       </text>
+    <text x="123.3" y="180.0" fill="#e6e6e6" textLength="218.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5 enabled, never referenced</text>
+    <text x="34.2" y="218.0" fill="#00afff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
+    <text x="42.3" y="218.0" fill="#e6e6e6" font-weight="600" textLength="291.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Most referenced skills · by sessions</text>
+    <text x="342.0" y="218.0" fill="#4e4e4e" textLength="405.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────</text>
+    <text x="50.4" y="237.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  42</text>
+    <text x="82.8" y="237.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  commit                               </text>
     <text x="398.7" y="237.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="431.1" y="237.0" fill="#8787ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="463.5" y="237.0" fill="#5f87ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▋</text>
-    <text x="666.0" y="237.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
-    <text x="50.4" y="256.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  11</text>
-    <text x="82.8" y="256.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  release-notes                        </text>
+    <text x="431.1" y="237.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="455.4" y="237.0" fill="#5f87ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="479.7" y="237.0" fill="#0087ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="504.0" y="237.0" fill="#00afff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="528.3" y="237.0" fill="#00d7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="552.6" y="237.0" fill="#00d7d7" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="576.9" y="237.0" fill="#00ffaf" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="609.3" y="237.0" fill="#00ffaf" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· 11 ran</text>
+    <text x="50.4" y="256.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  14</text>
+    <text x="82.8" y="256.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  code-review                          </text>
     <text x="398.7" y="256.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="431.1" y="256.0" fill="#8787ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="463.5" y="256.0" fill="#5f87ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▍</text>
-    <text x="666.0" y="256.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
+    <text x="431.1" y="256.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">███</text>
+    <text x="455.4" y="256.0" fill="#5f87ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▍</text>
+    <text x="609.3" y="256.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
     <text x="50.4" y="275.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  11</text>
-    <text x="82.8" y="275.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  test-authoring                       </text>
+    <text x="82.8" y="275.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  release-notes                        </text>
     <text x="398.7" y="275.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="431.1" y="275.0" fill="#8787ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="463.5" y="275.0" fill="#5f87ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▍</text>
-    <text x="666.0" y="275.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
-    <text x="50.4" y="294.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   9</text>
-    <text x="82.8" y="294.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  adr                                  </text>
+    <text x="431.1" y="275.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▌</text>
+    <text x="609.3" y="275.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
+    <text x="50.4" y="294.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  11</text>
+    <text x="82.8" y="294.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  test-authoring                       </text>
     <text x="398.7" y="294.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
-    <text x="431.1" y="294.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▉</text>
-    <text x="666.0" y="294.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
-    <text x="34.2" y="332.0" fill="#ffaf00" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
-    <text x="42.3" y="332.0" fill="#e6e6e6" font-weight="600" textLength="162.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Never referenced · 4</text>
-    <text x="212.4" y="332.0" fill="#4e4e4e" textLength="534.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────</text>
-    <text x="18.0" y="351.0" fill="#8a8a8a" textLength="631.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    changelog            dependency-audit     migration-plan       perf-budget</text>
-    <text x="34.2" y="389.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">drill down </text>
-    <text x="123.3" y="389.0" fill="#e6e6e6" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cs skills &lt;name&gt;</text>
-    <text x="34.2" y="427.0" fill="#8a8a8a" textLength="486.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sorted by sessions ↓  ·  --sort sessions|name [--asc|--desc]</text>
-    <text x="34.2" y="446.0" fill="#8a8a8a" textLength="251.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">←/→ and s re-sort in the reader</text>
-    <text x="34.2" y="465.0" fill="#8a8a8a" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">--why  explains how to read this</text>
+    <text x="431.1" y="294.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▌</text>
+    <text x="609.3" y="294.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
+    <text x="50.4" y="313.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   9</text>
+    <text x="82.8" y="313.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  adr                                  </text>
+    <text x="398.7" y="313.0" fill="#875fff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">████</text>
+    <text x="431.1" y="313.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▍</text>
+    <text x="609.3" y="313.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· none</text>
+    <text x="50.4" y="332.0" fill="#00ffaf" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   1</text>
+    <text x="82.8" y="332.0" fill="#e6e6e6" textLength="315.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  house-style                          </text>
+    <text x="398.7" y="332.0" fill="#875fff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▋</text>
+    <text x="609.3" y="332.0" fill="#ffaf00" textLength="121.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· not installed</text>
+    <text x="34.2" y="370.0" fill="#ffaf00" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
+    <text x="42.3" y="370.0" fill="#e6e6e6" font-weight="600" textLength="162.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Never referenced · 5</text>
+    <text x="212.4" y="370.0" fill="#4e4e4e" textLength="534.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────</text>
+    <text x="18.0" y="389.0" fill="#8a8a8a" textLength="631.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    changelog            changelog-draft      migration-plan       perf-budget</text>
+    <text x="18.0" y="408.0" fill="#8a8a8a" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    tag-and-push</text>
+    <text x="34.2" y="446.0" fill="#e6e6e6" opacity="0.55" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▌</text>
+    <text x="42.3" y="446.0" fill="#e6e6e6" font-weight="600" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Switched off · 1</text>
+    <text x="180.0" y="446.0" fill="#4e4e4e" textLength="567.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────</text>
+    <text x="18.0" y="465.0" fill="#8a8a8a" textLength="162.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    dependency-audit</text>
+    <text x="34.2" y="503.0" fill="#8a8a8a" textLength="89.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">drill down </text>
+    <text x="123.3" y="503.0" fill="#e6e6e6" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">cs skills &lt;name&gt;</text>
+    <text x="34.2" y="541.0" fill="#8a8a8a" textLength="486.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sorted by sessions ↓  ·  --sort sessions|name [--asc|--desc]</text>
+    <text x="34.2" y="560.0" fill="#8a8a8a" textLength="251.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">←/→ and s re-sort in the reader</text>
+    <text x="34.2" y="579.0" fill="#8a8a8a" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">--why  explains how to read this</text>
   </g>
 </svg>
