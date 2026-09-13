@@ -133,6 +133,22 @@ def _is_file(path: Path) -> bool:
         return False
 
 
+def _is_dir(path: Path) -> bool:
+    """`Path.is_dir()`, but False rather than a traceback.
+
+    The same hazard :func:`_is_file` was written for, and a wider one now.
+    These walks no longer stay inside two scope roots: `locate` and `ships`
+    open every directory the store has seen a session in, which on this
+    machine is two hundred and forty-one of them — a mounted volume, a
+    restored backup, someone else's folder. One that cannot be stat'd would
+    take `cs skills` down with a PermissionError.
+    """
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
 def _entries(target: Path, recurse: bool) -> list[Path]:
     """What is in a directory, or nothing if it cannot be listed."""
     try:
@@ -149,7 +165,7 @@ def _collect(root: Path, scope: str, patterns) -> list[Item]:
             if _is_file(target) and (item := _measure(target, kind, scope, root)):
                 found.append(item)
             continue
-        if not target.is_dir():
+        if not _is_dir(target):
             continue
         matcher = re.compile(glob, re.I)
         entries = _entries(target, recurse)
@@ -161,14 +177,14 @@ def _collect(root: Path, scope: str, patterns) -> list[Item]:
             if any(part.startswith(".")
                    for part in entry.relative_to(target).parts):
                 continue
-            if entry.is_dir() and not recurse:
+            if _is_dir(entry) and not recurse:
                 # A skill kept as a directory: measure the file that defines
                 # it, so the count is skills rather than pages.
                 entry = next(
                     (entry / name for name in ("SKILL.md", "README.md")
                      if _is_file(entry / name)), entry
                 )
-                if entry.is_dir():
+                if _is_dir(entry):
                     continue
             elif not _is_file(entry) or not matcher.search(
                     entry.relative_to(target).as_posix()):
@@ -286,7 +302,7 @@ def plugin_packs(home: Path | None = None) -> list[Path]:
         pack, _, marketplace = str(key).partition("@")
         if on is True and pack and marketplace:
             candidate = root / marketplace / pack
-            if candidate.is_dir():
+            if _is_dir(candidate):
                 packs.append(candidate)
     return packs
 
@@ -323,7 +339,7 @@ def builtin_root(home: Path | None = None) -> Path | None:
 
 def _subdirectories(path: Path) -> list[Path]:
     try:
-        return [entry for entry in path.iterdir() if entry.is_dir()]
+        return [entry for entry in path.iterdir() if _is_dir(entry)]
     except OSError:
         return []
 
@@ -471,7 +487,7 @@ def locate(names: set[str], directories: list[str]) -> dict[str, str]:
         if not wanted - set(found):
             break                      # everything is accounted for
         root = Path(directory)
-        if not root.is_dir():
+        if not _is_dir(root):
             continue                   # a checkout that has since gone
         for item in _collect(root, "project",
                              [p for p in _PROJECT if p[0] == "skills"]):
@@ -489,7 +505,7 @@ def ships(directory: str | Path) -> set[str]:
     beautifully until a colleague clones it.
     """
     root = Path(directory)
-    if not root.is_dir():
+    if not _is_dir(root):
         return set()
     # Your own kit is not shipped by whatever directory you were standing in.
     # Stand in your home and `.copilot/skills` matches a project pattern, so

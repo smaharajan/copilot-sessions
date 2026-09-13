@@ -145,6 +145,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by one: a recursive rule belonging to one root was being applied to
   another, which found a stray page inside a documented skill and filed it as
   a skill named `skill`.
+- A directory `cs` cannot read no longer takes the whole view down with it.
+  `Path.is_dir()` raises on one it cannot stat rather than returning False,
+  and these walks no longer stay inside two known roots: naming the checkout
+  a skill came from opens every directory the store has seen a session in,
+  which here is two hundred and forty-one of them.
 - The screen and `--json` report the same figures. Each built its own list,
   and only one of them knew about the skills that ran without being
   installed, so the screen said forty-six referenced where the export said

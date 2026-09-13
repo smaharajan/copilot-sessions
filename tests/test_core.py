@@ -1315,6 +1315,29 @@ class CSTest(StoreTest):
         self.assertNotIn("No skills anywhere",
                          [what for _s, what, _f in context.gaps(context.audit())])
 
+    def test_a_directory_it_cannot_read_does_not_take_the_view_down(self):
+        """These walks open every directory a session has ever run in."""
+        if os.geteuid() == 0:
+            self.skipTest("root can stat anything")
+        locked = Path(self._tmp.name) / "locked"
+        (locked / "inner").mkdir(parents=True)
+        (Path(os.environ["COPILOT_HOME"]) / "skills" / "commit").mkdir(parents=True)
+        (Path(os.environ["COPILOT_HOME"]) / "skills" / "commit" / "SKILL.md").write_text("x")
+        self._session_at("walled", locked / "inner", "me/walled")
+        self._loaded("vanished-tool", session="walled")
+
+        # Restored before tearDown rather than after it: the temporary
+        # directory cannot be removed while one of its children is unreadable.
+        locked.chmod(0o000)
+        try:
+            for args in (("skills",), ("skills", "--by-repo"), ("context",)):
+                with self.subTest(args=args):
+                    code, out = self._run(*args)
+                    self.assertEqual(code, 0)
+                    self.assertNotIn("Traceback", out)
+        finally:
+            locked.chmod(0o755)
+
     def test_settings_that_will_not_parse_disable_nothing_and_say_so(self):
         """A config file it cannot read must not silently hide your kit."""
         skills = Path(os.environ["COPILOT_HOME"]) / "skills"
