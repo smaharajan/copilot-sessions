@@ -197,11 +197,16 @@ class StoreTest(unittest.TestCase):
         base = Path(self._tmp.name)
         _build_store(base)
         os.environ["COPILOT_HOME"] = str(base)
+        # The cross-tool root lives beside the real home, so without this
+        # the suite would read whatever the developer happens to keep in
+        # ~/.agents and count it — a test that passes on one machine.
+        os.environ["CS_AGENTS_HOME"] = str(base / ".agents")
         os.environ["TERM"] = "dumb"  # disable colour
 
     def tearDown(self):
         self._tmp.cleanup()
         os.environ.pop("COPILOT_HOME", None)
+        os.environ.pop("CS_AGENTS_HOME", None)
 
     def _run(self, *args: str) -> tuple[int, str]:
         from cs.cli import main

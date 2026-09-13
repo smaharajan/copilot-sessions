@@ -551,6 +551,24 @@ def repos(conn: sqlite3.Connection, limit: int = 40) -> list[tuple]:
     ).fetchall()
 
 
+def session_directories(conn: sqlite3.Connection) -> list[str]:
+    """Every directory a session has been worked in, busiest first.
+
+    The store already knows where you work, so nothing has to guess at a
+    workspace root or sweep the disk looking for checkouts. A directory that
+    has never held a session is not one this tool has anything to say about.
+
+    Busiest first because the answer it feeds — which checkout ships a
+    skill — can have more than one right answer, and the place you work
+    most is the one worth naming.
+    """
+    return [row[0] for row in conn.execute(
+        """SELECT COALESCE(cwd, '') AS directory, COUNT(*) AS sessions
+           FROM sessions WHERE COALESCE(cwd, '') <> ''
+           GROUP BY directory ORDER BY sessions DESC"""
+    )]
+
+
 def session_usage(conn: sqlite3.Connection, session_id: str) -> list[tuple]:
     """Per-model spend for one session: (model, events, nano_aiu). Empty if none."""
     if not _has_usage(conn):

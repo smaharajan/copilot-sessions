@@ -2894,12 +2894,7 @@ def _asset_dirs(kind: str) -> list[Path]:
 
 def _asset_names(kind: str) -> list[tuple[str, Path]]:
     """(name, path) for every skill or agent on disk, deduped by name."""
-    return [(name, path) for name, _scope, path in context.assets(kind)]
-
-
-def _asset_scopes(kind: str) -> dict[str, str]:
-    """name -> 'project' or 'personal'. Which copy of a skill you are using."""
-    return {name: scope for name, scope, _path in context.assets(kind)}
+    return [(asset.name, asset.path) for asset in context.assets(kind)]
 
 
 def cmd_assets(kind: str, name: str | None = None, limit: int = 25,
@@ -2918,12 +2913,23 @@ def _render_asset_sessions(kind: str, name: str) -> None:
     known = dict(_asset_names(kind))
     width = min(shutil.get_terminal_size().columns, 96)
     inner = width - 4
+    conn = db.connect()
+    # A name the CLI is recorded as having loaded is askable about even with
+    # nothing on this disk to point at. Refusing to answer for one — which
+    # is what looking only at the shelf did — denies the session record on
+    # the strength of a missing file.
+    elsewhere = sorted({
+        loaded for names in db.skills_invoked_by_session(conn).values()
+        for loaded in names
+    } - {real.lower() for real in known}) if kind == "skills" else []
     match = next(
-        (real for real in known if real.lower() == name.lower()),
-        next((real for real in known if name.lower() in real.lower()), None),
+        (real for real in [*known, *elsewhere] if real.lower() == name.lower()),
+        next((real for real in [*known, *elsewhere]
+              if name.lower() in real.lower()), None),
     )
     print()
     if not match:
+        conn.close()
         print(ui.rule(inner, f"{kind.title()} · {name}"))
         print()
         print(f"  {ui.MUTED}No {kind[:-1]} named '{name}' on disk.{ui.RST}")
@@ -2933,12 +2939,15 @@ def _render_asset_sessions(kind: str, name: str) -> None:
         print()
         return
 
-    conn = db.connect()
     rows = db.sessions_for_asset(conn, match)
     conn.close()
     print(ui.rule(inner, f"{match} · {len(rows)} sessions"))
     print()
-    print(ui.field("file", str(known[match])))
+    if match in known:
+        print(ui.field("file", str(known[match])))
+    else:
+        print(ui.field("file", "not installed here — it ran in sessions whose "
+                               "skills this repository does not ship"))
     print()
     if not rows:
         print(f"  {ui.MUTED}No session references it.{ui.RST}")
@@ -2951,13 +2960,59 @@ def _render_asset_sessions(kind: str, name: str) -> None:
     print()
 
 
+def _asset_inventory(kind: str) -> dict:
+    """What both the screen and `--json` need to say about one kind of asset.
+
+    Shared for the same reason the disk walk is shared. Each built its own
+    list for a while and only one of them knew about the skills that ran
+    without being installed, so the screen said forty-six had been
+    referenced while the export, from the same store a second later, said
+    thirty-five.
+    """
+    inventory = context.assets(kind)
+    on_disk = {asset.name.lower(): asset for asset in inventory}
+    conn = db.connect()
+    # Sessions that demonstrably *loaded* each one, as opposed to sessions
+    # that merely named it. Only skills leave this trace, so agent profiles
+    # get an empty map and the view quietly falls back to the signal.
+    invoked = db.skills_invoked_by_session(conn) if kind == "skills" else {}
+    ran: dict[str, int] = {}
+    for loaded in invoked.values():
+        for lowered in loaded:
+            ran[lowered] = ran.get(lowered, 0) + 1
+    # A skill can be proved to have run and be nowhere on this disk: it came
+    # from a checkout that is gone, or from a machine that is not this one.
+    # Dropping those rows is how a store where a third of the sessions ran
+    # four skills could report that it had never seen them. Proof of work
+    # outranks an empty directory, so they get a row and an honest label.
+    missing = sorted(set(ran) - set(on_disk))
+    names = [asset.name for asset in inventory] + missing
+    conn_counts = db.reference_counts(conn, names) if names else {}
+    # Where the ones this repository cannot load actually live. "Not
+    # installed" is true and useless on its own: every one of them ran
+    # somewhere, and the question it leaves you with is where.
+    elsewhere = (context.locate(set(missing), db.session_directories(conn))
+                 if missing else {})
+    conn.close()
+    return {
+        "inventory": inventory, "on_disk": on_disk, "ran": ran,
+        "missing": missing, "names": names, "counts": conn_counts,
+        "elsewhere": elsewhere,
+    }
+
+
 def _render_assets(kind: str, limit: int, column: str = "sessions",
                    descending: bool = True) -> None:
-    assets = _asset_names(kind)
+    gathered = _asset_inventory(kind)
+    inventory, on_disk = gathered["inventory"], gathered["on_disk"]
+    ran, missing = gathered["ran"], gathered["missing"]
+    names, counts = gathered["names"], gathered["counts"]
+    elsewhere = gathered["elsewhere"]
     width = min(shutil.get_terminal_size().columns, 96)
     inner = width - 4
+
     print()
-    if not assets:
+    if not names:
         print(ui.rule(inner, f"{kind.title()}"))
         print()
         # One path per line, like the other two empty states. Joined with
@@ -2969,88 +3024,120 @@ def _render_assets(kind: str, limit: int, column: str = "sessions",
         print()
         return
 
-    conn = db.connect()
-    counts = db.reference_counts(conn, [name for name, _ in assets])
-    # Sessions that demonstrably *loaded* each one, as opposed to sessions
-    # that merely named it. Only skills leave this trace, so agent profiles
-    # get an empty map and the view quietly falls back to the signal.
-    invoked = db.skills_invoked_by_session(conn) if kind == "skills" else {}
-    conn.close()
-    ran: dict[str, int] = {}
-    for names in invoked.values():
-        for lowered in names:
-            for real, _ in assets:
-                if real.lower() == lowered:
-                    ran[real] = ran.get(real, 0) + 1
-    counted = [(name, counts.get(name, 0)) for name, _ in assets]
+    counted = [(name, counts.get(name, 0)) for name in names]
     used = _sort_report([r for r in counted if r[1]], "assets", column, descending)
+    switched_off = [asset.name for asset in inventory if asset.disabled]
+    idle = [name for name, seen in counted
+            if not seen and not on_disk[name.lower()].disabled]
 
-    print(ui.rule(inner, f"{kind.title()} · {len(assets)} on disk"))
+    print(ui.rule(inner, f"{kind.title()} · {len(inventory)} on disk"))
     print()
-    scopes = _asset_scopes(kind)
-    project = sum(1 for name, _ in assets if scopes.get(name) == "project")
     # Where they came from, not just how many. A bare total hid the bug this
     # split was added for: standing in a repository with twenty skills of its
     # own, the inventory only ever counted the personal ones.
-    print(ui.field("configured", f"{len(assets)}" + (
-        f"  ({project} from this repo · {len(assets) - project} personal)"
-        if project else "  (all personal)")))
-    print(ui.field("referenced", f"{len(used)} appear in at least one session"))
+    scopes = Counter(asset.scope for asset in inventory)
+    shelf = " · ".join(
+        f"{scopes[scope]} {label}" for scope, label in (
+            ("project", "from this repo"),
+            ("personal", "personal"),
+            ("plugin", "from plugins"),
+            ("builtin", "built in"),
+        ) if scopes.get(scope)
+    )
+    print(ui.field("installed",
+                   f"{len(inventory)}  ({shelf})" if shelf
+                   else str(len(inventory)), 11))
+    if problem := context.settings_problem():
+        # Said out loud, because "nothing is switched off" and "I could not
+        # find out what is switched off" otherwise draw the same table.
+        print(ui.field("enablement", f"{problem} — none treated as off", 11))
+    if switched_off:
+        # Not neglect. A skill in disabledSkills was a decision, and filing
+        # it under 'never referenced' read as an accusation: eleven of the
+        # sixteen this view used to shame were switched off on purpose.
+        print(ui.field("disabled", f"{len(switched_off)} switched off in "
+                                   f"settings.json", 11))
+    print(ui.field("referenced", f"{len(used)} appear in at least one session", 11))
     if ran:
-        # The widths are pinned to the longest label in the block so the
-        # values line up. The default leaves 'idle' and 'loaded' a column
-        # short of 'configured', which reads as two lists rather than one.
-        print(ui.field("loaded", f"{len(ran)} were actually run by the CLI", 10))
-    print(ui.field("idle", f"{len(assets) - len(used)} never referenced", 10))
+        # 'here' rather than 'no longer': a skill absent from this shelf may
+        # be alive and well in another repository. What is true is that
+        # Copilot could not load it standing in this one.
+        strangers = len(missing) - len(elsewhere)
+        print(ui.field("ran", f"{len(ran)} run by the CLI"
+                              + (f" · {len(elsewhere)} from another checkout"
+                                 if elsewhere else "")
+                              + (f" · {strangers} not on this disk"
+                                 if strangers else ""), 11))
+    print(ui.field("idle", f"{len(idle)}" + (" enabled," if switched_off else "")
+                           + " never referenced", 11))
     print()
+
+    def _note(name: str) -> str:
+        """What to say beside a row, plain — the widths are measured on this.
+
+        One fact each, in order of what changes what you would do next: a
+        skill that is not installed cannot be run, one that is switched off
+        will not be, and after that the recorded load is the strongest thing
+        there is to say.
+        """
+        if name.lower() not in on_disk:
+            # Named, when the store knows a checkout that ships it. The bare
+            # form is reserved for the ones that really are nowhere.
+            found = elsewhere.get(name.lower())
+            return f" · in {found}" if found else " · not installed"
+        if on_disk[name.lower()].disabled:
+            return " · off"
+        if not ran:
+            return ""          # no marker anywhere: the column does not apply
+        return f" · {ran[name.lower()]} ran" if ran.get(name.lower()) else " · none"
+
+    def _paint(name: str) -> str:
+        """The same note, coloured."""
+        plain = _note(name)
+        if not plain:
+            return ""
+        colour = (ui.AMBER if plain == " · not installed"
+                  else ui.MUTED if plain in (" · off", " · none")
+                  else ui.VIOLET if plain.startswith(" · in ") else ui.MINT)
+        return f" {colour}{plain.lstrip()}{ui.RST}"
 
     if used:
         title = "Most referenced" if column == "sessions" and descending else "Referenced"
         print(ui.heading(f"{title} {kind} · by {column}", ui.ACCENT, inner))
         peak = max(n for _, n in used)
-        # What the load column costs, if it is drawn at all. It used to cost
+        # What the note column costs, if it is drawn at all. It used to cost
         # nothing in this sum and be printed anyway, so every row carrying a
         # '· N ran' ran nine columns off the right edge of a 72-column
         # window — the bar was sized as though the note were not there.
         rows = used[:limit]
-        load = max((len(f" · {ran.get(n, 0)} ran") for n, _ in rows), default=0) if ran else 0
+        load = max((len(_note(name)) for name, _ in rows), default=0)
         # Name and bar split what the window has, instead of a fixed 34 and
         # 16 that ran off anything under 64 columns. The bar gives way first:
         # which skill it is matters more than how long its bar is.
         span, gauge = _chart_spans(inner, 11 + load, name_cap=36)
         for name, sessions in rows:
-            # A skill the CLI is recorded as having loaded gets its count
-            # said out loud, because it is a different and stronger claim
-            # than the bar beside it.
-            #
-            # Rows with no marker say so rather than showing nothing. A
-            # blank here is indistinguishable from a column that stopped
-            # working, and the reader has no way to tell which they are
-            # looking at. It says 'none' rather than '0 ran' because the
-            # CLI only began writing the marker partway through this
-            # store's life: an absent marker is no recorded load, which is
-            # not the same claim as never having run.
-            if not ran:
-                note = ""          # no marker anywhere: the column does not apply
-            elif ran.get(name):
-                note = f" {ui.MINT}· {ran[name]} ran{ui.RST}"
-            else:
-                note = f" {ui.MUTED}· none{ui.RST}"
             print(
                 f"    {ui.MINT}{sessions:>4}{ui.RST}  {ui._fit(name, span):<{span}}"
-                f" {ui.bar(sessions, peak, gauge, pad=bool(ran))}{note}".rstrip()
+                f" {ui.bar(sessions, peak, gauge, pad=bool(load))}{_paint(name)}".rstrip()
             )
         if len(used) > limit:
             print(f"    {ui.MUTED}… and {len(used) - limit} more{ui.RST}")
         print()
 
-    idle = [name for name, n in counted if not n]
     if idle:
         print(ui.heading(f"Never referenced · {len(idle)}", ui.AMBER, inner))
         for line in _name_grid(idle, inner):
             print(f"{ui.MUTED}{line}{ui.RST}")
         if len(idle) > 24:
             print(f"    {ui.MUTED}… and {len(idle) - 24} more{ui.RST}")
+        print()
+
+    if switched_off:
+        print(ui.heading(f"Switched off · {len(switched_off)}", ui.DIM, inner))
+        for line in _name_grid(switched_off, inner):
+            print(f"{ui.MUTED}{line}{ui.RST}")
+        if len(switched_off) > 24:
+            print(f"    {ui.MUTED}… and {len(switched_off) - 24} more{ui.RST}")
         print()
 
     print(ui.field("drill down", f"cs {kind if kind == 'skills' else 'profiles'} <name>"))
@@ -3062,7 +3149,13 @@ def _render_assets(kind: str, limit: int, column: str = "sessions",
           f"part is recorded rather than inferred. '· none' means no load was "
           f"recorded, which is weaker than it sounds: the CLI only started "
           f"writing that marker partway through this store's life, so an "
-          f"older session that did run one leaves no trace of it.", inner)
+          f"older session that did run one leaves no trace of it. What is "
+          f"installed is what Copilot could load standing here — this "
+          f"repository's, your own, and the enabled plugins' — because that "
+          f"is the set it resolves from. '· off' is in settings.json. '· in "
+          f"<name>' is the checkout that ships it — Copilot would load it "
+          f"standing there, not here — and '· not installed' is the rest: "
+          f"it ran somewhere this disk no longer has.", inner)
     print(_sort_note("assets", column, descending, inner))
     _why_hint(inner)
     print()
@@ -3987,8 +4080,14 @@ def _render_context() -> None:
     print(ui.rule(inner, f"Context · {found['root'].name}"))
     print()
     for scope, root in (("project", found["root"]),
-                        ("personal", found["personal_root"])):
+                        ("personal", found["personal_root"]),
+                        ("plugin", found["plugin_root"]),
+                        ("builtin", found["builtin_root"])):
         kinds = Counter(item.kind for item in items if item.scope == scope)
+        # 'nothing' is worth saying for the two scopes you always have. A
+        # plugin row on a machine with no plugins is furniture.
+        if not kinds and scope in ("plugin", "builtin"):
+            continue
         shape = " · ".join(f"{count} {kind}" for kind, count in
                            sorted(kinds.items())) or "nothing"
         print(ui.field(scope, ui.trunc(shape, inner - 11)))
@@ -7255,11 +7354,13 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
 
     if cmd in ("skills", "profiles", "agent-profiles"):
         kind = "skills" if cmd == "skills" else "agents"
-        names = [name for name, _ in _asset_names(kind)]
-        conn = db.connect()
-        counts = db.reference_counts(conn, names)
-        conn.close()
-        export.emit(export.assets(kind, names, counts), fmt)
+        gathered = _asset_inventory(kind)
+        export.emit(export.assets(
+            kind, gathered["names"], gathered["counts"],
+            scopes={a.name: a.scope for a in gathered["inventory"]},
+            states={a.name: a.state for a in gathered["inventory"]},
+            ran=gathered["ran"],
+        ), fmt)
         return 0
 
     if cmd == "repos":

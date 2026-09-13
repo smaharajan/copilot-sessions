@@ -519,19 +519,51 @@ Every block is independent, and a store that does not record a column simply
 does not get that block — an absent reading is left absent rather than shown
 as zero.
 
-### 🎓 `cs skills` / 🤖 `cs profiles` — configured versus used
+### 🎓 `cs skills` / 🤖 `cs profiles` — installed versus used
 
 ```
-  configured 30
-  referenced 11 appear in at least one session
-  loaded      7 were actually run by the CLI
-  idle       19 never referenced
+  installed  82  (69 personal · 10 from plugins · 3 built in)
+  disabled   23 switched off in settings.json
+  referenced 47 appear in at least one session
+  ran        38 run by the CLI · 5 from another checkout · 2 not on this disk
+  idle       23 enabled, never referenced
 
-  ▌Most referenced skills
-      18  deploy-check     ████████████████ · 12 ran
-      15  commit           █████████████    ·  9 ran
-       9  release-notes    ████████
+  ▌Most referenced skills · by sessions
+      95  focus            █████████ · in meeting-notes
+      23  service-report   ██▏       · 18 ran
+      16  commit           █▌        · 12 ran
+       4  archify          ▍         · none
+
+  ▌Never referenced · 23
+  ▌Switched off · 23
 ```
+
+**Installed means what Copilot could load standing here**, which is its own
+rule and not a choice this tool makes: skills resolve against the working
+directory. So the count is this repository's, plus your own, plus whatever the
+**enabled** plugins ship, plus the few the CLI package carries itself — five
+roots in all:
+
+| Scope | Where |
+|---|---|
+| project | `.github/skills`, `.copilot/skills`, `.agents/skills` in the repo |
+| personal | `$COPILOT_HOME/skills` and `~/.agents/skills` |
+| plugin | `installed-plugins/<marketplace>/<pack>/skills`, if `enabledPlugins` says so |
+| builtin | the newest `pkg/<platform>/<version>/builtin-skills` |
+
+A repository's copy wins a name collision, then your own, then a
+marketplace's — the order Copilot resolves them in.
+
+**`settings.json` is read, so a decision is not reported as neglect.** A pack
+switched off in `enabledPlugins` ships skills that will never load, so they
+are absent rather than greyed. A skill named in `disabledSkills` stays in the
+inventory under **Switched off**, apart from the ones you have simply stopped
+reaching for.
+
+**A skill that ran gets a row even with nothing on disk to point at**, because
+the load marker is proof and an empty directory is not a rebuttal. Where the
+store knows a checkout that ships it, the row names it (`· in meeting-notes`);
+`· not installed` is kept for the ones that are nowhere on this disk.
 
 **Two claims, and they are not the same claim.** `cs` is careful to keep them
 apart everywhere it reports skill usage:
@@ -577,7 +609,7 @@ The faults get a section of their own rather than floating under the table,
 and the remedy is printed once for the group — a checkout with three long
 files used to repeat the same twenty-word fix three times.
 
-Every other inventory in `cs` reports **configured versus used**. This one
+Every other inventory in `cs` reports **installed versus used**. This one
 cannot, and that is the point: nothing *references* an instruction file, because
 it is loaded before your first word. Every session got all of it that fit — so
 the only question worth asking is how much fit.

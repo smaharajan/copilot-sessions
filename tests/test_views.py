@@ -596,7 +596,7 @@ class SkillInvocationTest(StoreTest):
         self._turn('<skill-context name="okr-planning">\nbody\n')
         code, out = self._run("skills")
         self.assertEqual(code, 0)
-        self.assertIn("actually run by the CLI", out)
+        self.assertIn("run by the CLI", out)
         self.assertIn("1 ran", out)
 
     def test_a_referenced_skill_with_no_load_says_none(self):

@@ -248,14 +248,35 @@ def repos() -> dict:
     }
 
 
-def assets(kind: str, names: list[str], counts: dict[str, int]) -> dict:
-    """The skills or agent-profile inventory, with how many sessions used each."""
+def assets(kind: str, names: list[str], counts: dict[str, int],
+           scopes: dict[str, str] | None = None,
+           states: dict[str, str] | None = None,
+           ran: dict[str, int] | None = None) -> dict:
+    """The skills or agent-profile inventory, with how many sessions used each.
+
+    `scopes` and `states` say where a name lives and whether it is switched
+    on; a name in neither is one the CLI is recorded as having run with
+    nothing on this disk to point at, and it is marked `not installed`
+    rather than left out. The original two keys are unchanged — a reader
+    pinned to `name` and `sessions_referencing` keeps working.
+    """
+    scopes, states, ran = scopes or {}, states or {}, ran or {}
+    installed = [name for name in names if name in scopes]
     return {
         "view": "skills" if kind == "skills" else "profiles",
-        "installed": len(names),
+        "installed": len(installed),
         "referenced": sum(1 for name in names if counts.get(name)),
+        "disabled": sum(1 for name in installed if states.get(name) == "disabled"),
+        "ran": len(ran),
+        "not_installed": len(names) - len(installed),
         "assets": [
-            {"name": name, "sessions_referencing": counts.get(name, 0)}
+            {
+                "name": name,
+                "sessions_referencing": counts.get(name, 0),
+                "scope": scopes.get(name, "not installed"),
+                "state": states.get(name, "unknown"),
+                "sessions_loaded": ran.get(name.lower(), 0),
+            }
             for name in sorted(names, key=lambda n: (-counts.get(n, 0), n.lower()))
         ],
     }

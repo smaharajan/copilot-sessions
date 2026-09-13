@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cs skills` counts every root Copilot loads from**, not the two it used to
+  walk. A machine with forty-nine personal skills was reporting forty-nine
+  while the CLI was resolving eighty-two: the enabled plugins'
+  (`installed-plugins/<marketplace>/<pack>/skills`), the cross-tool
+  `~/.agents/skills` and a repository's `.agents/skills`, and the handful the
+  CLI package ships itself. A plugin's mirror for another harness — ponytail
+  keeps one under `.openclaw` — is rejected rather than counted twice, and
+  only the newest installed package of built-ins is read.
+- **Enablement is read from `settings.json`.** A pack switched off in
+  `enabledPlugins` ships skills Copilot will never load, so its skills are
+  absent rather than listed. A skill in `disabledSkills` stays in the
+  inventory under its own `Switched off` heading: eleven of the sixteen this
+  view used to file as `never referenced` were deliberate choices, and
+  calling a decision neglect is the one thing an inventory must not do.
+- **A skill that ran gets a row even with no file to point at.** Rows come
+  from the load markers in the store as well as from the disk, so the
+  thirty-four per cent of this store's skill usage that was installed
+  nowhere local can no longer be invisible. Where the store knows a checkout
+  that ships it, the row names it — `· in meeting-notes` — and `· not
+  installed` is kept for the ones that really are nowhere. `cs skills <name>`
+  answers for those too instead of refusing for want of a file.
+- `--json` and `--csv` carry `scope`, `state` and `sessions_loaded` per row
+  and `disabled`, `ran` and `not_installed` totals. The existing `name` and
+  `sessions_referencing` keys are unchanged.
+
 - **Security says which credentials are hardcoded**, not just which text is
   credential-shaped. A finding is called `hardcoded` when the line reads as
   source (`API_PASSWORD = "…"`, `export TOKEN=…`, a quoted JSON value — never
@@ -99,6 +124,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the session in order to count them.
 
 ### Fixed
+
+- Standing in your home directory no longer renames your own kit.
+  `.copilot/skills` is a *project* pattern, and in `$HOME` it **is** the
+  personal directory, so the inventory reported all forty-nine personal skills — and
+  all twenty-five agent profiles — as shipped by "this repo".
+- `cs context` and `cs skills` count the same skills again. They had drifted
+  by one: a recursive rule belonging to one root was being applied to
+  another, which found a stray page inside a documented skill and filed it as
+  a skill named `skill`.
+- The screen and `--json` report the same figures. Each built its own list,
+  and only one of them knew about the skills that ran without being
+  installed, so the screen said forty-six referenced where the export said
+  thirty-five.
 
 - A `session-store.db` that is not a database — a truncated download, a file
   restored from the wrong backup, a store mid-write — produced a raw

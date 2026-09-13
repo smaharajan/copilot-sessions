@@ -865,11 +865,11 @@ class CSTest(StoreTest):
         os.chdir(project.parent.parent)
         try:
             from cs import context
-            found = dict((n, (s, p)) for n, s, p in context.assets("skills"))
+            found = {a.name: a for a in context.assets("skills")}
         finally:
             os.chdir(here)
-        self.assertEqual(found["commit"][0], "project")
-        self.assertEqual(found["commit"][1].read_text(), "project")
+        self.assertEqual(found["commit"].scope, "project")
+        self.assertEqual(found["commit"].path.read_text(), "project")
 
     def test_skills_and_context_agree_on_the_project_count(self):
         """The two views walk one table, so they cannot disagree again."""
@@ -882,12 +882,323 @@ class CSTest(StoreTest):
         os.chdir(project.parent.parent)
         try:
             from cs import context
-            assets = [s for _n, s, _p in context.assets("skills")]
+            assets = [a.scope for a in context.assets("skills")]
             audited = [i for i in context.audit()["items"]
                        if i.kind == "skills" and i.scope == "project"]
         finally:
             os.chdir(here)
         self.assertEqual(assets.count("project"), len(audited))
+
+    # ── what Copilot would actually load ──────────────────────────────────
+    #
+    # The inventory used to be a directory listing. Copilot's own answer is
+    # narrower and wider at once: it adds the skills an enabled plugin ships
+    # and subtracts everything settings.json switches off. These pin both
+    # halves, and the case that has neither a file nor an excuse — a skill
+    # the CLI is recorded as having run that is on no shelf here.
+
+    def _plugin(self, marketplace: str, pack: str, *names: str,
+                enabled: bool = True) -> Path:
+        """Install a plugin pack the way Copilot does, and set its switch."""
+        import json
+
+        home = Path(os.environ["COPILOT_HOME"])
+        root = home / "installed-plugins" / marketplace / pack
+        for name in names:
+            (root / "skills" / name).mkdir(parents=True)
+            (root / "skills" / name / "SKILL.md").write_text("x")
+        settings = home / "settings.json"
+        found = json.loads(settings.read_text()) if settings.exists() else {}
+        found.setdefault("enabledPlugins", {})[f"{pack}@{marketplace}"] = enabled
+        settings.write_text(json.dumps(found))
+        return root
+
+    def _settings(self, **keys) -> None:
+        import json
+
+        path = Path(os.environ["COPILOT_HOME"]) / "settings.json"
+        found = json.loads(path.read_text()) if path.exists() else {}
+        found.update(keys)
+        path.write_text(json.dumps(found))
+
+    def _loaded(self, name: str, session: str = "sess-plugin") -> None:
+        """Record the CLI loading a skill, the way it marks a real turn."""
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_index, user_message, "
+            "assistant_response, timestamp) VALUES (?,?,?,?,'t')",
+            (session, 1, f'<skill-context name="{name}">body</skill-context>', "ok"),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_an_enabled_plugin_ships_skills_and_a_switched_off_one_ships_none(self):
+        """A pack you turned off ships skills Copilot will never load."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._plugin("market", "live", "alpha-tool", "beta-tool")
+        self._plugin("market", "dead", "gamma-tool", enabled=False)
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("alpha-tool", out)
+        self.assertIn("beta-tool", out)
+        self.assertIn("from plugins", out)
+        # Absent, not greyed: a skill from a disabled pack is not a skill
+        # this machine has, and listing it invites you to reach for it.
+        self.assertNotIn("gamma-tool", out)
+
+    def test_the_context_view_counts_a_plugin_the_skills_view_counts(self):
+        """One walk, so the two totals cannot drift apart again."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._plugin("market", "live", "alpha-tool", "beta-tool")
+
+        from cs import context
+        # Every scope, not just the plugin one. Checking a single scope let
+        # the personal totals drift apart by a row: a recursive rule meant
+        # for one root was being applied to the other.
+        for scope in ("project", "personal", "plugin", "builtin"):
+            audited = [i for i in context.audit()["items"]
+                       if i.kind == "skills" and i.scope == scope]
+            listed = [a for a in context.assets("skills") if a.scope == scope]
+            self.assertEqual(len(audited), len(listed), scope)
+        self.assertIn("2 skills", self._run("context")[1])
+
+    def test_a_nested_stray_markdown_file_is_not_a_skill(self):
+        """One skill's own pages are not forty more skills."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills" / "graphify"
+        (skills / "graphify").mkdir(parents=True)
+        (skills / "SKILL.md").write_text("x")
+        (skills / "graphify" / "skill.md").write_text("a page, not a skill")
+
+        from cs import context
+        found = [a.name for a in context.assets("skills")]
+        self.assertIn("graphify", found)
+        self.assertNotIn("skill", found)
+
+    def test_the_shared_agents_root_is_searched_too(self):
+        """~/.agents/skills sits beside ~/.copilot and Copilot loads from it."""
+        shared = Path(os.environ["CS_AGENTS_HOME"]) / "skills"
+        (shared / "dt-obs-hosts").mkdir(parents=True)
+        (shared / "dt-obs-hosts" / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._loaded("dt-obs-hosts")
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("dt-obs-hosts", out)
+        # The point of the root: it stops a skill that ran from being filed
+        # as installed nowhere, which is what it was reported as.
+        self.assertNotIn("not installed", out)
+
+    def test_a_repository_keeps_skills_in_dot_agents_as_well(self):
+        """The same root, the project half of it."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        project = Path(self._tmp.name) / "repo" / ".agents" / "skills" / "beads"
+        project.mkdir(parents=True)
+        (project / "SKILL.md").write_text("x")
+
+        here = os.getcwd()
+        os.chdir(project.parents[2])
+        try:
+            from cs import context
+            found = {a.name: a for a in context.assets("skills")}
+        finally:
+            os.chdir(here)
+        self.assertEqual(found["beads"].scope, "project")
+
+    def test_only_the_newest_package_of_builtins_is_counted(self):
+        """Copilot keeps every version it has downloaded; one of them runs."""
+        pkg = Path(os.environ["COPILOT_HOME"]) / "pkg" / "darwin-arm64"
+        for version in ("1.0.9", "1.0.10"):
+            skill = pkg / version / "builtin-skills" / "github-pr-media"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text(version)
+        (pkg / "1.0.10" / "builtin-skills" / "newer-one").mkdir()
+        (pkg / "1.0.10" / "builtin-skills" / "newer-one" / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+
+        from cs import context
+        found = {a.name: a for a in context.assets("skills")}
+        self.assertEqual(found["github-pr-media"].scope, "builtin")
+        # 1.0.10 is newer than 1.0.9, which a string compare gets backwards.
+        self.assertEqual(found["github-pr-media"].path.read_text(), "1.0.10")
+        self.assertIn("newer-one", found)
+        self.assertIn("built in", self._run("skills")[1])
+
+    def test_standing_in_your_home_directory_does_not_rename_your_skills(self):
+        """`.copilot/skills` is a project pattern; in $HOME it is the personal one."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills"
+        (skills / "kept-one").mkdir(parents=True)
+        (skills / "kept-one" / "SKILL.md").write_text("x")
+
+        here = os.getcwd()
+        # The Copilot home's parent is the directory that holds `.copilot`,
+        # which is exactly where this goes wrong.
+        os.chdir(Path(os.environ["COPILOT_HOME"]).parent)
+        try:
+            from cs import context
+            found = {a.name: a for a in context.assets("skills")}
+        finally:
+            os.chdir(here)
+        self.assertEqual(found["kept-one"].scope, "personal")
+
+    def test_a_mirror_for_another_tool_is_not_counted_twice(self):
+        """Plugins carry copies for other harnesses in dotted directories."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        root = self._plugin("market", "live", "alpha-tool")
+        for mirror in (root / ".openclaw" / "skills" / "alpha-tool",
+                       root / "skills" / ".archive" / "alpha-tool"):
+            mirror.mkdir(parents=True)
+            (mirror / "SKILL.md").write_text("x")
+
+        from cs import context
+        found = [a for a in context.assets("skills") if a.name == "alpha-tool"]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].scope, "plugin")
+
+    def test_your_own_copy_of_a_skill_beats_a_marketplace_one(self):
+        """Precedence is plugin, then personal, then the repository."""
+        personal = Path(os.environ["COPILOT_HOME"]) / "skills"
+        (personal / "alpha-tool").mkdir(parents=True)
+        (personal / "alpha-tool" / "SKILL.md").write_text("mine")
+        self._plugin("market", "live", "alpha-tool")
+
+        from cs import context
+        found = {a.name: a for a in context.assets("skills")}
+        self.assertEqual(found["alpha-tool"].scope, "personal")
+        self.assertEqual(found["alpha-tool"].path.read_text(), "mine")
+
+    def test_a_switched_off_skill_is_not_filed_as_a_neglected_one(self):
+        """disabledSkills is a decision; 'never referenced' read as a charge."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills"
+        for name in ("kept-one", "parked-one"):
+            (skills / name).mkdir(parents=True)
+            (skills / name / "SKILL.md").write_text("x")
+        self._settings(disabledSkills=["parked-one"])
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("1 switched off in settings.json", out)
+        self.assertIn("Switched off", out)
+        idle, _, off = out.partition("Switched off")
+        self.assertIn("kept-one", idle.partition("Never referenced")[2])
+        self.assertIn("parked-one", off)
+        # Still installed. Subtracting it would make the view disagree with
+        # the directory, which is the one thing the reader can check.
+        self.assertIn("2 on disk", out)
+
+    def test_a_skill_that_ran_here_is_listed_even_with_no_file_for_it(self):
+        """Proof of a load outranks an empty shelf."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._loaded("vanished-tool")
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("vanished-tool", out)
+        self.assertIn("not installed", out)
+        self.assertIn("1 not on this disk", out)
+        # And it can be asked about, rather than refused for want of a file.
+        code, drill = self._run("skills", "vanished-tool")
+        self.assertEqual(code, 0)
+        self.assertIn("not installed here", drill)
+
+    def test_the_export_reports_what_the_screen_reports(self):
+        """They built separate lists once, and disagreed by eleven rows."""
+        import json as js
+
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills"
+        (skills / "kept-one").mkdir(parents=True)
+        (skills / "kept-one" / "SKILL.md").write_text("x")
+        self._loaded("vanished-tool")
+
+        screen = self._run("skills")[1]
+        payload = js.loads(self._run("skills", "--json")[1])
+        self.assertIn(f"installed  {payload['installed']}", screen)
+        self.assertIn(f"{payload['referenced']} appear in at least one", screen)
+        self.assertIn(f"{payload['not_installed']} not on this disk", screen)
+        self.assertEqual(payload["not_installed"], 1)
+        vanished = next(a for a in payload["assets"]
+                        if a["name"] == "vanished-tool")
+        self.assertEqual(vanished["scope"], "not installed")
+
+    def test_a_skill_from_another_checkout_is_named_not_just_denied(self):
+        """'Not installed' is true and useless; the question is where it is."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        elsewhere = Path(self._tmp.name) / "meeting-notes"
+        (elsewhere / ".github" / "skills" / "roundup").mkdir(parents=True)
+        (elsewhere / ".github" / "skills" / "roundup" / "SKILL.md").write_text("x")
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute("UPDATE sessions SET cwd = ? WHERE id = (SELECT id FROM "
+                     "sessions LIMIT 1)", (str(elsewhere),))
+        conn.commit()
+        conn.close()
+        self._loaded("roundup")
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("in meeting-notes", out)
+        self.assertIn("1 from another checkout", out)
+        # The bare form is kept for the ones that really are nowhere.
+        self.assertNotIn("· not installed", out)
+
+    def test_a_skill_that_is_nowhere_at_all_says_so_plainly(self):
+        """The checkout it ran in is gone, or was never this machine."""
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._loaded("vanished-tool")
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("not installed", out)
+        self.assertIn("1 not on this disk", out)
+
+    def test_a_checkout_with_many_names_is_called_by_its_directory(self):
+        """One directory collects several repository labels over its life."""
+        directory = Path(self._tmp.name) / "platform-tools"
+        (directory / ".agents" / "skills" / "beads").mkdir(parents=True)
+        (directory / ".agents" / "skills" / "beads" / "SKILL.md").write_text("x")
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        for repository in ("me/platform-tools", "someone-else/renamed"):
+            conn.execute(
+                "INSERT INTO sessions (id, cwd, repository, summary, created_at,"
+                " updated_at) VALUES (?,?,?,'s','2026-01-01','2026-01-01')",
+                (f"dir-{repository}", str(directory), repository),
+            )
+        conn.commit()
+        conn.close()
+        (Path(os.environ["COPILOT_HOME"]) / "skills").mkdir()
+        self._loaded("beads")
+
+        out = self._run("skills")[1]
+        self.assertIn("in platform-tools", out)
+        self.assertNotIn("renamed", out)
+
+    def test_settings_that_will_not_parse_disable_nothing_and_say_so(self):
+        """A config file it cannot read must not silently hide your kit."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills"
+        (skills / "kept-one").mkdir(parents=True)
+        (skills / "kept-one" / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "settings.json").write_text("{ not json")
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("kept-one", out)
+        self.assertIn("could not be read", out)
+        self.assertNotIn("switched off in settings.json", out)
+
+    def test_a_comment_in_settings_does_not_lose_the_disabled_list(self):
+        """Copilot's sibling config.json opens with a // comment."""
+        skills = Path(os.environ["COPILOT_HOME"]) / "skills"
+        for name in ("kept-one", "parked-one"):
+            (skills / name).mkdir(parents=True)
+            (skills / name / "SKILL.md").write_text("x")
+        (Path(os.environ["COPILOT_HOME"]) / "settings.json").write_text(
+            '// managed automatically\n{"disabledSkills": ["parked-one"]}'
+        )
+
+        code, out = self._run("skills")
+        self.assertEqual(code, 0)
+        self.assertIn("1 switched off in settings.json", out)
+        self.assertNotIn("could not be read", out)
 
     def test_reference_matching_is_precision_first(self):
         """Skills are named `commit` and `status`; only strong evidence counts."""
