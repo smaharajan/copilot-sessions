@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The home screen now cycles through dark, light and high-contrast themes with
+  `t` (`CS_THEME=dark|light|contrast` selects one at launch), and refreshes its
+  read-only SQLite metrics every 30 seconds.
 - **`cs skills` counts every root Copilot loads from**, not the two it used to
   walk. A machine with forty-nine personal skills was reporting forty-nine
   while the CLI was resolving eighty-two: the enabled plugins'

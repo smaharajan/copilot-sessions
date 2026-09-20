@@ -44,23 +44,94 @@ def c256(number: int) -> str:
 
 
 # ── Theme ────────────────────────────────────────────────────────────
-# Tuned for a dark terminal, which is what a terminal overwhelmingly is.
-# `CS_THEME=light` restores the pastels for anyone actually on white paper.
-# Declared here, above everything that draws, because the wordmark's gradient
-# and the report palette are the same eight colours and used to be two
-# separate lists that drifted apart.
-_LIGHT_THEME = os.environ.get("CS_THEME", "").lower() == "light"
+THEMES = ("dark", "light", "contrast")
+_THEME_ALIASES = {"high-contrast": "contrast", "high_contrast": "contrast"}
+_RAMPS = {
+    "dark": (99, 105, 69, 33, 39, 45, 44, 49),
+    "light": (99, 105, 111, 75, 39, 45, 44, 49),
+    "contrast": (201, 207, 213, 219, 51, 87, 123, 159),
+}
+_TUI_PALETTES = {
+    "dark": {
+        "background": (252, 234),
+        "title": (39, 234),
+        "help": (245, 234),
+        "selected": (45, 234),
+        "cursor": (231, 25),
+        "header": (245, 234),
+        "separator": (240, 234),
+        "number": (244, 234),
+        "active": (49, 234),
+        "turns": (84, 234),
+        "credits": (177, 234),
+        "summary": (253, 234),
+        "repo": (69, 234),
+        "status": (214, 236),
+        "warn": (214, 234),
+        "label": (255, 234),
+    },
+    "light": {
+        "background": (235, 255),
+        "title": (27, 255),
+        "help": (240, 255),
+        "selected": (25, 255),
+        "cursor": (255, 25),
+        "header": (57, 255),
+        "separator": (250, 255),
+        "number": (240, 255),
+        "active": (22, 255),
+        "turns": (28, 255),
+        "credits": (91, 255),
+        "summary": (235, 255),
+        "repo": (25, 255),
+        "status": (235, 254),
+        "warn": (130, 255),
+        "label": (232, 255),
+    },
+    "contrast": {
+        "background": (231, 16),
+        "title": (51, 16),
+        "help": (250, 16),
+        "selected": (16, 226),
+        "cursor": (16, 51),
+        "header": (51, 16),
+        "separator": (244, 16),
+        "number": (255, 16),
+        "active": (46, 16),
+        "turns": (51, 16),
+        "credits": (201, 16),
+        "summary": (231, 16),
+        "repo": (159, 16),
+        "status": (16, 226),
+        "warn": (226, 16),
+        "label": (231, 16),
+    },
+}
 
-# The Copilot purple→cyan sweep, in 256-colour terms. The light theme's two
-# middle steps (#87afff, #5fafff) are pastels: legible on white, and almost
-# colourless on black, which made a half-length bar look unfinished.
-_RAMP = (
-    (99, 105, 111, 75, 39, 45, 44, 49) if _LIGHT_THEME
-    else (99, 105, 69, 33, 39, 45, 44, 49)
-)
+
+def _normalise_theme(name: str | None) -> str:
+    chosen = (name or "dark").lower()
+    if chosen in THEMES or chosen in _THEME_ALIASES:
+        return _THEME_ALIASES.get(chosen, chosen)
+    return "dark"
 
 
-def tui_theme(curses) -> dict[str, int]:
+_THEME = _normalise_theme(os.environ.get("CS_THEME"))
+_RAMP = _RAMPS[_THEME]
+
+
+def theme_name() -> str:
+    """The active theme name."""
+    return _THEME
+
+
+def next_theme(name: str | None = None) -> str:
+    """The theme after `name`, wrapping back to dark."""
+    current = _normalise_theme(name or _THEME)
+    return THEMES[(THEMES.index(current) + 1) % len(THEMES)]
+
+
+def tui_theme(curses, name: str | None = None) -> dict[str, int]:
     """Create the curses theme, falling back to attributes on limited terminals."""
     fallback = {
         "background": 0,
@@ -89,58 +160,7 @@ def tui_theme(curses) -> dict[str, int]:
             default_bg = curses.COLOR_BLACK
 
         if curses.COLORS >= 256:
-            # Dark by default, like the reports. 234 (#1c1c1c) rather than
-            # pure black: a near-black ground keeps the dividers visible
-            # without them having to be bright, and it is what the
-            # saturated foregrounds below were chosen against.
-            bg = 235 if _LIGHT_THEME else 234
-            palette = {
-                "background": (255, 235),
-                "title": (111, 235),
-                "help": (244, 235),
-                "selected": (114, 60),
-                "cursor": (231, 61),
-                "header": (153, 235),
-                "separator": (60, 235),
-                "number": (244, 235),
-                "active": (117, 235),
-                "turns": (114, 235),
-                "credits": (177, 235),
-                "summary": (255, 235),
-                "repo": (111, 235),
-                "status": (220, 235),
-                "warn": (208, 235),
-                "label": (233, 235),
-            } if _LIGHT_THEME else {
-                "background": (252, bg),
-                "title": (39, bg),          # the product blue, saturated
-                "help": (245, bg),
-                # The active sort column is lit and the rest are furniture.
-                # A background chip was the first idea and the wrong one:
-                # labels are padded to their column, so "summary" would have
-                # become forty cells of solid cyan.
-                "selected": (45, bg),
-                "cursor": (231, 25),        # white on deep azure: the row
-                "header": (245, bg),
-                # 240, not 238. On a 234 ground a 238 rule is four steps of
-                # nothing: the menu's group hairlines and the header rule
-                # were structurally present and visually absent, which is
-                # most of why the landing screen read as one flat grey wash.
-                "separator": (240, bg),
-                "number": (244, bg),
-                "active": (49, bg),         # mint: this session is live
-                "turns": (84, bg),
-                "credits": (177, bg),       # matches VIOLET in the reports
-                "summary": (253, bg),
-                "repo": (69, bg),
-                "status": (214, 236),       # a footer bar, lifted off the bg
-                "warn": (214, bg),          # the same amber, on the ground
-                # The menu's own labels. Bright and bold, because they are
-                # the thing you are choosing between: at plain 253 they
-                # carried no more weight than the sentence explaining them,
-                # and eighteen rows of that is a screen with no foreground.
-                "label": (255, bg),
-            }
+            palette = _TUI_PALETTES[_normalise_theme(name or _THEME)]
         else:
             palette = {
                 "background": (curses.COLOR_WHITE, default_bg),
@@ -484,41 +504,39 @@ def gradient_text(text: str) -> str:
 # blue, and a palette where nothing is saturated is a palette where nothing
 # can be emphasised.
 #
-# `CS_THEME=light` restores the pastels for anyone actually on white paper.
-if _LIGHT_THEME:
-    ACCENT = c256(111)    # headings, rules — the product's own blue
-    MUTED = c256(244)     # metadata, furniture, anything not being said
-    CODE = c256(180)      # inline code and code blocks
-    PAPER = c256(252)     # body text that has to out-rank MUTED
-    VIOLET = c256(141)    # the ramp's warm end: totals, spend
-    INDIGO = c256(105)
-    SKY = c256(75)
-    AZURE = c256(39)
-    TEAL = c256(44)
-    MINT = c256(49)       # the ramp's cool end: counts, good news
-    LIME = c256(149)      # a state that is fine and worth seeing
-    AMBER = c256(215)     # worth a look
-    ORANGE = c256(209)
-    ROSE = c256(204)      # worth changing
-    SLATE = c256(60)      # rules, bar tracks, dividers
-else:
-    ACCENT = c256(39)     # #00afff — headings and rules, the product's blue
-    MUTED = c256(245)     # metadata, furniture, anything not being said
-    CODE = c256(180)      # inline code: warm but low-chroma, so it cannot be
-                          # mistaken for the saturated warm of a finding
-    PAPER = c256(253)     # body text that has to out-rank MUTED
-    VIOLET = c256(177)    # #d787ff — the ramp's warm end: totals, spend
-    INDIGO = c256(99)
-    SKY = c256(69)
-    AZURE = c256(45)
-    TEAL = c256(44)
-    MINT = c256(49)       # the ramp's cool end: counts, good news
-    LIME = c256(148)      # a state that is fine and worth seeing
-    AMBER = c256(214)     # worth a look
-    ORANGE = c256(208)
-    ROSE = c256(204)      # worth changing
-    SLATE = c256(239)     # rules, bar tracks, dividers — neutral, and dark
-                          # enough to sit behind content instead of beside it
+_REPORT_THEMES = {
+    "dark": {
+        "ACCENT": 39, "MUTED": 245, "CODE": 180, "PAPER": 253,
+        "VIOLET": 177, "INDIGO": 99, "SKY": 69, "AZURE": 45,
+        "TEAL": 44, "MINT": 49, "LIME": 148, "AMBER": 214,
+        "ORANGE": 208, "ROSE": 204, "SLATE": 239,
+    },
+    "light": {
+        "ACCENT": 111, "MUTED": 244, "CODE": 180, "PAPER": 252,
+        "VIOLET": 141, "INDIGO": 105, "SKY": 75, "AZURE": 39,
+        "TEAL": 44, "MINT": 49, "LIME": 149, "AMBER": 215,
+        "ORANGE": 209, "ROSE": 204, "SLATE": 60,
+    },
+    "contrast": {
+        "ACCENT": 51, "MUTED": 250, "CODE": 226, "PAPER": 255,
+        "VIOLET": 201, "INDIGO": 207, "SKY": 123, "AZURE": 51,
+        "TEAL": 87, "MINT": 159, "LIME": 46, "AMBER": 226,
+        "ORANGE": 208, "ROSE": 196, "SLATE": 244,
+    },
+}
+
+ACCENT = MUTED = CODE = PAPER = ""
+VIOLET = INDIGO = SKY = AZURE = TEAL = MINT = ""
+LIME = AMBER = ORANGE = ROSE = SLATE = ""
+
+
+def _apply_report_theme(name: str) -> None:
+    globals().update({
+        key: c256(colour) for key, colour in _REPORT_THEMES[name].items()
+    })
+
+
+_apply_report_theme(_THEME)
 GUTTER = "  "
 
 # The gradient bars sweep along this — the same eight steps as the wordmark,
@@ -526,6 +544,20 @@ GUTTER = "  "
 # at the purple end rather than compressing the whole ramp into four cells:
 # colour here means "how far along", and a two-cell bar has not gone far.
 _BAR_RAMP = _RAMP
+
+
+def set_theme(name: str) -> str:
+    """Switch the active theme for this process and return its canonical name."""
+    global _THEME, _RAMP, _BANNER_RAMP, _BAR_RAMP
+    _THEME = _normalise_theme(name)
+    _RAMP = _RAMPS[_THEME]
+    _BANNER_RAMP = list(_RAMP)
+    _BAR_RAMP = _RAMP
+    _apply_report_theme(_THEME)
+    if "_MARKS" in globals():
+        _MARKS["\x02"] = CODE
+    return _THEME
+
 
 # Eighths of a cell. A bar that rounds down to nothing tells you a row scored
 # zero when it scored one, which is the one thing a chart must never do — so
@@ -537,13 +569,12 @@ _EIGHTHS = "▏▎▍▌▋▊▉█"
 # one up front, and a colour that was not declared silently renders as plain
 # text in the one view that shows reports full-screen.
 #
-# Both themes are declared, not just the active one: the set is cheap, and a
+# Every theme is declared, not just the active one: the set is cheap, and a
 # reader that only knew about the running theme would render a saved report
 # wrong the moment someone changed CS_THEME between writing and reading it.
 PALETTE_256 = sorted({
-    39, 44, 45, 49, 60, 69, 75, 99, 105, 111, 141, 148, 149, 177, 180,
-    204, 208, 209, 214, 215, 239, 244, 245, 252, 253, 33,
-    *_BAR_RAMP,
+    *(colour for palette in _REPORT_THEMES.values() for colour in palette.values()),
+    *(colour for ramp in _RAMPS.values() for colour in ramp),
 })
 
 

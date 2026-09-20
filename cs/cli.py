@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -1391,6 +1392,7 @@ def _mouse_event(
 
 
 _HOME_ACTIVE = False  # set while the landing screen owns the loop
+_HOME_REFRESH_SECONDS = 30
 
 
 def _fit_hints(hints: list[tuple[str, str, int]], width: int) -> str:
@@ -6465,7 +6467,8 @@ def _home_step(shown: list[int], cursor: int, delta: int) -> int:
 
 
 def _home_status(query: str, matched: int, total: int, width: int,
-                 period: int = 30) -> str:
+                 period: int = 30, theme: str = "dark",
+                 refresh_error: bool = False) -> str:
     """The one hint line. It says what you can do, or what you have typed.
 
     One line rather than two: a key list above the menu and a second one
@@ -6480,11 +6483,15 @@ def _home_status(query: str, matched: int, total: int, width: int,
         found = f"{matched} of {total}" if matched else "no match"
         line = f" find: {query}▏ {found} · Esc clears · ↵ opens "
         return line if ui.cells(line) <= width else " find: … · Esc · ↵ "
+    if refresh_error:
+        line = " refresh failed · retrying in 30s · t theme · q quit "
+        return line if ui.cells(line) <= width else " refresh failed · q "
     short = next((s for _k, days, _l, s in _PERIODS if days == period), "30d")
     for line in (
-        f" ↑↓ move · ↵ open · ←→ window {short} · type to find · / search · q quit ",
-        f" ↑↓ · ↵ open · ←→ {short} · type to find · / search · q ",
-        f" ↑↓ · ↵ · ←→ {short} · type · q ",
+        f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme} · "
+        "refresh 30s · type to find · / search · q quit ",
+        f" ↑↓ · ↵ open · ←→ {short} · t {theme} · refresh 30s · / search · q ",
+        f" ↑↓ · ↵ · ←→ {short} · t {theme} · refresh 30s · q ",
         " ↑↓ · ↵ · type · q ",
     ):
         if ui.cells(line) <= width:
@@ -6507,21 +6514,24 @@ def _home_matches(items, query: str) -> list[int]:
     ]
 
 
-def _home_facts() -> list[tuple[str, str]]:
-    """(value, what it counts) for the strip above the menu.
+def _home_snapshot(days: int = 120) -> tuple[list[tuple[str, str]], list[int]]:
+    """The current facts and activity strip, read in one database connection.
 
     Kept as pairs rather than one joined string so the numbers can be drawn
     apart from their labels: the counts are what the line is for, and in one
     flat colour they were the hardest part of it to pick out.
     """
     conn = db.connect()
-    basics = db.stats(conn)
-    skills = [name for name, _ in _asset_names("skills")]
-    agents = [name for name, _ in _asset_names("agents")]
-    skills_used = db.assets_used(conn, skills)
-    agents_used = db.assets_used(conn, agents)
-    subagents = sum(db.subagents_by_session(conn).values())
-    conn.close()
+    try:
+        basics = db.stats(conn)
+        skills = [name for name, _ in _asset_names("skills")]
+        agents = [name for name, _ in _asset_names("agents")]
+        skills_used = db.assets_used(conn, skills)
+        agents_used = db.assets_used(conn, agents)
+        subagents = sum(db.subagents_by_session(conn).values())
+        series = db.activity(conn, days)
+    finally:
+        conn.close()
     # Counts of what you have, not what it cost: spend has a whole view of
     # its own, and the model it names changes every few months.
     #
@@ -6537,7 +6547,7 @@ def _home_facts() -> list[tuple[str, str]]:
     # worth looking at before writing the hundred and twenty-sixth. Sub-agents
     # are counted as runs, because the store bills those exactly and 'how
     # much did we actually delegate' is the question behind the row.
-    return [
+    facts = [
         (f"{basics['total']:,}", "sessions"),
         (f"{basics['total_turns']:,}", "turns"),
         (f"{basics['repos']}", "repos"),
@@ -6546,6 +6556,18 @@ def _home_facts() -> list[tuple[str, str]]:
         (f"{subagents:,}", "sub-agents run"),
         (f"{len(mcp.load()[0])}", "mcp"),
     ]
+    return facts, series if any(series) else []
+
+
+def _refresh_home(state: dict) -> bool:
+    """Replace the landing readings from the live, read-only store."""
+    try:
+        state["facts"], state["activity"] = _home_snapshot()
+    except (OSError, sqlite3.Error):
+        state["refresh_error"] = True
+        return False
+    state.pop("refresh_error", None)
+    return True
 
 
 def _home_header_rows(width: int, height: int, menu_rows: int,
@@ -6607,23 +6629,6 @@ def _home_art(width: int, height: int, menu_rows: int,
     """
     spare = height - 3 - menu_rows - (1 if spark else 0)
     return ui.banner(width, spare) if spare >= 4 else []
-
-
-def _home_activity(days: int = 120) -> list[int]:
-    """Sessions per day for the strip under the counts.
-
-    Read once, when the menu opens, rather than on every frame: the wipe
-    redraws it fourteen times and a query per frame would be fourteen
-    queries to draw one unchanging line.
-    """
-    conn = db.connect()
-    try:
-        series = db.activity(conn, days)
-    finally:
-        conn.close()
-    # A store with nothing in the window gets no strip rather than a flat
-    # one: an empty chart is a row spent saying nothing.
-    return series if any(series) else []
 
 
 def _draw_home_header(screen, theme, width: int, art: list[str],
@@ -6760,6 +6765,8 @@ def _home_tui(screen, state: dict):
 
     items = _home_items(state.get("period", 30))
     screen.keypad(True)
+    active_theme = ui.set_theme(state.get("theme", ui.theme_name()))
+    state["theme"] = active_theme
     theme = ui.tui_theme(curses)
     try:
         curses.curs_set(0)
@@ -6775,6 +6782,7 @@ def _home_tui(screen, state: dict):
     query = ""
     last_click = [0.0, -1]
     pending: list[int] = []
+    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
 
     def wait(milliseconds: int) -> bool:
         """Ask for a timed getch. False when this window cannot do one."""
@@ -6784,9 +6792,13 @@ def _home_tui(screen, state: dict):
             return False
         return True
 
+    def wait_until(milliseconds: int) -> bool:
+        remaining = max(1, round((next_refresh - time.monotonic()) * 1000))
+        return wait(min(milliseconds, remaining))
+
     # Once per run, not once per visit: replaying the wipe every time a view
     # hands you back would turn a greeting into a stutter.
-    timed = wait(ui.REVEAL_MS)
+    timed = wait_until(ui.REVEAL_MS)
     reveal = None if state.get("revealed") or not timed else 0
     # The agent's walk. None on a window that cannot time a keypress, where
     # asking for one would block and the screen would simply never redraw.
@@ -6801,10 +6813,10 @@ def _home_tui(screen, state: dict):
         if reveal is not None:
             reveal = None
             state["revealed"] = True
-            wait(ui.PACE_MS)
+            wait_until(ui.PACE_MS)
 
     if reveal is None:
-        wait(ui.PACE_MS)
+        wait_until(ui.PACE_MS)
 
     def open_item(index: int, height: int, width: int):
         """What to hand back for a chosen row. None means stay on the menu.
@@ -6913,7 +6925,8 @@ def _home_tui(screen, state: dict):
 
             _addstr(screen, height - 1, 0,
                     _home_status(query, len(shown), len(items), width,
-                                 state.get("period", 30)),
+                                 state.get("period", 30), active_theme,
+                                 state.get("refresh_error", False)),
                     width, theme["status"])
             screen.refresh()
 
@@ -6925,6 +6938,9 @@ def _home_tui(screen, state: dict):
                 # The wipe's own frame, or — once it is done — a frame of the
                 # agent's walk. Nothing else arms a timeout, so a -1 here is
                 # never a keypress: it always means 'nothing typed'.
+                if time.monotonic() >= next_refresh:
+                    _refresh_home(state)
+                    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
                 if reveal is not None:
                     reveal += 1
                     if reveal >= ui.REVEAL_FRAMES:
@@ -6935,17 +6951,18 @@ def _home_tui(screen, state: dict):
                     rested += 1
                     if rested >= ui.PACE_FRAMES:
                         # Walked far enough. Stop asking for frames and leave
-                        # it standing where it stopped: an unattended
-                        # terminal costs nothing to leave open, and a rested
-                        # agent is still on the rule rather than vanished.
-                        wait(-1)
+                        # it standing where it stopped. The only remaining
+                        # wake-up is the next live-data refresh.
+                        wait_until(_HOME_REFRESH_SECONDS * 1000)
+                elif reveal is None:
+                    wait_until(_HOME_REFRESH_SECONDS * 1000)
                 continue
             settle()  # any key at all lands you on the finished screen
             if pace is not None:
                 # Re-armed on every key, not just after a rest: probing for a
                 # mouse report leaves getch blocking, so without this the
                 # walk stopped dead the first time you clicked.
-                wait(ui.PACE_MS)
+                wait_until(ui.PACE_MS)
             rested = 0
             event = _mouse_event(screen, curses, key, last_click, pending)
             if event:
@@ -6991,6 +7008,15 @@ def _home_tui(screen, state: dict):
                 state["period"] = _step_period(
                     state.get("period", 30), 1 if key == curses.KEY_RIGHT else -1
                 )
+            elif key in (ord("t"), ord("T")) and not query:
+                active_theme = ui.set_theme(ui.next_theme(active_theme))
+                state["theme"] = active_theme
+                theme = ui.tui_theme(curses)
+                sweep = ui.banner_palette(curses)
+                try:
+                    screen.bkgd(" ", theme["background"])
+                except curses.error:
+                    pass
             elif key == curses.KEY_HOME:
                 cursor = shown[0] if shown else cursor
             elif key == curses.KEY_END:
@@ -7031,7 +7057,8 @@ def cmd_home() -> None:
         cmd_recent(1)
         return
 
-    state = {"facts": _home_facts(), "activity": _home_activity()}
+    facts, activity = _home_snapshot()
+    state = {"facts": facts, "activity": activity, "theme": ui.theme_name()}
     _HOME_ACTIVE = True
     try:
         while True:
@@ -7157,7 +7184,8 @@ def cmd_help() -> None:
       sort with --sort skills or --sort agents.
     · Reads $COPILOT_HOME/session-store.db (default ~/.copilot), read-only.
     · Skills also load from ~/.agents/skills; CS_AGENTS_HOME moves that root.
-    · Colours are tuned for a dark terminal; CS_THEME=light for a pale one.
+    · Theme: press t on the home screen, or set CS_THEME=dark|light|contrast.
+    · The home screen refreshes its database readings every 30 seconds.
     · CS_GLYPHS=ascii swaps every emoji for a plain marker.
     · Empty & automated sessions hidden by default; 'cs all' shows them.
     · Hide extra summaries by prefix in $COPILOT_HOME/.cs-ignore.
@@ -7168,6 +7196,7 @@ def cmd_help() -> None:
       ↑/↓    move down the menu           Enter  open the highlighted view
       type   narrow the menu as you go    Esc    clear what you typed
       /      full-text search             q      quit (when nothing is typed)
+      t      cycle dark, light and high-contrast themes
       ←/→    the window the counting views use — Stats, Timeline, AI spend
              and Delegation. Those rows say which window they will use, and
              Enter opens them with it.

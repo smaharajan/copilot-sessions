@@ -105,22 +105,17 @@ class ChartTest(unittest.TestCase):
             self.assertIn(f"38;5;{colour}", palette,
                           f"colour {colour} has no curses pair")
 
-        # And nothing emits a colour that was never declared. Read off the
-        # source rather than the constants, because with colour off — which
-        # is how the tests run — every constant is the empty string and an
-        # undeclared colour would sail through.
-        import ast
+        # And nothing in any report theme is missing from that declaration.
+        # Read the numeric source palettes rather than the rendered constants:
+        # colour is off in the test runner, so every rendered constant is "".
         import inspect
 
-        tree = ast.parse(inspect.getsource(ui))
         used = {
-            node.args[0].value
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and getattr(node.func, "id", "") == "c256"
-            and node.args and isinstance(node.args[0], ast.Constant)
+            colour
+            for theme in ui._REPORT_THEMES.values()
+            for colour in theme.values()
         }
-        self.assertTrue(used, "no colours found — has c256 been renamed?")
+        self.assertTrue(used, "the report themes contain no colours")
         self.assertEqual(used - set(ui.PALETTE_256), set(),
                          "a colour is emitted but not declared in PALETTE_256")
         # A literal index in an escape, rather than c256's own {number}.
@@ -187,9 +182,18 @@ class ThemeTest(unittest.TestCase):
             self.assertEqual(ui.ACCENT, "\033[38;5;111m")
             self.assertEqual(ui.VIOLET, "\033[38;5;141m")
 
+    def test_three_named_themes_cover_dark_light_and_high_contrast(self):
+        with self._theme("contrast") as ui:
+            self.assertEqual(ui.THEMES, ("dark", "light", "contrast"))
+            self.assertEqual(ui.theme_name(), "contrast")
+            self.assertEqual(ui.ACCENT, "\033[38;5;51m")
+            self.assertEqual(ui.PAPER, "\033[38;5;255m")
+            self.assertEqual(ui.next_theme("contrast"), "dark")
+            self.assertEqual(ui.set_theme("high-contrast"), "contrast")
+
     def test_every_colour_either_theme_emits_is_declared(self):
         """An undeclared index renders as plain text in the curses reader."""
-        for theme in (None, "light"):
+        for theme in (None, "light", "contrast"):
             with self.subTest(theme=theme), self._theme(theme) as ui:
                 used = {
                     int(re.search(r"(\d+)m$", value).group(1))

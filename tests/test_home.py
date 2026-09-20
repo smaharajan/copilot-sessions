@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import unittest
 from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from support import Screen, StoreTest
 
@@ -272,6 +273,17 @@ class HomeMenuTest(StoreTest):
         screen = Screen([ord(c) for c in "requests"] + [27, ord("q")])
         self.assertIsNone(cli._home_tui(screen, {"revealed": True}))
         self.assertGreater(len(screen.frames), 9, "q quit while typing")
+
+    def test_t_cycles_the_theme_without_opening_the_filter(self):
+        from cs import cli, ui
+
+        original = ui.theme_name()
+        state = {"revealed": True, "theme": "dark"}
+        try:
+            cli._home_tui(Screen([ord("t"), ord("q")]), state)
+            self.assertEqual(state["theme"], "light")
+        finally:
+            ui.set_theme(original)
 
     def test_the_cursor_steps_through_what_is_on_screen(self):
         """With a filter up, the rows between two matches are not there."""
@@ -701,6 +713,57 @@ class LandingAnimationTest(StoreTest):
             [self._on_rule(frame) for frame in screen.frames],
             [None] * len(screen.frames),
         )
+
+    def test_the_home_readings_refresh_after_thirty_seconds(self):
+        from cs import cli, ui
+
+        class ClockScreen(Screen):
+            def __init__(self):
+                super().__init__([-1, -1, ord("q")])
+                self.now = 0.0
+                self.delay = 0
+                self.delays = []
+
+            def timeout(self, milliseconds):
+                super().timeout(milliseconds)
+                self.delay = milliseconds
+                self.delays.append(milliseconds)
+
+            def getch(self):
+                key = super().getch()
+                if key == -1:
+                    self.now += self.delay / 1000
+                return key
+
+        screen = ClockScreen()
+        state = {"revealed": True, "facts": [("1", "sessions")]}
+        snapshot = ([("2", "sessions")], [0, 1])
+        with (
+            patch.object(ui, "PACE_FRAMES", 0),
+            patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
+            patch.object(cli, "_home_snapshot", return_value=snapshot) as fresh,
+        ):
+            cli._home_tui(screen, state)
+
+        fresh.assert_called_once_with()
+        self.assertEqual(state["facts"], snapshot[0])
+        self.assertEqual(state["activity"], snapshot[1])
+        self.assertTrue(any(ui.PACE_MS < delay <= 30_000
+                            for delay in screen.delays))
+
+    def test_a_failed_refresh_keeps_the_last_good_readings(self):
+        import sqlite3
+
+        from cs import cli
+
+        state = {"facts": [("1", "sessions")], "activity": [1]}
+        with patch.object(
+            cli, "_home_snapshot", side_effect=sqlite3.OperationalError
+        ):
+            self.assertFalse(cli._refresh_home(state))
+        self.assertEqual(state["facts"], [("1", "sessions")])
+        self.assertEqual(state["activity"], [1])
+        self.assertTrue(state["refresh_error"])
 
 
 class MenuIconTest(StoreTest):

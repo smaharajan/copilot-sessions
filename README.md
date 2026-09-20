@@ -71,6 +71,10 @@ returns here**, so nothing is a dead end. The layout is width-aware: columns
 retire in a fixed order as the window narrows, so a view still reads at 60
 columns instead of wrapping into rubble.
 
+Press `t` to cycle the built-in **dark**, **light**, and **high-contrast**
+themes. The counts and activity strip refresh from the read-only SQLite store
+every 30 seconds while the home screen is open.
+
 The facts line reads **used over installed**. `11/30 skills` means eleven of
 your thirty were ever reached for; the other nineteen are quietly rotting.
 
