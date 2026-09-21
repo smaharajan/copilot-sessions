@@ -44,73 +44,178 @@ def c256(number: int) -> str:
 
 
 # ── Theme ────────────────────────────────────────────────────────────
-THEMES = ("dark", "light", "contrast")
-_THEME_ALIASES = {"high-contrast": "contrast", "high_contrast": "contrast"}
-_RAMPS = {
-    "dark": (99, 105, 69, 33, 39, 45, 44, 49),
-    "light": (99, 105, 111, 75, 39, 45, 44, 49),
-    "contrast": (201, 207, 213, 219, 51, 87, 123, 159),
+def _theme(label: str, description: str, *, bg: int, fg: int, accent: int,
+           secondary: int, muted: int, panel: int, cursor: int, good: int,
+           warn: int, danger: int, code: int, ramp: tuple[int, ...],
+           cursor_fg: int | None = None, slate: int | None = None) -> dict:
+    return {
+        "label": label, "description": description, "bg": bg, "fg": fg,
+        "accent": accent, "secondary": secondary, "muted": muted,
+        "panel": panel, "cursor": cursor, "cursor_fg": cursor_fg or fg,
+        "good": good, "warn": warn, "danger": danger, "code": code,
+        "slate": panel if slate is None else slate, "ramp": ramp,
+    }
+
+
+_THEMES = {
+    "dark": _theme(
+        "Dark", "Copilot blue on a soft charcoal ground",
+        bg=234, fg=253, accent=39, secondary=177, muted=245, panel=240,
+        cursor=25, cursor_fg=231, good=148, warn=214, danger=204, code=180,
+        slate=239, ramp=(99, 105, 69, 33, 39, 45, 44, 49),
+    ),
+    "light": _theme(
+        "Light", "Crisp ink and blue accents on white",
+        bg=255, fg=235, accent=27, secondary=91, muted=240, panel=250,
+        cursor=25, cursor_fg=255, good=22, warn=130, danger=160, code=130,
+        ramp=(90, 91, 57, 27, 25, 31, 30, 29),
+    ),
+    "contrast": _theme(
+        "High Contrast", "Maximum separation for accessibility",
+        bg=16, fg=231, accent=51, secondary=201, muted=250, panel=244,
+        cursor=226, cursor_fg=16, good=46, warn=226, danger=196, code=226,
+        ramp=(201, 207, 213, 219, 51, 87, 123, 159),
+    ),
+    "midnight": _theme(
+        "Midnight", "Deep navy with electric blue highlights",
+        bg=17, fg=189, accent=75, secondary=141, muted=103, panel=24,
+        cursor=24, cursor_fg=231, good=84, warn=215, danger=204, code=180,
+        ramp=(54, 55, 61, 67, 74, 80, 86, 87),
+    ),
+    "nord": _theme(
+        "Nord", "Arctic blue-grey with calm cool accents",
+        bg=236, fg=254, accent=110, secondary=146, muted=109, panel=239,
+        cursor=67, cursor_fg=16, good=108, warn=179, danger=167, code=180,
+        ramp=(60, 67, 74, 110, 109, 116, 150, 151),
+    ),
+    "dracula": _theme(
+        "Dracula", "Vivid cyan, pink and green on charcoal",
+        bg=234, fg=255, accent=117, secondary=212, muted=246, panel=238,
+        cursor=61, cursor_fg=231, good=84, warn=228, danger=203, code=180,
+        ramp=(141, 177, 212, 117, 81, 84, 120, 121),
+    ),
+    "solarized-dark": _theme(
+        "Solarized Dark", "Balanced low-contrast colours for long sessions",
+        bg=234, fg=254, accent=33, secondary=175, muted=244, panel=237,
+        cursor=37, cursor_fg=234, good=64, warn=136, danger=160, code=166,
+        ramp=(125, 61, 33, 37, 36, 64, 70, 100),
+    ),
+    "solarized-light": _theme(
+        "Solarized Light", "Warm paper with measured blue and cyan",
+        bg=230, fg=238, accent=32, secondary=125, muted=244, panel=187,
+        cursor=37, cursor_fg=234, good=64, warn=136, danger=160, code=166,
+        ramp=(125, 61, 33, 37, 36, 64, 70, 100),
+    ),
+    "gruvbox": _theme(
+        "Gruvbox", "Retro warm contrast with earthy accents",
+        bg=235, fg=223, accent=214, secondary=175, muted=246, panel=239,
+        cursor=172, cursor_fg=235, good=142, warn=214, danger=167, code=208,
+        ramp=(175, 174, 208, 214, 142, 108, 109, 110),
+    ),
+    "monokai": _theme(
+        "Monokai", "Punchy pink, cyan and lime on graphite",
+        bg=234, fg=231, accent=81, secondary=204, muted=245, panel=238,
+        cursor=197, cursor_fg=16, good=148, warn=221, danger=197, code=186,
+        ramp=(135, 141, 197, 203, 81, 80, 86, 148),
+    ),
+    "tokyo-night": _theme(
+        "Tokyo Night", "Muted indigo with luminous blue and green",
+        bg=17, fg=189, accent=75, secondary=141, muted=103, panel=24,
+        cursor=61, cursor_fg=231, good=114, warn=179, danger=203, code=117,
+        ramp=(60, 61, 68, 75, 81, 87, 114, 120),
+    ),
+    "catppuccin": _theme(
+        "Catppuccin", "Soft lavender and blue with pastel warmth",
+        bg=235, fg=189, accent=111, secondary=183, muted=146, panel=239,
+        cursor=60, cursor_fg=255, good=151, warn=223, danger=210, code=180,
+        ramp=(139, 147, 183, 111, 117, 123, 151, 158),
+    ),
+    "one-dark": _theme(
+        "One Dark", "Balanced editor greys with clear blue focus",
+        bg=235, fg=188, accent=75, secondary=176, muted=102, panel=238,
+        cursor=60, cursor_fg=255, good=114, warn=180, danger=168, code=180,
+        ramp=(97, 104, 176, 75, 74, 73, 114, 120),
+    ),
+    "material-ocean": _theme(
+        "Material Ocean", "Deep ocean panels with cyan and violet",
+        bg=17, fg=195, accent=81, secondary=141, muted=103, panel=24,
+        cursor=31, cursor_fg=16, good=84, warn=221, danger=204, code=180,
+        ramp=(55, 61, 98, 75, 81, 87, 84, 121),
+    ),
+    "ayu-dark": _theme(
+        "Ayu Dark", "Warm amber detail on restrained charcoal",
+        bg=234, fg=252, accent=215, secondary=180, muted=244, panel=237,
+        cursor=94, cursor_fg=231, good=114, warn=215, danger=203, code=180,
+        ramp=(95, 131, 167, 173, 179, 143, 108, 114),
+    ),
+    "everforest": _theme(
+        "Everforest", "Low-glare forest greens and warm neutrals",
+        bg=235, fg=223, accent=108, secondary=175, muted=246, panel=239,
+        cursor=65, cursor_fg=16, good=108, warn=179, danger=167, code=180,
+        ramp=(95, 101, 107, 108, 109, 115, 151, 187),
+    ),
+    "kanagawa": _theme(
+        "Kanagawa", "Ink-dark Japanese tones with wave blue",
+        bg=234, fg=223, accent=109, secondary=175, muted=245, panel=238,
+        cursor=60, cursor_fg=231, good=108, warn=179, danger=167, code=180,
+        ramp=(96, 97, 103, 109, 110, 116, 152, 188),
+    ),
+    "rose-pine": _theme(
+        "Rosé Pine", "Muted rose, iris and foam on deep navy",
+        bg=17, fg=189, accent=110, secondary=182, muted=103, panel=24,
+        cursor=60, cursor_fg=231, good=108, warn=180, danger=174, code=181,
+        ramp=(96, 132, 168, 174, 181, 110, 116, 152),
+    ),
+    "synthwave": _theme(
+        "Synthwave", "Neon magenta and cyan with arcade energy",
+        bg=17, fg=231, accent=51, secondary=201, muted=146, panel=53,
+        cursor=201, cursor_fg=17, good=119, warn=227, danger=198, code=213,
+        ramp=(129, 165, 201, 207, 51, 87, 123, 159),
+    ),
+    "cyberpunk": _theme(
+        "Cyberpunk", "Electric yellow and cyan on absolute black",
+        bg=16, fg=231, accent=226, secondary=201, muted=250, panel=238,
+        cursor=51, cursor_fg=16, good=46, warn=226, danger=196, code=201,
+        ramp=(201, 207, 213, 219, 226, 190, 51, 87),
+    ),
 }
-_TUI_PALETTES = {
-    "dark": {
-        "background": (252, 234),
-        "title": (39, 234),
-        "help": (245, 234),
-        "selected": (45, 234),
-        "cursor": (231, 25),
-        "header": (245, 234),
-        "separator": (240, 234),
-        "number": (244, 234),
-        "active": (49, 234),
-        "turns": (84, 234),
-        "credits": (177, 234),
-        "summary": (253, 234),
-        "repo": (69, 234),
-        "status": (214, 236),
-        "warn": (214, 234),
-        "label": (255, 234),
-    },
-    "light": {
-        "background": (235, 255),
-        "title": (27, 255),
-        "help": (240, 255),
-        "selected": (25, 255),
-        "cursor": (255, 25),
-        "header": (57, 255),
-        "separator": (250, 255),
-        "number": (240, 255),
-        "active": (22, 255),
-        "turns": (28, 255),
-        "credits": (91, 255),
-        "summary": (235, 255),
-        "repo": (25, 255),
-        "status": (235, 254),
-        "warn": (130, 255),
-        "label": (232, 255),
-    },
-    "contrast": {
-        "background": (231, 16),
-        "title": (51, 16),
-        "help": (250, 16),
-        "selected": (16, 226),
-        "cursor": (16, 51),
-        "header": (51, 16),
-        "separator": (244, 16),
-        "number": (255, 16),
-        "active": (46, 16),
-        "turns": (51, 16),
-        "credits": (201, 16),
-        "summary": (231, 16),
-        "repo": (159, 16),
-        "status": (16, 226),
-        "warn": (226, 16),
-        "label": (231, 16),
-    },
+THEMES = tuple(_THEMES)
+_THEME_ALIASES = {
+    "high-contrast": "contrast", "high_contrast": "contrast",
+    "solarized": "solarized-dark", "tokyo": "tokyo-night",
 }
+_RAMPS = {name: theme["ramp"] for name, theme in _THEMES.items()}
+
+
+def _tui_palette(name: str) -> dict[str, tuple[int, int]]:
+    theme = _THEMES[name]
+    bg, fg = theme["bg"], theme["fg"]
+    return {
+        "background": (fg, bg),
+        "title": (theme["accent"], bg),
+        "help": (theme["muted"], bg),
+        "selected": (theme["accent"], bg),
+        "cursor": (theme["cursor_fg"], theme["cursor"]),
+        "header": (fg, bg),
+        "separator": (theme["panel"], bg),
+        "number": (theme["muted"], bg),
+        "active": (theme["good"], bg),
+        "turns": (theme["ramp"][-1], bg),
+        "credits": (theme["secondary"], bg),
+        "summary": (fg, bg),
+        "repo": (theme["ramp"][2], bg),
+        "status": ((theme["cursor_fg"], theme["cursor"])
+                   if name == "contrast" else (fg, theme["panel"])),
+        "warn": (theme["warn"], bg),
+        "label": (fg, bg),
+    }
+
+
+_TUI_PALETTES = {name: _tui_palette(name) for name in THEMES}
 
 
 def _normalise_theme(name: str | None) -> str:
-    chosen = (name or "dark").lower()
+    chosen = (name or "dark").strip().lower()
     if chosen in THEMES or chosen in _THEME_ALIASES:
         return _THEME_ALIASES.get(chosen, chosen)
     return "dark"
@@ -123,6 +228,16 @@ _RAMP = _RAMPS[_THEME]
 def theme_name() -> str:
     """The active theme name."""
     return _THEME
+
+
+def theme_label(name: str | None = None) -> str:
+    """The display name for a theme."""
+    return _THEMES[_normalise_theme(name or _THEME)]["label"]
+
+
+def theme_description(name: str) -> str:
+    """The short description shown in the theme picker."""
+    return _THEMES[_normalise_theme(name)]["description"]
 
 
 def next_theme(name: str | None = None) -> str:
@@ -216,7 +331,7 @@ def sgr_palette(curses) -> dict[str, int]:
     plain text in the full-screen reader — the one place a long report is
     actually read.
 
-    Pairs start at 20 to stay clear of ``tui_theme``'s 1-14.
+    Pairs start at 20 to stay clear of ``tui_theme``'s 1-17.
     """
     palette = {"1": curses.A_BOLD, "2": curses.A_DIM, "7": curses.A_REVERSE}
     try:
@@ -226,6 +341,8 @@ def sgr_palette(curses) -> dict[str, int]:
             background = -1
         except curses.error:
             background = curses.COLOR_BLACK
+        if curses.COLORS >= 256:
+            background = _THEMES[_THEME]["bg"]
         pair = 20
         for code, colour in _SGR_COLORS.items():
             curses.init_pair(pair, colour, background)
@@ -335,16 +452,11 @@ def banner_palette(curses) -> list[int]:
         curses.start_color()
         if curses.COLORS < 256:
             return []
-        try:
-            curses.use_default_colors()
-            background = -1
-        except curses.error:
-            background = curses.COLOR_BLACK
+        background = _THEMES[_THEME]["bg"]
         attributes = []
         for offset, colour in enumerate(_BANNER_RAMP):
-            # Pairs from 60: tui_theme owns 1-14, and sgr_palette now runs
-            # from 20 to roughly 46 because it carries the whole report
-            # palette rather than two colours of it.
+            # The banner and report reader never draw together; each rebuilds
+            # its pairs on entry. tui_theme owns 1-17 in both views.
             curses.init_pair(60 + offset, colour, background)
             attributes.append(curses.color_pair(60 + offset) | curses.A_BOLD)
         return attributes
@@ -505,24 +617,24 @@ def gradient_text(text: str) -> str:
 # can be emphasised.
 #
 _REPORT_THEMES = {
-    "dark": {
-        "ACCENT": 39, "MUTED": 245, "CODE": 180, "PAPER": 253,
-        "VIOLET": 177, "INDIGO": 99, "SKY": 69, "AZURE": 45,
-        "TEAL": 44, "MINT": 49, "LIME": 148, "AMBER": 214,
-        "ORANGE": 208, "ROSE": 204, "SLATE": 239,
-    },
-    "light": {
-        "ACCENT": 111, "MUTED": 244, "CODE": 180, "PAPER": 252,
-        "VIOLET": 141, "INDIGO": 105, "SKY": 75, "AZURE": 39,
-        "TEAL": 44, "MINT": 49, "LIME": 149, "AMBER": 215,
-        "ORANGE": 209, "ROSE": 204, "SLATE": 60,
-    },
-    "contrast": {
-        "ACCENT": 51, "MUTED": 250, "CODE": 226, "PAPER": 255,
-        "VIOLET": 201, "INDIGO": 207, "SKY": 123, "AZURE": 51,
-        "TEAL": 87, "MINT": 159, "LIME": 46, "AMBER": 226,
-        "ORANGE": 208, "ROSE": 196, "SLATE": 244,
-    },
+    name: {
+        "ACCENT": theme["accent"],
+        "MUTED": theme["muted"],
+        "CODE": theme["code"],
+        "PAPER": theme["fg"],
+        "VIOLET": theme["secondary"],
+        "INDIGO": theme["ramp"][0],
+        "SKY": theme["ramp"][2],
+        "AZURE": theme["ramp"][4],
+        "TEAL": theme["ramp"][6],
+        "MINT": theme["ramp"][-1],
+        "LIME": theme["good"],
+        "AMBER": theme["warn"],
+        "ORANGE": theme["warn"],
+        "ROSE": theme["danger"],
+        "SLATE": theme["slate"],
+    }
+    for name, theme in _THEMES.items()
 }
 
 ACCENT = MUTED = CODE = PAPER = ""
@@ -665,6 +777,7 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "profiles": ("🤖", "*"),
     "hooks": ("🔔", "}"),
     "mcp": ("🔌", ":"),
+    "theme": ("🎨", "T"),
     "help": ("💡", "?"),
     # Not a menu row: the agent that paces the rule under the header. It
     # lives here so it is held to the same rule as every other glyph — the

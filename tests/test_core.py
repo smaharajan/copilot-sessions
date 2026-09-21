@@ -1496,7 +1496,10 @@ class CSTest(StoreTest):
         for icon, label, description, action, asks in items:
             self.assertTrue(label and description, f"unlabelled entry: {label!r}")
             self.assertTrue(callable(action), f"{label} has nothing to run")
-            self.assertIn(asks, ("", "term", "period"), f"{label}: odd ask {asks!r}")
+            self.assertIn(
+                asks, ("", "term", "period", "theme"),
+                f"{label}: odd ask {asks!r}",
+            )
             # Two cells, so the label column starts in the same place on
             # every row; anything wider shoves that row's text sideways.
             self.assertEqual(ui.cells(icon), 2, f"{label}: icon is not 2 cells")
@@ -1504,6 +1507,8 @@ class CSTest(StoreTest):
                          "two entries share an icon")
         self.assertEqual([item[1] for item in items if item[4] == "term"],
                          ["Search"], "only search asks for text")
+        self.assertEqual([item[1] for item in items if item[4] == "theme"],
+                         ["Theme"], "only Theme changes appearance")
         self.assertTrue([item for item in items if item[4] == "period"],
                         "nothing offers a window to count over")
         code, out = self._run("home")
@@ -1512,7 +1517,6 @@ class CSTest(StoreTest):
 
     def test_every_menu_entry_can_actually_be_opened(self):
         """Choosing a row ran its action blind — one of them was not callable."""
-        import curses
         from unittest import mock
 
         import cs.cli as cli
@@ -1525,7 +1529,7 @@ class CSTest(StoreTest):
             return picks.pop(0) if view is cli._home_tui else None
 
         out = _Tty()
-        with mock.patch.object(curses, "wrapper", fake_wrapper), \
+        with mock.patch.object(cli, "_curses_wrapper", fake_wrapper), \
                 mock.patch.object(cli, "_page", lambda _text, _sort=None: True), \
                 mock.patch.object(cli, "_pause", lambda _message: True), \
                 mock.patch.object(sys, "stdin", mock.Mock(isatty=lambda: True)), \
@@ -1998,6 +2002,21 @@ class CSTest(StoreTest):
                 ("resume", "id-new"),
             )
 
+    def test_hovering_a_listing_header_does_not_sort(self):
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-new", "2026-08-02T12:00", "Newest", "r/a", "/tmp", 1, 10),
+            ("id-old", "2026-08-01T12:00", "Oldest", "r/a", "/tmp", 1, 20),
+        ]
+        report = [27, *map(ord, "[<35;6;4M")]
+        screen = Screen([*report, 10])
+        self.assertEqual(
+            _listing_tui(screen, rows, "Sessions"),
+            ("resume", "id-new"),
+        )
+        self.assertEqual(screen.frames[0][(3, 5)], screen.frames[-1][(3, 5)])
+
     def test_leaving_a_view_does_not_spill_mouse_reports_onto_the_shell(self):
         """A wheel flick outran the redraws; the leftovers echoed at the prompt."""
         from unittest import mock
@@ -2014,7 +2033,9 @@ class CSTest(StoreTest):
             # Curses restores the terminal after this, so the queue has to be
             # cleared again — that second pass is the one that was missing.
             cli._disable_mouse()
-        self.assertEqual(order, ["\033[?1006l", "drain", "drain"])
+        self.assertEqual(
+            order, ["\033[?1003l\033[?1006l", "drain", "drain"]
+        )
 
         # Never used the mouse, never eat what the user typed ahead.
         order.clear()

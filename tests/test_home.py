@@ -16,7 +16,7 @@ class HomeMenuTest(StoreTest):
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
         for wanted in ("Autonomy", "Handoffs", "Security", "Efficiency",
-                       "Hooks"):
+                       "Hooks", "Theme"):
             self.assertIn(wanted, labels)
         # The Improve group and Working days are commented out of the menu,
         # but all four commands still run when typed. A row on the menu and a
@@ -93,6 +93,9 @@ class HomeMenuTest(StoreTest):
 
         for _, label, _, action, asks in cli._home_items():
             if asks == "term":
+                continue
+            if asks == "theme":
+                self.assertEqual(action("dark"), "light")
                 continue
             if asks == "period":
                 # The menu picks the window; check it runs at both ends.
@@ -274,16 +277,143 @@ class HomeMenuTest(StoreTest):
         self.assertIsNone(cli._home_tui(screen, {"revealed": True}))
         self.assertGreater(len(screen.frames), 9, "q quit while typing")
 
-    def test_t_cycles_the_theme_without_opening_the_filter(self):
+    def test_t_opens_the_gallery_and_enter_applies_without_filtering(self):
+        import curses
+
         from cs import cli, ui
 
         original = ui.theme_name()
         state = {"revealed": True, "theme": "dark"}
         try:
-            cli._home_tui(Screen([ord("t"), ord("q")]), state)
+            cli._home_tui(
+                Screen([
+                    ord("t"), curses.KEY_DOWN, 10, ord("q"), ord("q")
+                ]),
+                state,
+            )
             self.assertEqual(state["theme"], "light")
         finally:
             ui.set_theme(original)
+
+    def test_the_theme_row_opens_the_gallery_and_returns_home_after_applying(self):
+        import curses
+
+        from cs import cli, ui
+
+        original = ui.theme_name()
+        items = cli._home_items(theme="dark")
+        theme = next(i for i, item in enumerate(items) if item[1] == "Theme")
+        state = {"revealed": True, "theme": "dark"}
+        screen = Screen(
+            [curses.KEY_DOWN] * theme
+            + [10, curses.KEY_DOWN, 10, ord("q"), ord("q")]
+        )
+        try:
+            self.assertIsNone(cli._home_tui(screen, state))
+            self.assertEqual(state["theme"], "light")
+            self.assertTrue(any(
+                text.startswith("Light · choose from 20")
+                for text in screen.frames[-1].values()
+            ))
+        finally:
+            ui.set_theme(original)
+
+    def test_double_click_opens_the_theme_gallery(self):
+        import curses
+
+        from cs import cli
+
+        probe = Screen([curses.KEY_END, ord("q")])
+        cli._home_tui(probe, {"revealed": True, "theme": "dark"})
+        theme_row = next(
+            row for frame in probe.frames for (row, column), text in frame.items()
+            if column == 6 and text.strip() == "Theme"
+        )
+        events = iter([
+            ("move", 6, theme_row),
+            ("double", 6, theme_row),
+        ])
+
+        def mouse_event(_screen, _curses, key, _last_click, _pending):
+            return next(events) if key == curses.KEY_MOUSE else None
+
+        screen = Screen([
+            curses.KEY_END, curses.KEY_MOUSE, curses.KEY_MOUSE, 27
+        ])
+        with (
+            patch.object(cli, "_mouse_event", side_effect=mouse_event),
+            patch.object(cli, "_theme_picker", return_value="dark") as picker,
+        ):
+            cli._home_tui(screen, {"revealed": True, "theme": "dark"})
+        picker.assert_called_once_with(screen, "dark")
+
+    def test_hover_and_single_click_preview_without_applying(self):
+        import curses
+
+        from cs import cli
+
+        screen = Screen([curses.KEY_MOUSE, curses.KEY_MOUSE, ord("q")])
+        with patch.object(
+            cli,
+            "_mouse_event",
+            side_effect=[("move", 5, 3), ("click", 5, 3), None],
+        ):
+            self.assertEqual(cli._theme_picker(screen, "dark"), "dark")
+        self.assertGreaterEqual(len(screen.frames), 2)
+
+    def test_double_click_applies_a_theme_and_returns_to_home(self):
+        import curses
+
+        from cs import cli
+
+        screen = Screen([curses.KEY_MOUSE, curses.KEY_MOUSE, ord("q")])
+        with patch.object(
+            cli,
+            "_mouse_event",
+            side_effect=[("move", 5, 3), ("double", 5, 3)],
+        ):
+            self.assertEqual(cli._theme_picker(screen, "dark"), "light")
+        self.assertEqual(len(screen.frames), 2)
+
+    def test_hover_keeps_the_same_theme_under_the_pointer_when_scrolled(self):
+        import curses
+
+        from cs import cli
+
+        class Short(Screen):
+            def getmaxyx(self):
+                return 10, 100
+
+        screen = Short([curses.KEY_MOUSE, curses.KEY_MOUSE, ord("q")])
+        with patch.object(
+            cli,
+            "_mouse_event",
+            side_effect=[("move", 5, 3), ("double", 5, 3)],
+        ):
+            chosen = cli._theme_picker(screen, "cyberpunk")
+        self.assertEqual(chosen, "everforest")
+
+    def test_the_theme_picker_holds_its_shape_at_supported_widths(self):
+        from cs import cli, ui
+
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width):
+                class Sized(Screen):
+                    def __init__(self, keys, columns):
+                        super().__init__(keys)
+                        self.columns = columns
+
+                    def getmaxyx(self):
+                        return 24, self.columns
+
+                screen = Sized([ord("q")], width)
+                self.assertEqual(cli._theme_picker(screen, "dark"), "dark")
+                for (row, column), text in screen.frames[-1].items():
+                    self.assertLess(row, 24)
+                    self.assertLessEqual(column + ui.cells(text), width)
+                footer = screen.frames[-1][(23, max((width - 100) // 2, 0))]
+                self.assertIn("Enter", footer)
+                self.assertIn("Esc", footer)
 
     def test_the_cursor_steps_through_what_is_on_screen(self):
         """With a filter up, the rows between two matches are not there."""
@@ -469,14 +599,22 @@ class HomeMenuTest(StoreTest):
         import cs.cli as cli
 
         items = cli._home_items()
-        state: dict = {"revealed": True, "period": 30}
+        state: dict = {"revealed": True, "period": 30, "theme": "dark"}
         for index, item in enumerate(items):
             if item[4] == "term":
                 continue  # a search with no term is not a view
             with self.subTest(row=item[1]):
                 # Down to the row, then a single Enter.
+                stays = item[4] == "theme"
                 keys = [curses.KEY_DOWN] * index + [10]
-                chosen = cli._home_tui(Screen(keys), dict(state))
+                if stays:
+                    keys += [curses.KEY_DOWN, 10, ord("q"), ord("q")]
+                current = dict(state)
+                chosen = cli._home_tui(Screen(keys), current)
+                if stays:
+                    self.assertIsNone(chosen)
+                    self.assertEqual(current["theme"], "light")
+                    continue
                 got = chosen[0] if isinstance(chosen, tuple) else chosen
                 self.assertEqual(got, index, f"{item[1]} did not open")
                 if item[4] == "period":
@@ -714,15 +852,16 @@ class LandingAnimationTest(StoreTest):
             [None] * len(screen.frames),
         )
 
-    def test_the_home_readings_refresh_after_thirty_seconds(self):
+    def test_the_whole_home_refreshes_after_thirty_seconds(self):
         from cs import cli, ui
 
         class ClockScreen(Screen):
             def __init__(self):
-                super().__init__([-1, -1, ord("q")])
+                super().__init__([-1] * 30 + [ord("q")])
                 self.now = 0.0
                 self.delay = 0
                 self.delays = []
+                self.read_delays = []
 
             def timeout(self, milliseconds):
                 super().timeout(milliseconds)
@@ -730,6 +869,7 @@ class LandingAnimationTest(StoreTest):
                 self.delays.append(milliseconds)
 
             def getch(self):
+                self.read_delays.append(self.delay)
                 key = super().getch()
                 if key == -1:
                     self.now += self.delay / 1000
@@ -748,8 +888,163 @@ class LandingAnimationTest(StoreTest):
         fresh.assert_called_once_with()
         self.assertEqual(state["facts"], snapshot[0])
         self.assertEqual(state["activity"], snapshot[1])
-        self.assertTrue(any(ui.PACE_MS < delay <= 30_000
+        self.assertTrue(any("2" in text
+                            for text in screen.frames[-1].values()))
+        self.assertTrue(any(ui.PACE_MS < delay <= 1000
                             for delay in screen.delays))
+        self.assertEqual(screen.read_delays[-1], 1000,
+                         "idle input must keep the one-second refresh heartbeat")
+
+    def test_a_new_usage_event_changes_the_next_home_snapshot(self):
+        import sqlite3
+
+        from cs import cli
+
+        before, _activity = cli._home_snapshot()
+        conn = sqlite3.connect(cli.db.default_db_path())
+        conn.execute(
+            """INSERT INTO assistant_usage_events
+               (session_id, turn_index, model, total_nano_aiu)
+               VALUES ('sess-alpha', 2, 'gpt-test', 1000000000)"""
+        )
+        conn.commit()
+        conn.close()
+        after, _activity = cli._home_snapshot()
+
+        def aiu(facts):
+            return next(value for value, label in facts if label == "AIU")
+
+        self.assertEqual(aiu(before), "4.00")
+        self.assertEqual(aiu(after), "5.00")
+
+    def test_small_credit_updates_remain_visible_with_large_totals(self):
+        import sqlite3
+
+        from cs import cli, ui
+
+        with sqlite3.connect(cli.db.default_db_path()) as conn:
+            conn.execute(
+                """INSERT INTO assistant_usage_events
+                   (session_id, model, total_nano_aiu)
+                   VALUES ('sess-alpha', 'test-model', 999996000000000)"""
+            )
+        before, _ = cli._home_snapshot()
+        with sqlite3.connect(cli.db.default_db_path()) as conn:
+            conn.execute(
+                """INSERT INTO assistant_usage_events
+                   (session_id, model, total_nano_aiu)
+                   VALUES ('sess-alpha', 'test-model', 250000000)"""
+            )
+        after, _ = cli._home_snapshot()
+        self.assertIn(("1,000,000.00", "AIU"), before)
+        self.assertIn(("1,000,000.25", "AIU"), after)
+        facts = [
+            ({"sessions": "1,234", "turns": "7,890"}.get(label, value), label)
+            for value, label in after
+        ]
+        for height in (24, 40):
+            for width in (40, 60, 80, 100, 140):
+                with self.subTest(height=height, width=width):
+                    screen = Screen([ord("q")])
+                    screen.getmaxyx = lambda h=height, w=width: (h, w)
+                    cli._home_tui(screen, {"revealed": True, "facts": facts})
+                    self.assertIn("1,000,000.25", screen.frames[0].values())
+                    for (_row, column), text in screen.frames[0].items():
+                        self.assertLessEqual(column + ui.cells(text), width)
+
+    def test_repeated_refreshes_rearm_input_without_query_time_drift(self):
+        from cs import cli, ui
+
+        starts = []
+
+        class ClockScreen(Screen):
+            now = 0.0
+            delay = -1
+
+            def timeout(self, milliseconds):
+                super().timeout(milliseconds)
+                self.delay = milliseconds
+
+            def getch(self):
+                delay = self.delay
+                self.delay = -1  # a read/handler must not leave the next read blocking
+                if not 1 <= delay <= 1000:
+                    raise AssertionError("every home read needs a bounded timeout")
+                if len(starts) == 3:
+                    return ord("q")
+                self.now += delay / 1000
+                return -1
+
+        screen = ClockScreen()
+
+        def snapshot():
+            starts.append(screen.now)
+            screen.now += 1.5
+            return [(f"{len(starts):.2f}", "AIU")], []
+
+        with (
+            patch.object(ui, "PACE_FRAMES", 0),
+            patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
+            patch.object(cli, "_home_snapshot", side_effect=snapshot),
+        ):
+            cli._home_tui(screen, {"revealed": True})
+        self.assertEqual(starts, [30, 60, 90])
+        self.assertIn("3.00", screen.frames[-1].values())
+
+    def test_mouse_reports_do_not_stop_idle_refresh(self):
+        from cs import cli, ui
+
+        class ClockScreen(Screen):
+            now = 0.0
+            delay = -1
+
+            def timeout(self, milliseconds):
+                super().timeout(milliseconds)
+                self.delay = milliseconds
+
+            def nodelay(self, enabled):
+                self.timeout(0 if enabled else -1)
+
+            def getch(self):
+                key = super().getch()
+                if key == -1:
+                    if self.delay < 0:
+                        raise AssertionError("mouse report left home input blocking")
+                    self.now += self.delay / 1000
+                return key
+
+        events = [
+            [27, *map(ord, report)]
+            for report in ("[<35;10;5M", "[<0;10;5m", "[<65;10;5M")
+        ]
+        events.append([ord("/"), *events[0], 10])
+        for keys in events:
+            with self.subTest(keys=keys):
+                screen = ClockScreen([*keys, *([-1] * 30), ord("q")])
+                state = {"revealed": True, "facts": [("4.00", "AIU")]}
+                snapshot = ([("5.00", "AIU")], [0, 1])
+                with (
+                    patch.object(ui, "PACE_FRAMES", 0),
+                    patch.object(
+                        cli.time, "monotonic", side_effect=lambda screen=screen: screen.now
+                    ),
+                    patch.object(cli, "_home_snapshot", return_value=snapshot) as fresh,
+                ):
+                    cli._home_tui(screen, state)
+                fresh.assert_called_once_with()
+                self.assertEqual(state["facts"], snapshot[0])
+                self.assertTrue(any(
+                    "5.00" in text for text in screen.frames[-1].values()
+                ))
+
+    def test_refresh_time_stays_visible_at_supported_widths(self):
+        from cs import cli, ui
+
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width):
+                status = cli._home_status("", 20, 20, width, refreshed="12:34:56")
+                self.assertIn("updated 12:34:56", status)
+                self.assertLessEqual(ui.cells(status), width)
 
     def test_a_failed_refresh_keeps_the_last_good_readings(self):
         import sqlite3
@@ -764,6 +1059,87 @@ class LandingAnimationTest(StoreTest):
         self.assertEqual(state["facts"], [("1", "sessions")])
         self.assertEqual(state["activity"], [1])
         self.assertTrue(state["refresh_error"])
+
+    def test_returning_home_does_not_restart_an_overdue_refresh_deadline(self):
+        from cs import cli
+
+        state = {"revealed": True, "facts": [("4.00", "AIU")]}
+        with patch.object(cli.time, "monotonic", return_value=0):
+            cli._home_tui(Screen([ord("q")]), state)
+        screen = Screen([ord("q")])
+        with (
+            patch.object(cli.time, "monotonic", return_value=60),
+            patch.object(
+                cli, "_home_snapshot", return_value=([("5.00", "AIU")], [])
+            ) as fresh,
+        ):
+            cli._home_tui(screen, state)
+        fresh.assert_called_once_with()
+        self.assertTrue(any("5.00" in text for text in screen.frames[0].values()))
+
+
+class CursesMouseCompatibilityTest(unittest.TestCase):
+    def test_only_old_native_sgr_needs_compat_and_term_is_restored(self):
+        import os
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        from cs import cli
+
+        for modern, mouse, expected in (
+            (False, b"\x1b[<", "xterm-256color"),
+            (False, b"\x1b[M", "test-terminal"),
+            (True, b"\x1b[<", "test-terminal"),
+        ):
+            with self.subTest(modern=modern, mouse=mouse):
+                seen = []
+
+                def wrapper(callback, *args, seen=seen):
+                    seen.append(os.environ["TERM"])
+                    return callback(*args)
+
+                curses = SimpleNamespace(
+                    setupterm=Mock(), tigetstr=Mock(return_value=mouse),
+                    wrapper=wrapper,
+                )
+                if modern:
+                    curses.BUTTON5_PRESSED = 1
+                with (
+                    patch.dict("sys.modules", {"curses": curses}),
+                    patch.dict(os.environ, {"TERM": "test-terminal"}),
+                    patch.object(cli, "_CURSES_MOUSE_COMPAT", None),
+                ):
+                    self.assertEqual(cli._curses_wrapper(lambda n: n, 42), 42)
+                    # ncurses caches the fallback's terminfo after the first view.
+                    curses.tigetstr.return_value = b"\x1b[M"
+                    self.assertEqual(cli._curses_wrapper(lambda n: n, 43), 43)
+                    with self.assertRaisesRegex(RuntimeError, "test failure"):
+                        cli._curses_wrapper(
+                            Mock(side_effect=RuntimeError("test failure"))
+                        )
+                    self.assertEqual(os.environ["TERM"], "test-terminal")
+                self.assertEqual(seen, [expected] * 3)
+
+    def test_only_menus_request_mouse_motion(self):
+        import curses
+
+        from cs import cli
+
+        for motion in (False, True):
+            with (
+                self.subTest(motion=motion),
+                patch.object(curses, "mousemask", return_value=(1, 0)) as mask,
+                patch.object(curses, "mouseinterval"),
+                patch.object(curses, "set_escdelay", create=True),
+                patch.object(cli, "_write_terminal") as write,
+                patch.object(cli, "_SGR_ENABLED", False),
+                patch.object(cli, "_MOUSE_USED", False),
+            ):
+                self.assertTrue(cli._enable_mouse(curses, motion=motion))
+                self.assertEqual(
+                    bool(mask.call_args.args[0] & curses.REPORT_MOUSE_POSITION), motion
+                )
+                self.assertEqual("\033[?1003h" in write.call_args.args[0], motion)
 
 
 class MenuIconTest(StoreTest):
@@ -947,6 +1323,10 @@ class SplitMouseReportTest(unittest.TestCase):
         typed = [ch for ch in "<64;44;22M"
                  if self._event(Screen(keys=[]), ord(ch)) is None]
         self.assertEqual(typed, [])
+
+    def test_an_sgr_motion_report_becomes_a_hover_event(self):
+        screen = Screen(keys=[ord(c) for c in "[<35;10;5M"])
+        self.assertEqual(self._event(screen, 27), ("move", 9, 4))
 
     def test_a_report_split_mid_digits_is_not_typing(self):
         """A sequence can break at any byte, so the fix cannot key off which

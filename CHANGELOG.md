@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The home screen now cycles through dark, light and high-contrast themes with
-  `t` (`CS_THEME=dark|light|contrast` selects one at launch), and refreshes its
-  read-only SQLite metrics every 30 seconds.
+- The home screen now offers a mouse-and-keyboard live-preview Theme picker
+  with 20 curated palettes (`t` is the shortcut; `CS_THEME` selects one at
+  launch), and rebuilds the complete landing page — including total AI credits
+  and a visible update time — from its read-only SQLite store every 30 seconds.
 - **`cs skills` counts every root Copilot loads from**, not the two it used to
   walk. A machine with forty-nine personal skills was reporting forty-nine
   while the CLI was resolving eighty-two: the enabled plugins'
@@ -140,6 +141,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hover and wheel input on native-SGR terminals with legacy ncurses now use
+  the existing SGR parser through an xterm-compatible terminal entry. Native
+  keyboard handling is preserved, and the original `TERM` is restored outside
+  each full-screen view.
+- Returning home after its refresh deadline updates the data immediately,
+  rather than starting another 30-second wait. Refresh also re-arms the
+  correct idle or animation timeout, and normal query time no longer extends
+  each 30-second interval.
+- The home loop now sets its timeout immediately before every input read,
+  with idle waits capped at one second. Mouse or modal input-mode changes can
+  no longer leave the next refresh waiting for a keypress.
+- Home credits show two decimal places and take priority in narrow windows.
+  Rounded `k` totals previously hid changes smaller than 100 AIU, making
+  successful live refreshes appear not to update.
+- Theme backgrounds now extend to the banner and report text. Selection,
+  status and credit colours meet 4.5:1 text contrast across all 20 palettes;
+  narrow theme galleries retain the Enter and Esc hints.
 - Standing in your home directory no longer renames your own kit.
   `.copilot/skills` is a *project* pattern, and in `$HOME` it **is** the
   personal directory, so the inventory reported all forty-nine personal skills — and

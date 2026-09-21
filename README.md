@@ -71,9 +71,20 @@ returns here**, so nothing is a dead end. The layout is width-aware: columns
 retire in a fixed order as the window narrows, so a view still reads at 60
 columns instead of wrapping into rubble.
 
-Press `t` to cycle the built-in **dark**, **light**, and **high-contrast**
-themes. The counts and activity strip refresh from the read-only SQLite store
-every 30 seconds while the home screen is open.
+Choose **Theme** on the home screen (or press `t`) for a mouse-and-keyboard
+live-preview picker with 20 curated palettes, including Dark, Light, High
+Contrast, Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Catppuccin, Kanagawa,
+Rosé Pine and Cyberpunk. Hover or single-click previews; `Enter` or double-click
+applies and returns to the main page; `Esc` cancels the preview. The complete
+home screen — including total AI credits and a visible refresh timestamp — is
+rebuilt from the read-only SQLite store every 30 seconds.
+
+Home credits show two decimal places rather than rounded `k` totals, so small
+new charges remain visible. They stay visible first as the window narrows.
+
+On legacy ncurses builds, terminals with native SGR mouse reporting (such as
+Ghostty) use xterm-compatible decoding inside `cs`; the original terminal
+setting is restored before returning to the shell or launching another app.
 
 The facts line reads **used over installed**. `11/30 skills` means eleven of
 your thirty were ever reached for; the other nineteen are quietly rotting.

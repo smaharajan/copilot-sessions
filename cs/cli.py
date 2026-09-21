@@ -1001,7 +1001,7 @@ def _interactive_listing(
     state: dict = {}
     while True:
         try:
-            action = curses.wrapper(
+            action = _curses_wrapper(
                 _listing_tui, rows, title, default_sort, hits, state
             )
         except KeyboardInterrupt:
@@ -1127,9 +1127,35 @@ def _prompt(screen, theme, y: int, width: int, prefix: str, initial: str) -> str
 _DOUBLE_CLICK_SECONDS = 0.4
 _SGR_ENABLED = False
 _MOUSE_USED = False
+_CURSES_MOUSE_COMPAT: bool | None = None
 
 
-def _enable_mouse(curses) -> bool:
+def _curses_wrapper(view, *args):
+    """Keep legacy ncurses from swallowing native SGR motion and wheel events."""
+    import curses
+
+    global _CURSES_MOUSE_COMPAT
+    if _CURSES_MOUSE_COMPAT is None:
+        _CURSES_MOUSE_COMPAT = False
+        if not hasattr(curses, "BUTTON5_PRESSED"):
+            curses.setupterm()
+            _CURSES_MOUSE_COMPAT = curses.tigetstr("kmous") == b"\033[<"
+    if not _CURSES_MOUSE_COMPAT:
+        return curses.wrapper(view, *args)
+    # Probe once: ncurses caches the compatibility entry after the first view.
+    # Keyboard decoding stays native; the existing parser handles raw SGR.
+    original = os.environ.get("TERM")
+    os.environ["TERM"] = "xterm-256color"
+    try:
+        return curses.wrapper(view, *args)
+    finally:
+        if original is None:
+            os.environ.pop("TERM", None)
+        else:
+            os.environ["TERM"] = original
+
+
+def _enable_mouse(curses, *, motion: bool = False) -> bool:
     """Turn on click and wheel reporting. False when the terminal can't do it.
 
     Two protocols are enabled at once, because neither covers everything:
@@ -1144,14 +1170,15 @@ def _enable_mouse(curses) -> bool:
       Terminals that ignore it keep sending X10, which ncurses still parses.
     """
     global _SGR_ENABLED, _MOUSE_USED
-    # Asking only for resolved clicks, not raw presses: with PRESSED in the
-    # mask ncurses reports every press verbatim and never synthesises the
-    # double-click.
+    # Menus request motion to preview the row under the pointer; readers do not.
+    # Button presses remain excluded: ncurses can still synthesise clicks and
+    # double-clicks rather than making every view pair press/release events.
     wanted = (
         curses.BUTTON1_CLICKED
         | curses.BUTTON1_DOUBLE_CLICKED
         | curses.BUTTON4_PRESSED
         | getattr(curses, "BUTTON5_PRESSED", 0)
+        | (getattr(curses, "REPORT_MOUSE_POSITION", 0) if motion else 0)
     )
     try:
         available, _ = curses.mousemask(wanted)
@@ -1167,7 +1194,7 @@ def _enable_mouse(curses) -> bool:
             curses.set_escdelay(25)
         except (curses.error, AttributeError):
             pass
-        _write_terminal("\033[?1006h")
+        _write_terminal(("\033[?1003h" if motion else "") + "\033[?1006h")
         _SGR_ENABLED = _MOUSE_USED = True
     return bool(available)
 
@@ -1177,7 +1204,7 @@ def _disable_mouse() -> None:
     global _SGR_ENABLED
     if _SGR_ENABLED:
         _SGR_ENABLED = False
-        _write_terminal("\033[?1006l")
+        _write_terminal("\033[?1003l\033[?1006l")
     if _MOUSE_USED:
         # A flick of the wheel outruns any redraw, so reports are still queued
         # when we stop reading them. Left there, the shell reads them next and
@@ -1342,7 +1369,7 @@ def _mouse_event(
 ) -> tuple[str, int, int] | None:
     """Normalise either protocol's report into (kind, x, y).
 
-    Kinds are 'click', 'double', 'wheel-up', 'wheel-down' and 'ignored' — the
+    Kinds are 'click', 'double', 'move', 'wheel-up', 'wheel-down' and 'ignored' — the
     last for a report that was consumed but means nothing here. Only a
     genuine keypress returns None, because an SGR report starts with Esc and
     the caller must not mistake one for the other.
@@ -1360,6 +1387,8 @@ def _mouse_event(
             return "double", x, y
         if state & curses.BUTTON1_CLICKED:
             return "click", x, y
+        if state & getattr(curses, "REPORT_MOUSE_POSITION", 0):
+            return "move", x, y
         return "ignored", x, y
 
     if key != 27:
@@ -1377,6 +1406,8 @@ def _mouse_event(
         return "wheel-up", x, y
     if button == 65:
         return "wheel-down", x, y
+    if button & 32:
+        return "move", x, y
     if button != 0 or pressed:
         # Only button 1 acts, and only on release — that is one full click.
         # Still 'ignored' rather than None: the Esc that opened this report
@@ -1647,7 +1678,7 @@ def _listing_tui(
                 return None
             if event:
                 kind, mx, my = event
-                if kind == "ignored":
+                if kind in ("ignored", "move"):
                     pass
                 elif kind in ("wheel-up", "wheel-down"):
                     step = -3 if kind == "wheel-up" else 3
@@ -2499,7 +2530,7 @@ def _read_in_place(text: str, sort: dict | None = None) -> bool:
             _disable_mouse()
 
     try:
-        curses.wrapper(view)
+        _curses_wrapper(view)
     except (curses.error, OSError):
         return False
     except KeyboardInterrupt:
@@ -6211,7 +6242,8 @@ def _thousands(n: int | None) -> str:
     return str(n)
 
 
-def _home_items(period: int = 30) -> list[tuple[str, str, str, object, str]]:
+def _home_items(period: int = 30,
+                theme: str | None = None) -> list[tuple[str, str, str, object, str]]:
     """The landing screen's menu: icon, label, what it does, what to run, asks.
 
     Every action is callable, so choosing a row can never call something that
@@ -6232,6 +6264,7 @@ def _home_items(period: int = 30) -> list[tuple[str, str, str, object, str]]:
     and the shape of a row is what you actually remember about it.
     """
     window = _window_label(period)
+    theme = theme or ui.theme_name()
     return [
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
@@ -6312,6 +6345,9 @@ def _home_items(period: int = 30) -> list[tuple[str, str, str, object, str]]:
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
          cmd_mcp, ""),
+        (ui.menu_icon("theme"), "Theme",
+         f"{ui.theme_label(theme)} · choose from {len(ui.THEMES)} palettes",
+         ui.next_theme, "theme"),
         (ui.menu_icon("help"), "Help", "every command and every key",
          lambda: _page(_capture(cmd_help)), ""),
     ]
@@ -6468,7 +6504,7 @@ def _home_step(shown: list[int], cursor: int, delta: int) -> int:
 
 def _home_status(query: str, matched: int, total: int, width: int,
                  period: int = 30, theme: str = "dark",
-                 refresh_error: bool = False) -> str:
+                 refresh_error: bool = False, refreshed: str = "") -> str:
     """The one hint line. It says what you can do, or what you have typed.
 
     One line rather than two: a key list above the menu and a second one
@@ -6487,11 +6523,14 @@ def _home_status(query: str, matched: int, total: int, width: int,
         line = " refresh failed · retrying in 30s · t theme · q quit "
         return line if ui.cells(line) <= width else " refresh failed · q "
     short = next((s for _k, days, _l, s in _PERIODS if days == period), "30d")
+    theme = ui.theme_label(theme)
+    live = f"updated {refreshed}" if refreshed else "refresh 30s"
     for line in (
         f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme} · "
-        "refresh 30s · type to find · / search · q quit ",
-        f" ↑↓ · ↵ open · ←→ {short} · t {theme} · refresh 30s · / search · q ",
-        f" ↑↓ · ↵ · ←→ {short} · t {theme} · refresh 30s · q ",
+        f"{live} · type to find · / search · q quit ",
+        f" ↑↓ · ↵ open · ←→ {short} · t themes · {live} · / search · q ",
+        f" ↑↓ · ↵ · ←→ {short} · t themes · {live} · q ",
+        f" ↑↓ · ↵ · {live} · q ",
         " ↑↓ · ↵ · type · q ",
     ):
         if ui.cells(line) <= width:
@@ -6532,9 +6571,6 @@ def _home_snapshot(days: int = 120) -> tuple[list[tuple[str, str]], list[int]]:
         series = db.activity(conn, days)
     finally:
         conn.close()
-    # Counts of what you have, not what it cost: spend has a whole view of
-    # its own, and the model it names changes every few months.
-    #
     # Two halves, and the line is only as long as it can be: what the store
     # holds, then what is wired up to work on it. 'interactive' used to sit
     # second and is gone — it is a distinction the listing already makes in
@@ -6547,7 +6583,10 @@ def _home_snapshot(days: int = 120) -> tuple[list[tuple[str, str]], list[int]]:
     # worth looking at before writing the hundred and twenty-sixth. Sub-agents
     # are counted as runs, because the store bills those exactly and 'how
     # much did we actually delegate' is the question behind the row.
+    nano_aiu = basics["total_nano_aiu"]
+    # Precise credits come first so small live changes survive narrow windows.
     facts = [
+        (f"{nano_aiu / 1e9:,.2f}" if nano_aiu > 0 else "-", "AIU"),
         (f"{basics['total']:,}", "sessions"),
         (f"{basics['total_turns']:,}", "turns"),
         (f"{basics['repos']}", "repos"),
@@ -6566,6 +6605,7 @@ def _refresh_home(state: dict) -> bool:
     except (OSError, sqlite3.Error):
         state["refresh_error"] = True
         return False
+    state["refreshed"] = time.strftime("%H:%M:%S")
     state.pop("refresh_error", None)
     return True
 
@@ -6759,14 +6799,114 @@ def _draw_home_activity(screen, theme, width: int, row: int,
     return row + 1
 
 
+def _theme_picker(screen, current: str) -> str:
+    """Preview and choose one of the built-in themes."""
+    import curses
+
+    themes = list(ui.THEMES)
+    cursor = themes.index(current)
+    last_click = [0.0, -1]
+    pending: list[int] = []
+    offset = 0
+    screen.timeout(-1)
+    while True:
+        selected = themes[cursor]
+        palette = ui.tui_theme(curses, selected)
+        try:
+            screen.bkgd(" ", palette["background"])
+        except curses.error:
+            pass
+        screen.erase()
+        height, width = screen.getmaxyx()
+        panel_width = min(width, 100)
+        left = max((width - panel_width) // 2, 0)
+        box_height = min(len(themes) + 4, height)
+        top = max((height - box_height) // 2, 0)
+        _addstr(screen, top, left, " Choose theme", panel_width, palette["title"])
+        _addstr(
+            screen, top + 1, left,
+            f" {len(themes)} curated palettes · hover or arrows preview instantly",
+            panel_width, palette["help"],
+        )
+        visible = max(box_height - 4, 1)
+        if cursor < offset:
+            offset = cursor
+        elif cursor >= offset + visible:
+            offset = cursor - visible + 1
+        offset = min(offset, max(len(themes) - visible, 0))
+        for row, index in enumerate(
+            range(offset, min(offset + visible, len(themes))), top + 2
+        ):
+            name = themes[index]
+            on_cursor = index == cursor
+            style = palette["cursor"] if on_cursor else palette["summary"]
+            if on_cursor:
+                _addstr(screen, row, left, " " * panel_width, panel_width, style)
+            marker = ">" if on_cursor else ("*" if name == current else " ")
+            _addstr(screen, row, left + 1, marker, 1,
+                    palette["cursor"] if on_cursor else palette["active"])
+            _addstr(
+                screen, row, left + 3, f"{ui.theme_label(name):<18}", 18, style
+            )
+            if panel_width > 38:
+                _addstr(
+                    screen, row, left + 23, ui.theme_description(name),
+                    panel_width - 24,
+                    style if on_cursor else palette["repo"],
+                )
+        footer = min(top + box_height - 1, height - 1)
+        hint = " hover/click preview · double-click/Enter apply & return · Esc back "
+        if ui.cells(hint) > panel_width:
+            hint = " ↑↓ preview · Enter apply · Esc back "
+        _addstr(
+            screen, footer, left,
+            hint,
+            panel_width, palette["status"],
+        )
+        screen.refresh()
+        try:
+            key = pending.pop(0) if pending else screen.getch()
+        except KeyboardInterrupt:
+            return current
+        event = _mouse_event(screen, curses, key, last_click, pending)
+        if event:
+            kind, x, y = event
+            start = top + 2
+            if (kind in ("move", "click", "double")
+                    and left <= x < left + panel_width
+                    and start <= y < start + visible):
+                hovered = offset + y - start
+                if hovered < len(themes):
+                    cursor = hovered
+                    if kind == "double":
+                        return themes[cursor]
+            elif kind == "wheel-up":
+                cursor = max(cursor - 1, 0)
+            elif kind == "wheel-down":
+                cursor = min(cursor + 1, len(themes) - 1)
+            continue
+        if key in (27, ord("q"), ord("Q")):
+            return current
+        if key in (10, 13, curses.KEY_ENTER):
+            return selected
+        if key == curses.KEY_UP:
+            cursor = max(cursor - 1, 0)
+        elif key == curses.KEY_DOWN:
+            cursor = min(cursor + 1, len(themes) - 1)
+        elif key == curses.KEY_HOME:
+            cursor = 0
+        elif key == curses.KEY_END:
+            cursor = len(themes) - 1
+
+
 def _home_tui(screen, state: dict):
     """Draw the menu. Returns an item index, ('search', term), or None to quit."""
     import curses
 
-    items = _home_items(state.get("period", 30))
     screen.keypad(True)
     active_theme = ui.set_theme(state.get("theme", ui.theme_name()))
     state["theme"] = active_theme
+    items = _home_items(state.get("period", 30), active_theme)
     theme = ui.tui_theme(curses)
     try:
         curses.curs_set(0)
@@ -6776,13 +6916,16 @@ def _home_tui(screen, state: dict):
         screen.bkgd(" ", theme["background"])
     except curses.error:
         pass
-    mouse = _enable_mouse(curses)
+    mouse = _enable_mouse(curses, motion=True)
     sweep = ui.banner_palette(curses)
     cursor = state.get("cursor", 0)
+    offset = state.get("offset", 0)
     query = ""
     last_click = [0.0, -1]
     pending: list[int] = []
-    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
+    next_refresh = state.get(
+        "next_refresh", time.monotonic() + _HOME_REFRESH_SECONDS
+    )
 
     def wait(milliseconds: int) -> bool:
         """Ask for a timed getch. False when this window cannot do one."""
@@ -6803,7 +6946,7 @@ def _home_tui(screen, state: dict):
     # The agent's walk. None on a window that cannot time a keypress, where
     # asking for one would block and the screen would simply never redraw.
     # `rested` is how many idle frames it has spent pacing: it stops at
-    # ui.PACE_FRAMES and the screen goes properly quiet until you touch it.
+    # ui.PACE_FRAMES while the refresh heartbeat keeps running.
     pace = 0 if timed else None
     rested = 0
 
@@ -6813,10 +6956,17 @@ def _home_tui(screen, state: dict):
         if reveal is not None:
             reveal = None
             state["revealed"] = True
-            wait_until(ui.PACE_MS)
 
-    if reveal is None:
-        wait_until(ui.PACE_MS)
+    def activate_theme(name: str) -> None:
+        nonlocal active_theme, theme, sweep
+        active_theme = ui.set_theme(name)
+        state["theme"] = active_theme
+        theme = ui.tui_theme(curses)
+        sweep = ui.banner_palette(curses)
+        try:
+            screen.bkgd(" ", theme["background"])
+        except curses.error:
+            pass
 
     def open_item(index: int, height: int, width: int):
         """What to hand back for a chosen row. None means stay on the menu.
@@ -6833,6 +6983,9 @@ def _home_tui(screen, state: dict):
         asks = items[index][4]
         if not asks:
             return index
+        if asks == "theme":
+            activate_theme(_theme_picker(screen, active_theme))
+            return None
         if asks == "term":
             term = _prompt(screen, theme, height - 1, width, " search: ", "")
             return (index, term) if term else None
@@ -6840,11 +6993,16 @@ def _home_tui(screen, state: dict):
 
     try:
         while True:
+            if time.monotonic() >= next_refresh:
+                _refresh_home(state)
+                next_refresh += _HOME_REFRESH_SECONDS
+                if next_refresh <= time.monotonic():
+                    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
             screen.erase()
             height, width = screen.getmaxyx()
             # Rebuilt each frame because the counting rows caption themselves
             # with the window they will use, and ←/→ changes it under you.
-            items = _home_items(state.get("period", 30))
+            items = _home_items(state.get("period", 30), active_theme)
             shown = _home_matches(items, query)
             if shown and cursor not in shown:
                 cursor = shown[0]
@@ -6873,7 +7031,11 @@ def _home_tui(screen, state: dict):
             visible = max(height - top - 1, 1)
             place = next((i for i, (kind, value) in enumerate(layout)
                           if kind == "item" and value == cursor), 0)
-            offset = min(max(0, place - visible + 1), max(len(layout) - visible, 0))
+            if place < offset:
+                offset = place
+            elif place >= offset + visible:
+                offset = place - visible + 1
+            offset = min(max(offset, 0), max(len(layout) - visible, 0))
             # During the wipe the menu arrives a few rows at a time under it.
             # It is a cap on what is *drawn*, never on what exists: the
             # layout, the scroll offset and the cursor are all computed over
@@ -6926,21 +7088,24 @@ def _home_tui(screen, state: dict):
             _addstr(screen, height - 1, 0,
                     _home_status(query, len(shown), len(items), width,
                                  state.get("period", 30), active_theme,
-                                 state.get("refresh_error", False)),
+                                 state.get("refresh_error", False),
+                                 state.get("refreshed", "")),
                     width, theme["status"])
             screen.refresh()
 
+            # Input handlers can reset curses to blocking mode. Own the
+            # timeout at the read boundary, with a one-second idle heartbeat.
+            if timed:
+                wait_until(
+                    ui.REVEAL_MS if reveal is not None else
+                    ui.PACE_MS if rested < ui.PACE_FRAMES else 1000
+                )
             try:
                 key = pending.pop(0) if pending else screen.getch()
             except KeyboardInterrupt:
                 return None
             if key == -1:
-                # The wipe's own frame, or — once it is done — a frame of the
-                # agent's walk. Nothing else arms a timeout, so a -1 here is
-                # never a keypress: it always means 'nothing typed'.
-                if time.monotonic() >= next_refresh:
-                    _refresh_home(state)
-                    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
+                # Animation tick or idle heartbeat, never a keypress.
                 if reveal is not None:
                     reveal += 1
                     if reveal >= ui.REVEAL_FRAMES:
@@ -6949,28 +7114,17 @@ def _home_tui(screen, state: dict):
                 if pace is not None and rested < ui.PACE_FRAMES:
                     pace += 1
                     rested += 1
-                    if rested >= ui.PACE_FRAMES:
-                        # Walked far enough. Stop asking for frames and leave
-                        # it standing where it stopped. The only remaining
-                        # wake-up is the next live-data refresh.
-                        wait_until(_HOME_REFRESH_SECONDS * 1000)
-                elif reveal is None:
-                    wait_until(_HOME_REFRESH_SECONDS * 1000)
                 continue
             settle()  # any key at all lands you on the finished screen
-            if pace is not None:
-                # Re-armed on every key, not just after a rest: probing for a
-                # mouse report leaves getch blocking, so without this the
-                # walk stopped dead the first time you clicked.
-                wait_until(ui.PACE_MS)
-            rested = 0
             event = _mouse_event(screen, curses, key, last_click, pending)
+            rested = 0
             if event:
                 kind, _mx, my = event
                 if kind in ("wheel-up", "wheel-down"):
                     cursor = _home_step(shown, cursor,
                                         -1 if kind == "wheel-up" else 1)
-                elif (kind in ("click", "double") and top <= my < top + visible
+                elif (kind in ("move", "click", "double")
+                      and top <= my < top + visible
                       and offset + my - top < len(layout)):
                     row = layout[offset + my - top]
                     if row[0] == "item":
@@ -7009,14 +7163,7 @@ def _home_tui(screen, state: dict):
                     state.get("period", 30), 1 if key == curses.KEY_RIGHT else -1
                 )
             elif key in (ord("t"), ord("T")) and not query:
-                active_theme = ui.set_theme(ui.next_theme(active_theme))
-                state["theme"] = active_theme
-                theme = ui.tui_theme(curses)
-                sweep = ui.banner_palette(curses)
-                try:
-                    screen.bkgd(" ", theme["background"])
-                except curses.error:
-                    pass
+                activate_theme(_theme_picker(screen, active_theme))
             elif key == curses.KEY_HOME:
                 cursor = shown[0] if shown else cursor
             elif key == curses.KEY_END:
@@ -7038,6 +7185,8 @@ def _home_tui(screen, state: dict):
                 query += chr(key)
     finally:
         state["cursor"] = cursor
+        state["offset"] = offset
+        state["next_refresh"] = next_refresh
         wait(-1)  # a view opened from here reads keys of its own
         if mouse:
             _disable_mouse()
@@ -7058,12 +7207,17 @@ def cmd_home() -> None:
         return
 
     facts, activity = _home_snapshot()
-    state = {"facts": facts, "activity": activity, "theme": ui.theme_name()}
+    state = {
+        "facts": facts,
+        "activity": activity,
+        "theme": ui.theme_name(),
+        "refreshed": time.strftime("%H:%M:%S"),
+    }
     _HOME_ACTIVE = True
     try:
         while True:
             try:
-                choice = curses.wrapper(_home_tui, state)
+                choice = _curses_wrapper(_home_tui, state)
             except KeyboardInterrupt:
                 return
             except curses.error:
@@ -7184,7 +7338,7 @@ def cmd_help() -> None:
       sort with --sort skills or --sort agents.
     · Reads $COPILOT_HOME/session-store.db (default ~/.copilot), read-only.
     · Skills also load from ~/.agents/skills; CS_AGENTS_HOME moves that root.
-    · Theme: press t on the home screen, or set CS_THEME=dark|light|contrast.
+    · Theme: choose Theme on the home screen, press t, or set CS_THEME=<name>.
     · The home screen refreshes its database readings every 30 seconds.
     · CS_GLYPHS=ascii swaps every emoji for a plain marker.
     · Empty & automated sessions hidden by default; 'cs all' shows them.
@@ -7196,7 +7350,7 @@ def cmd_help() -> None:
       ↑/↓    move down the menu           Enter  open the highlighted view
       type   narrow the menu as you go    Esc    clear what you typed
       /      full-text search             q      quit (when nothing is typed)
-      t      cycle dark, light and high-contrast themes
+      t      open the live-preview theme picker
       ←/→    the window the counting views use — Stats, Timeline, AI spend
              and Delegation. Those rows say which window they will use, and
              Enter opens them with it.

@@ -1213,8 +1213,8 @@ machine, and every view tells you masking is on.
 | 👁️ **Show everything** | `cs all` drops the date window and your ignore file; sessions that recorded nothing at all are never listed |
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
-| 🎨 **Theme** | Press `t` on the home screen, or set `CS_THEME=dark`, `light`, or `contrast`; dark is the default |
-| 🔄 **Live home data** | The landing page re-reads the session database every 30 seconds |
+| 🎨 **Theme** | Choose **Theme** on the home screen (or press `t`) for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels |
+| 🔄 **Live home data** | The complete landing page is rebuilt from the read-only session database every 30 seconds; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
 | 🎓 **Shared skills root** | Skills also load from `~/.agents/skills`, beside the Copilot home rather than inside it; `CS_AGENTS_HOME` points that root somewhere else |
 
 By default `cs` hides **empty** (zero-turn) sessions so the list stays useful.

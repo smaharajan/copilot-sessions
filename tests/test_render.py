@@ -176,24 +176,29 @@ class ThemeTest(unittest.TestCase):
             self.assertNotIn(111, ui._BAR_RAMP)
             self.assertNotIn(75, ui._BAR_RAMP)
 
-    def test_light_terminals_keep_the_pastels(self):
-        """On white paper the pastels are the legible choice, so they survive."""
+    def test_light_terminals_use_dark_ink_on_white(self):
         with self._theme("light") as ui:
-            self.assertEqual(ui.ACCENT, "\033[38;5;111m")
-            self.assertEqual(ui.VIOLET, "\033[38;5;141m")
+            self.assertEqual(ui.ACCENT, "\033[38;5;27m")
+            self.assertEqual(ui.PAPER, "\033[38;5;235m")
 
-    def test_three_named_themes_cover_dark_light_and_high_contrast(self):
+    def test_the_curated_theme_collection_includes_accessible_basics(self):
         with self._theme("contrast") as ui:
-            self.assertEqual(ui.THEMES, ("dark", "light", "contrast"))
+            self.assertEqual(len(ui.THEMES), 20)
+            self.assertEqual(ui.THEMES[:3], ("dark", "light", "contrast"))
+            self.assertIn("tokyo-night", ui.THEMES)
+            self.assertIn("catppuccin", ui.THEMES)
+            self.assertIn("cyberpunk", ui.THEMES)
             self.assertEqual(ui.theme_name(), "contrast")
             self.assertEqual(ui.ACCENT, "\033[38;5;51m")
-            self.assertEqual(ui.PAPER, "\033[38;5;255m")
-            self.assertEqual(ui.next_theme("contrast"), "dark")
+            self.assertEqual(ui.PAPER, "\033[38;5;231m")
+            self.assertEqual(ui.theme_label("contrast"), "High Contrast")
             self.assertEqual(ui.set_theme("high-contrast"), "contrast")
 
     def test_every_colour_either_theme_emits_is_declared(self):
         """An undeclared index renders as plain text in the curses reader."""
-        for theme in (None, "light", "contrast"):
+        from cs import ui as current_ui
+
+        for theme in (None, *current_ui.THEMES):
             with self.subTest(theme=theme), self._theme(theme) as ui:
                 used = {
                     int(re.search(r"(\d+)m$", value).group(1))
@@ -209,6 +214,58 @@ class ThemeTest(unittest.TestCase):
         with self._theme(None) as ui:
             self.assertEqual(list(ui._BANNER_RAMP), list(ui._BAR_RAMP))
             self.assertNotIn(111, ui._BANNER_RAMP)
+
+    def test_curses_banner_and_report_text_use_the_selected_background(self):
+        import curses
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        from cs import ui
+
+        terminal = SimpleNamespace(
+            COLORS=256, COLOR_PAIRS=256, COLOR_BLACK=0,
+            A_BOLD=curses.A_BOLD, A_DIM=curses.A_DIM, A_REVERSE=curses.A_REVERSE,
+            error=curses.error, start_color=Mock(), use_default_colors=Mock(),
+            init_pair=Mock(), color_pair=Mock(return_value=1),
+        )
+        original = ui.theme_name()
+        try:
+            for name in ui.THEMES:
+                ui.set_theme(name)
+                for render in (ui.banner_palette, ui.sgr_palette):
+                    with self.subTest(theme=name, render=render.__name__):
+                        terminal.init_pair.reset_mock()
+                        self.assertTrue(render(terminal))
+                        backgrounds = {
+                            call.args[2] for call in terminal.init_pair.call_args_list
+                        }
+                        self.assertEqual(backgrounds, {ui._THEMES[name]["bg"]})
+        finally:
+            ui.set_theme(original)
+
+    def test_theme_selection_status_and_credits_meet_text_contrast(self):
+        from cs import ui
+
+        def luminance(index):
+            if index >= 232:
+                rgb = [8 + 10 * (index - 232)] * 3
+            else:
+                cube = (0, 95, 135, 175, 215, 255)
+                index -= 16
+                rgb = [cube[index // 36], cube[index // 6 % 6], cube[index % 6]]
+            channels = [value / 255 for value in rgb]
+            linear = [
+                value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+                for value in channels
+            ]
+            return sum(value * weight for value, weight in
+                       zip(linear, (0.2126, 0.7152, 0.0722), strict=True))
+
+        for name, palette in ui._TUI_PALETTES.items():
+            for role in ("cursor", "status", "credits"):
+                with self.subTest(theme=name, role=role):
+                    low, high = sorted(map(luminance, palette[role]))
+                    self.assertGreaterEqual((high + 0.05) / (low + 0.05), 4.5)
 
     def test_rules_are_furniture_and_are_drawn_as_furniture(self):
         """Six full-width accent lines made the loudest thing the least useful."""
