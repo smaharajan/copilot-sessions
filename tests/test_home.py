@@ -295,6 +295,64 @@ class HomeMenuTest(StoreTest):
         finally:
             ui.set_theme(original)
 
+    def test_an_applied_theme_is_remembered_for_the_next_run(self):
+        """The whole point of a gallery: you visit it once.
+
+        The theme used to live only in the running process, so applying one
+        and quitting put you back on the default landing screen with the
+        gallery to visit again.
+        """
+        import curses
+        import importlib
+
+        from cs import cli, ui
+
+        original = ui.theme_name()
+        try:
+            cli._home_tui(
+                Screen([ord("t"), curses.KEY_DOWN, 10, ord("q"), ord("q")]),
+                {"revealed": True, "theme": "dark"},
+            )
+            self.assertEqual(ui.saved_theme(), "light")
+            # What the next `cs` starts in, with nothing carried in memory.
+            self.assertEqual(importlib.reload(ui).theme_name(), "light")
+        finally:
+            importlib.reload(ui)
+            ui.set_theme(original)
+
+    def test_leaving_the_gallery_without_applying_remembers_nothing(self):
+        """Esc is 'back', and back must not write a preview to disk."""
+        from cs import cli, ui
+
+        original = ui.theme_name()
+        try:
+            with patch.object(cli, "_theme_picker", return_value="dark"):
+                cli._home_tui(
+                    Screen([ord("t"), ord("q"), ord("q")]),
+                    {"revealed": True, "theme": "dark"},
+                )
+            self.assertIsNone(ui.saved_theme())
+            self.assertFalse(ui.settings_path().exists())
+        finally:
+            ui.set_theme(original)
+
+    def test_a_theme_that_could_not_be_saved_says_so_on_the_status_line(self):
+        """Silently forgetting it is how the same bug gets reported twice."""
+        import curses
+
+        from cs import cli, ui
+
+        original = ui.theme_name()
+        screen = Screen([ord("t"), curses.KEY_DOWN, 10, ord("q"), ord("q")])
+        try:
+            with patch.object(ui, "save_theme", return_value=False):
+                state = {"revealed": True, "theme": "dark"}
+                cli._home_tui(screen, state)
+            self.assertTrue(state["theme_error"])
+            self.assertIn("not saved", screen.frames[-1][(23, 0)])
+        finally:
+            ui.set_theme(original)
+
     def test_the_theme_row_opens_the_gallery_and_returns_home_after_applying(self):
         import curses
 
@@ -852,12 +910,14 @@ class LandingAnimationTest(StoreTest):
             [None] * len(screen.frames),
         )
 
-    def test_the_whole_home_refreshes_after_thirty_seconds(self):
+    def test_the_whole_home_refreshes_on_its_heartbeat(self):
         from cs import cli, ui
 
         class ClockScreen(Screen):
             def __init__(self):
-                super().__init__([-1] * 30 + [ord("q")])
+                # One idle second per tick, so the interval itself is the
+                # number of ticks it takes to reach a refresh.
+                super().__init__([-1] * cli._REFRESH_SECONDS + [ord("q")])
                 self.now = 0.0
                 self.delay = 0
                 self.delays = []
@@ -988,7 +1048,12 @@ class LandingAnimationTest(StoreTest):
             patch.object(cli, "_home_snapshot", side_effect=snapshot),
         ):
             cli._home_tui(screen, {"revealed": True})
-        self.assertEqual(starts, [30, 60, 90])
+        self.assertEqual(
+            starts,
+            [cli._REFRESH_SECONDS * n for n in (1, 2, 3)],
+            "each refresh is timed from the deadline, not from when the last"
+            " query happened to finish",
+        )
         self.assertIn("3.00", screen.frames[-1].values())
 
     def test_mouse_reports_do_not_stop_idle_refresh(self):
@@ -1020,7 +1085,9 @@ class LandingAnimationTest(StoreTest):
         events.append([ord("/"), *events[0], 10])
         for keys in events:
             with self.subTest(keys=keys):
-                screen = ClockScreen([*keys, *([-1] * 30), ord("q")])
+                screen = ClockScreen(
+                    [*keys, *([-1] * cli._REFRESH_SECONDS), ord("q")]
+                )
                 state = {"revealed": True, "facts": [("4.00", "AIU")]}
                 snapshot = ([("5.00", "AIU")], [0, 1])
                 with (

@@ -10,13 +10,24 @@ reports and redraws can be asserted frame by frame without a terminal.
 
 from __future__ import annotations
 
+import atexit
 import io
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+
+# The one choice cs remembers between runs — the theme — is written under
+# CS_CONFIG_HOME. Pointed at a scratch directory for the whole run, and set
+# here rather than in a fixture because `ui` reads it the moment it is
+# imported: without it the suite would render in whatever palette the
+# developer last picked, and pick one for them on the way out.
+_CONFIG_HOME = tempfile.mkdtemp(prefix="cs-settings-")
+os.environ["CS_CONFIG_HOME"] = _CONFIG_HOME
+atexit.register(shutil.rmtree, _CONFIG_HOME, True)
 
 
 class _Tty(io.StringIO):
@@ -201,12 +212,16 @@ class StoreTest(unittest.TestCase):
         # the suite would read whatever the developer happens to keep in
         # ~/.agents and count it — a test that passes on one machine.
         os.environ["CS_AGENTS_HOME"] = str(base / ".agents")
+        # One settings file per test, so a test that applies a theme cannot
+        # decide what the next one starts in.
+        os.environ["CS_CONFIG_HOME"] = str(base / ".config")
         os.environ["TERM"] = "dumb"  # disable colour
 
     def tearDown(self):
         self._tmp.cleanup()
         os.environ.pop("COPILOT_HOME", None)
         os.environ.pop("CS_AGENTS_HOME", None)
+        os.environ["CS_CONFIG_HOME"] = _CONFIG_HOME
 
     def _run(self, *args: str) -> tuple[int, str]:
         from cs.cli import main

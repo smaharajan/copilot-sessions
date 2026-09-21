@@ -1213,8 +1213,8 @@ machine, and every view tells you masking is on.
 | 👁️ **Show everything** | `cs all` drops the date window and your ignore file; sessions that recorded nothing at all are never listed |
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
-| 🎨 **Theme** | Choose **Theme** on the home screen (or press `t`) for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels |
-| 🔄 **Live home data** | The complete landing page is rebuilt from the read-only session database every 30 seconds; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
+| 🎨 **Theme** | Choose **Theme** on the home screen (or press `t`) for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
+| 🔄 **Live data** | The landing page *and* an open session listing are re-read from the read-only session database every 60 seconds, so a session started in another window arrives without reopening the view; a session already listed keeps its `#N` and a new arrival takes the next free number. Search results are not re-read — re-ranking a result set under the reader is not a refresh. The landing page is rebuilt on the same heartbeat; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
 | 🎓 **Shared skills root** | Skills also load from `~/.agents/skills`, beside the Copilot home rather than inside it; `CS_AGENTS_HOME` points that root somewhere else |
 
 By default `cs` hides **empty** (zero-turn) sessions so the list stays useful.

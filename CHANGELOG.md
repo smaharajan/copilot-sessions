@@ -9,10 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An open session listing re-reads the store every 60 seconds.** The
+  landing page had the heartbeat; the listing took its rows as a parameter,
+  queried once before the view opened, and never read again — so a session
+  started in another window arrived only when the view was next reopened,
+  which on a screen you sit and watch reads as the listing being wrong.
+  `#N` survives a refresh: a session already listed keeps the number you
+  read it under and a new arrival takes the next free one, because the
+  status line offers `cs resume N` as something to type after you quit.
+  A refresh that cannot read the store leaves the rows on screen alone, and
+  search results are not re-read.
+- **A session that is still running is listed while it runs.** Copilot
+  records usage events as they are billed but only writes a `turns` row once
+  an exchange has been persisted, so a session opened in another window sits
+  at zero turns with real spend against it — and the zero-turn rule dropped
+  it from every listing but `cs all`, while the landing strip above it had
+  already counted it. Credits now count as activity in the listing the same
+  way they already did in `db.stats`. Launches that were opened and closed
+  without an exchange are still hidden: of 251 zero-turn sessions in a
+  1,465-session store, exactly one had credits — the live one.
+- **The theme you pick stays picked.** It lived only in the running process,
+  so applying a palette and quitting put you back on the default landing
+  screen with the gallery to visit again. What you apply is now written to
+  `~/.config/cs/settings.json` and is what the next run starts in.
+  `CS_THEME=<name>` still overrides it for the run it is set on,
+  `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file, and a theme that could
+  not be written says `not saved` on the status line rather than being
+  quietly forgotten. Nothing is ever written inside `COPILOT_HOME`, which
+  `cs` continues to open read-only.
 - The home screen now offers a mouse-and-keyboard live-preview Theme picker
   with 20 curated palettes (`t` is the shortcut; `CS_THEME` selects one at
   launch), and rebuilds the complete landing page — including total AI credits
-  and a visible update time — from its read-only SQLite store every 30 seconds.
+  and a visible update time — from its read-only SQLite store on a timer.
+- The live-refresh interval is 60 seconds, and every line that quotes it
+  reads it from one constant rather than spelling it out.
 - **`cs skills` counts every root Copilot loads from**, not the two it used to
   walk. A machine with forty-nine personal skills was reporting forty-nine
   while the CLI was resolving eighty-two: the enabled plugins'

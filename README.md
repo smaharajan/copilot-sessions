@@ -75,9 +75,18 @@ Choose **Theme** on the home screen (or press `t`) for a mouse-and-keyboard
 live-preview picker with 20 curated palettes, including Dark, Light, High
 Contrast, Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Catppuccin, Kanagawa,
 Rosé Pine and Cyberpunk. Hover or single-click previews; `Enter` or double-click
-applies and returns to the main page; `Esc` cancels the preview. The complete
+applies and returns to the main page; `Esc` cancels the preview. **The theme
+you apply is remembered** — it is written to `~/.config/cs/settings.json` and is
+what the next `cs` starts in, so the picker is somewhere you go once rather than
+every run. `CS_THEME=<name>` still overrides it for the run it is set on, and
+`CS_CONFIG_HOME` or `XDG_CONFIG_HOME` moves the file. The complete
 home screen — including total AI credits and a visible refresh timestamp — is
-rebuilt from the read-only SQLite store every 30 seconds.
+rebuilt from the read-only SQLite store every 60 seconds, and **so is an open
+session listing**: start a session in another window and it appears in the list
+you are already looking at. A session that is already listed keeps its `#N`, so
+`cs resume 3` still means what it meant when you read it; a new arrival takes the
+next free number. Search results are left alone, since re-ranking a result set
+under the reader is not a refresh.
 
 Home credits show two decimal places rather than rounded `k` totals, so small
 new charges remain visible. They stay visible first as the window narrows.

@@ -107,10 +107,29 @@ def _ignore_prefixes() -> list[str]:
     return db.ignored_prefixes()
 
 
-def _is_hidden(summary: str, turns: int, prefixes: list[str]) -> bool:
-    if turns == 0:
+def _is_hidden(summary: str, turns: int, nano_aiu: int,
+               prefixes: list[str]) -> bool:
+    """Whether a default listing should drop this row.
+
+    A session with no turns is almost always a launch that was closed
+    without an exchange — 251 of them in a 1,465-session store — and
+    dropping those is what keeps a listing about work that happened.
+
+    Credits are the exception, because they are what a session that is
+    *still running* looks like. Copilot records usage events as they are
+    billed but only writes a `turns` row once an exchange has been
+    persisted, so a session opened in another window sits at zero turns
+    with real spend against it for as long as its first exchange takes.
+    Hiding it meant the one session you had every reason to be watching was
+    the one `cs` would not show you — while the strip above it, which counts
+    on all three axes in SQL, had already counted it. In that same store
+    exactly one of the 251 zero-turn sessions had credits: the live one.
+    """
+    if not turns and not nano_aiu:
         return True
-    return any(summary.startswith(p) for p in prefixes)
+    # A name is not enough on its own: `_visible` keeps the merely quiet
+    # sessions for `cs all`, and that is the distinction it is drawing.
+    return any((summary or "").startswith(p) for p in prefixes)
 
 
 def _never_used(row: tuple) -> bool:
@@ -211,12 +230,15 @@ def _with_assets(rows: list[tuple]) -> list[tuple]:
 def _visible(rows: list[tuple], show_all: bool) -> list[tuple]:
     """The rows a listing should carry. `show_all` keeps the merely quiet
     ones — zero-turn sessions that still have a name, and anything matched
-    by the user's ignore file — but never the blank ones."""
+    by the user's ignore file — but never the blank ones.
+
+    A zero-turn session that has spent credits is not quiet: it is running,
+    and it is carried by every listing. See `_is_hidden`."""
     rows = [r for r in rows if not _never_used(r)]
     if show_all:
         return rows
     prefixes = _ignore_prefixes()
-    return [r for r in rows if not _is_hidden(r[2], r[5], prefixes)]
+    return [r for r in rows if not _is_hidden(r[2], r[5], r[6], prefixes)]
 
 
 def _no_summary(turns: int) -> str:
@@ -808,13 +830,27 @@ def _sort_note(report: str, column: str, descending: bool, width: int) -> str:
     )
 
 
-def _number_rows(rows: list[tuple]) -> dict[str, int]:
+def _number_rows(rows: list[tuple],
+                 existing: dict[str, int] | None = None) -> dict[str, int]:
     """Stable #N per session, assigned once in the listing's natural order.
 
     Numbers identify a session, not a screen position, so sorting or
-    filtering never repoints a number at a different session.
+    filtering never repoints a number at a different session — and neither
+    does a refresh. A session that arrives while the view is open takes the
+    next free number rather than pushing everything below it down one: the
+    status line offers `cs resume N` as something to type *after* you quit,
+    and a number that meant one session when you read it and another by the
+    time you used it would be worse than no number at all.
     """
-    return {row[0]: i for i, row in enumerate(rows, 1)}
+    if not existing:
+        return {row[0]: i for i, row in enumerate(rows, 1)}
+    numbers = {row[0]: existing[row[0]] for row in rows if row[0] in existing}
+    spare = max(existing.values(), default=0) + 1
+    for row in rows:
+        if row[0] not in numbers:
+            numbers[row[0]] = spare
+            spare += 1
+    return numbers
 
 
 def _sort_rows(
@@ -979,6 +1015,7 @@ def _interactive_listing(
     default_sort: str = "active",
     hits: dict[str, tuple[str, str]] | None = None,
     term: str = "",
+    reload=None,
 ) -> bool:
     """True when the full-screen view ran and so already waited for the user.
 
@@ -1002,8 +1039,12 @@ def _interactive_listing(
     while True:
         try:
             action = _curses_wrapper(
-                _listing_tui, rows, title, default_sort, hits, state
+                _listing_tui, rows, title, default_sort, hits, state, reload
             )
+            # The view re-reads the store on its own heartbeat; what it read
+            # last is what a trip out to a detail view should come back to.
+            rows = state.get("rows", rows)
+            title = state.get("title", title)
         except KeyboardInterrupt:
             return True
         except curses.error:
@@ -1423,7 +1464,11 @@ def _mouse_event(
 
 
 _HOME_ACTIVE = False  # set while the landing screen owns the loop
-_HOME_REFRESH_SECONDS = 30
+# How often a view on screen re-reads the store. No longer home-only: the
+# landing page and an open session listing share one heartbeat, and every
+# line that quotes the interval reads it from here rather than spelling it
+# out, so the two can never drift apart.
+_REFRESH_SECONDS = 60
 
 
 def _fit_hints(hints: list[tuple[str, str, int]], width: int) -> str:
@@ -1471,6 +1516,30 @@ def _hint_line(width: int, mouse: bool, back: str = "quit") -> str:
     return _fit_hints(hints, width)
 
 
+def _reread_listing(reload, rows: list[tuple], title: str,
+                    numbers: dict[str, int], state: dict, here: str | None):
+    """Re-read the store for an open listing. Returns what to draw next.
+
+    A store that has not changed returns the rows already on screen, so a
+    quiet heartbeat costs one query and redraws nothing that moves. A store
+    that has changed keeps the highlight on the session it was on — a new
+    arrival must not pull the cursor onto itself while someone is reading.
+    """
+    try:
+        fresh, fresh_title = reload()
+    except (OSError, sqlite3.Error):
+        # The store is Copilot's and it is being written to. A refresh that
+        # cannot read it is a refresh that does not happen; the rows already
+        # on screen are still the best answer there is.
+        return rows, title, numbers, None
+    if [row[0] for row in fresh] == [row[0] for row in rows] and fresh == rows:
+        return rows, title, numbers, None
+    numbers = _number_rows(fresh, numbers)
+    _save_index({n: sid for sid, n in numbers.items()})
+    state["rows"], state["title"] = fresh, fresh_title
+    return fresh, fresh_title, numbers, here
+
+
 def _listing_tui(
     screen,
     rows: list[tuple],
@@ -1478,6 +1547,7 @@ def _listing_tui(
     default_sort: str = "active",
     hits: dict[str, tuple[str, str]] | None = None,
     state: dict | None = None,
+    reload=None,
 ) -> tuple[str, str] | None:
     import curses
 
@@ -1513,6 +1583,22 @@ def _listing_tui(
     # resolvable by its number even while filtered off screen.
     numbers = _number_rows(rows)
     _save_index({n: sid for sid, n in numbers.items()})
+
+    # The store is live. A session started in another window used to arrive
+    # here only when the view was next reopened, which on a screen you sit
+    # and watch reads as the listing being wrong. `reload` re-reads it on
+    # the same heartbeat the landing page uses; a search does not get one,
+    # because re-ranking a result set under the reader is not a refresh.
+    def wait(milliseconds: int) -> bool:
+        """Ask for a timed getch. False when this window cannot do one."""
+        try:
+            screen.timeout(milliseconds)
+        except (AttributeError, curses.error):
+            return False
+        return True
+
+    timed = reload is not None and wait(-1)
+    next_refresh = time.monotonic() + _REFRESH_SECONDS
 
     try:
         while True:
@@ -1661,12 +1747,27 @@ def _listing_tui(
             _addstr(screen, height - 1, 0, status, width, theme["status"])
 
             screen.refresh()
+            # Input handlers can reset curses to blocking mode, so the
+            # timeout is owned here, at the read itself.
+            if timed and not pending:
+                wait(max(1, min(1000, round(
+                    (next_refresh - time.monotonic()) * 1000))))
             try:
                 key = pending.pop(0) if pending else screen.getch()
             except KeyboardInterrupt:
                 # Ctrl-C is a quit, not a crash. Returning lets curses restore
                 # the terminal on the way out, the same as 'q' does.
                 return None
+            if key == -1:
+                # A heartbeat, never a keypress. Handled before the mouse
+                # parser, which reads -1 as the start of a broken sequence.
+                if time.monotonic() >= next_refresh:
+                    next_refresh = time.monotonic() + _REFRESH_SECONDS
+                    rows, title, numbers, follow = _reread_listing(
+                        reload, rows, title, numbers, state,
+                        sorted_rows[cursor][0] if sorted_rows else None,
+                    )
+                continue
             event = _mouse_event(screen, curses, key, last_click, pending)
             if key in (ord("q"), ord("Q")):
                 return None
@@ -1764,6 +1865,8 @@ def _listing_tui(
             offset=offset,
             query=query,
         )
+        if timed:
+            wait(-1)  # a detail view opened from here reads keys of its own
 
 
 def _addstr(screen, y: int, x: int, text: str, width: int, style: int = 0) -> None:
@@ -1786,16 +1889,22 @@ def cmd_recent(
     descending: bool | None = None,
 ) -> bool:
     """True when the full-screen listing ran, so the caller need not pause."""
-    conn = db.connect()
-    rows = db.recent_sessions(conn, days)
-    conn.close()
-    # Filter before counting, or the header promises rows the listing then
-    # declines to show. The renderers filter too, which is a no-op from here.
-    rows = _with_assets(_visible(rows, show_all))
     mode = "all" if show_all else "interactive"
-    title = f"Sessions · {_window_label(days)} · {mode} · {len(rows)} total"
+
+    def read() -> tuple[list[tuple], str]:
+        conn = db.connect()
+        try:
+            found = db.recent_sessions(conn, days)
+        finally:
+            conn.close()
+        # Filter before counting, or the header promises rows the listing
+        # then declines to show. The renderers filter too, a no-op from here.
+        found = _with_assets(_visible(found, show_all))
+        return found, f"Sessions · {_window_label(days)} · {mode} · {len(found)} total"
+
+    rows, title = read()
     if sort_by is None and sys.stdin.isatty() and sys.stdout.isatty():
-        return _interactive_listing(rows, title, show_all)
+        return _interactive_listing(rows, title, show_all, reload=read)
     _render_listing(
         rows,
         title,
@@ -6504,7 +6613,8 @@ def _home_step(shown: list[int], cursor: int, delta: int) -> int:
 
 def _home_status(query: str, matched: int, total: int, width: int,
                  period: int = 30, theme: str = "dark",
-                 refresh_error: bool = False, refreshed: str = "") -> str:
+                 refresh_error: bool = False, refreshed: str = "",
+                 theme_error: bool = False) -> str:
     """The one hint line. It says what you can do, or what you have typed.
 
     One line rather than two: a key list above the menu and a second one
@@ -6520,16 +6630,23 @@ def _home_status(query: str, matched: int, total: int, width: int,
         line = f" find: {query}▏ {found} · Esc clears · ↵ opens "
         return line if ui.cells(line) <= width else " find: … · Esc · ↵ "
     if refresh_error:
-        line = " refresh failed · retrying in 30s · t theme · q quit "
+        line = (f" refresh failed · retrying in {_REFRESH_SECONDS}s · "
+                f"t theme · q quit ")
         return line if ui.cells(line) <= width else " refresh failed · q "
     short = next((s for _k, days, _l, s in _PERIODS if days == period), "30d")
     theme = ui.theme_label(theme)
-    live = f"updated {refreshed}" if refreshed else "refresh 30s"
+    # A theme that could not be written is one you will have to pick again
+    # next run. It rides alongside the theme hint rather than taking the
+    # line the way a failed refresh does: the palette did apply, and the
+    # note has to survive into the shorter forms to be worth saying at all.
+    note = " · not saved" if theme_error else ""
+    live = (f"updated {refreshed}" if refreshed
+            else f"refresh {_REFRESH_SECONDS}s")
     for line in (
-        f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme} · "
+        f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme}{note} · "
         f"{live} · type to find · / search · q quit ",
-        f" ↑↓ · ↵ open · ←→ {short} · t themes · {live} · / search · q ",
-        f" ↑↓ · ↵ · ←→ {short} · t themes · {live} · q ",
+        f" ↑↓ · ↵ open · ←→ {short} · t themes{note} · {live} · / search · q ",
+        f" ↑↓ · ↵ · ←→ {short} · t themes{note} · {live} · q ",
         f" ↑↓ · ↵ · {live} · q ",
         " ↑↓ · ↵ · type · q ",
     ):
@@ -6924,7 +7041,7 @@ def _home_tui(screen, state: dict):
     last_click = [0.0, -1]
     pending: list[int] = []
     next_refresh = state.get(
-        "next_refresh", time.monotonic() + _HOME_REFRESH_SECONDS
+        "next_refresh", time.monotonic() + _REFRESH_SECONDS
     )
 
     def wait(milliseconds: int) -> bool:
@@ -6959,7 +7076,13 @@ def _home_tui(screen, state: dict):
 
     def activate_theme(name: str) -> None:
         nonlocal active_theme, theme, sweep
-        active_theme = ui.set_theme(name)
+        chosen = ui.set_theme(name)
+        # Written only when the answer actually changed: entering the menu
+        # re-applies what is already stored, and Esc out of the gallery
+        # hands back the theme you came in with.
+        if chosen != active_theme:
+            state["theme_error"] = not ui.save_theme(chosen)
+        active_theme = chosen
         state["theme"] = active_theme
         theme = ui.tui_theme(curses)
         sweep = ui.banner_palette(curses)
@@ -6995,9 +7118,9 @@ def _home_tui(screen, state: dict):
         while True:
             if time.monotonic() >= next_refresh:
                 _refresh_home(state)
-                next_refresh += _HOME_REFRESH_SECONDS
+                next_refresh += _REFRESH_SECONDS
                 if next_refresh <= time.monotonic():
-                    next_refresh = time.monotonic() + _HOME_REFRESH_SECONDS
+                    next_refresh = time.monotonic() + _REFRESH_SECONDS
             screen.erase()
             height, width = screen.getmaxyx()
             # Rebuilt each frame because the counting rows caption themselves
@@ -7089,7 +7212,8 @@ def _home_tui(screen, state: dict):
                     _home_status(query, len(shown), len(items), width,
                                  state.get("period", 30), active_theme,
                                  state.get("refresh_error", False),
-                                 state.get("refreshed", "")),
+                                 state.get("refreshed", ""),
+                                 state.get("theme_error", False)),
                     width, theme["status"])
             screen.refresh()
 
@@ -7338,8 +7462,14 @@ def cmd_help() -> None:
       sort with --sort skills or --sort agents.
     · Reads $COPILOT_HOME/session-store.db (default ~/.copilot), read-only.
     · Skills also load from ~/.agents/skills; CS_AGENTS_HOME moves that root.
-    · Theme: choose Theme on the home screen, press t, or set CS_THEME=<name>.
-    · The home screen refreshes its database readings every 30 seconds.
+    · Theme: choose Theme on the home screen or press t. What you apply is
+      kept in ~/.config/cs/settings.json and is what the next run starts
+      in; CS_THEME=<name> overrides it for one run, CS_CONFIG_HOME moves
+      the file.
+    · The home screen and the session listings re-read the store every
+      {_REFRESH_SECONDS} seconds, so a session started in another window
+      arrives on its own. A #N always keeps its session: a new arrival takes
+      the next free number rather than shifting the ones you already read.
     · CS_GLYPHS=ascii swaps every emoji for a plain marker.
     · Empty & automated sessions hidden by default; 'cs all' shows them.
     · Hide extra summaries by prefix in $COPILOT_HOME/.cs-ignore.

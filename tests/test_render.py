@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import sqlite3
 import sys
+import tempfile
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
 
 from support import Screen, StoreTest
 
@@ -144,9 +147,14 @@ class ThemeTest(unittest.TestCase):
             def isatty(self):
                 return True
 
-        previous = {key: os.environ.get(key) for key in ("CS_THEME", "TERM")}
+        keys = ("CS_THEME", "CS_CONFIG_HOME", "TERM")
+        previous = {key: os.environ.get(key) for key in keys}
         real = sys.stdout
+        scratch = tempfile.TemporaryDirectory()
         try:
+            # An empty settings directory, so what the reload starts in is
+            # CS_THEME and nothing else.
+            os.environ["CS_CONFIG_HOME"] = scratch.name
             if theme is None:
                 os.environ.pop("CS_THEME", None)
             else:
@@ -158,6 +166,7 @@ class ThemeTest(unittest.TestCase):
             yield importlib.reload(ui)
         finally:
             sys.stdout = real
+            scratch.cleanup()
             for key, value in previous.items():
                 if value is None:
                     os.environ.pop(key, None)
@@ -274,6 +283,119 @@ class ThemeTest(unittest.TestCase):
             titled = ui.rule(30, "Section")
             self.assertTrue(titled.startswith(f"  {ui.ACCENT}──{ui.RST}"))
             self.assertIn(ui.SLATE, titled)   # the trailing dashes recede
+
+
+class ThemeMemoryTest(unittest.TestCase):
+    """A palette is picked once, from a gallery, and has to stay picked.
+
+    Every assertion here is about the *next* run: the theme was a process
+    global, so choosing one and quitting put you straight back on the
+    default landing screen with the gallery to visit again.
+    """
+
+    def setUp(self):
+        import importlib
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self._previous = {
+            key: os.environ.get(key) for key in ("CS_THEME", "CS_CONFIG_HOME")
+        }
+        os.environ["CS_CONFIG_HOME"] = self._tmp.name
+        os.environ.pop("CS_THEME", None)
+        importlib.reload(__import__("cs.ui", fromlist=["ui"]))
+
+    def tearDown(self):
+        import importlib
+
+        for key, value in self._previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+        importlib.reload(__import__("cs.ui", fromlist=["ui"]))
+
+    def _restart(self):
+        """The module as the next `cs` would import it."""
+        import importlib
+
+        from cs import ui
+
+        return importlib.reload(ui)
+
+    def _settings(self) -> Path:
+        return Path(self._tmp.name) / "cs" / "settings.json"
+
+    def test_the_theme_you_applied_is_the_one_you_come_back_to(self):
+        from cs import ui
+
+        self.assertEqual(ui.theme_name(), "dark")
+        self.assertTrue(ui.save_theme("nord"))
+        self.assertEqual(ui.saved_theme(), "nord")
+        self.assertEqual(self._restart().theme_name(), "nord")
+
+    def test_settings_are_written_beside_the_user_config_not_the_store(self):
+        """COPILOT_HOME is Copilot's own store and cs opens it read-only."""
+        from cs import ui
+
+        self.assertEqual(ui.settings_path(), self._settings())
+        ui.save_theme("gruvbox")
+        self.assertEqual(json.loads(self._settings().read_text())["theme"],
+                         "gruvbox")
+
+    def test_an_alias_is_stored_under_its_canonical_name(self):
+        from cs import ui
+
+        ui.save_theme("high-contrast")
+        self.assertEqual(json.loads(self._settings().read_text())["theme"],
+                         "contrast")
+        self.assertEqual(self._restart().theme_name(), "contrast")
+
+    def test_cs_theme_still_overrides_what_was_remembered(self):
+        from cs import ui
+
+        ui.save_theme("nord")
+        os.environ["CS_THEME"] = "light"
+        self.assertEqual(self._restart().theme_name(), "light")
+
+    def test_a_theme_that_no_longer_exists_falls_back_to_the_default(self):
+        """A palette retired between releases must not pin a stale answer."""
+        from cs import ui
+
+        self._settings().parent.mkdir(parents=True)
+        self._settings().write_text('{"theme": "vaporwave"}')
+        self.assertIsNone(ui.saved_theme())
+        self.assertEqual(self._restart().theme_name(), "dark")
+
+    def test_an_unreadable_settings_file_is_ignored_rather_than_fatal(self):
+        from cs import ui
+
+        self._settings().parent.mkdir(parents=True)
+        for content in ("{", "[]", '"nord"', ""):
+            with self.subTest(content=content):
+                self._settings().write_text(content)
+                self.assertIsNone(ui.saved_theme())
+                self.assertEqual(self._restart().theme_name(), "dark")
+
+    def test_a_settings_file_that_cannot_be_written_says_so(self):
+        """The caller needs the answer: the choice will not survive the run."""
+        from cs import ui
+
+        blocked = Path(self._tmp.name) / "blocked"
+        blocked.write_text("not a directory")
+        os.environ["CS_CONFIG_HOME"] = str(blocked)
+        self.assertFalse(ui.save_theme("nord"))
+        self.assertIsNone(ui.saved_theme())
+
+    def test_other_stored_choices_survive_a_theme_change(self):
+        """One key today; the file is not a place to lose the next one."""
+        from cs import ui
+
+        self._settings().parent.mkdir(parents=True)
+        self._settings().write_text('{"theme": "nord", "period": 7}')
+        ui.save_theme("dracula")
+        stored = json.loads(self._settings().read_text())
+        self.assertEqual(stored, {"theme": "dracula", "period": 7})
 
 
 class AsciiGlyphTest(StoreTest):

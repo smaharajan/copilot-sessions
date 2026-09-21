@@ -6,11 +6,13 @@ so output stays clean when redirected.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import sys
 from datetime import date
+from pathlib import Path
 
 # ── Colour support ───────────────────────────────────────────────────
 _COLOR = sys.stdout.isatty() and os.environ.get("TERM", "") != "dumb"
@@ -221,7 +223,80 @@ def _normalise_theme(name: str | None) -> str:
     return "dark"
 
 
-_THEME = _normalise_theme(os.environ.get("CS_THEME"))
+# ── Remembered choices ───────────────────────────────────────────────
+# The theme is the one thing cs lets you choose that has to outlive the
+# process. Everything else on the landing screen is a view you open and
+# close; a palette is picked once, from a gallery, and a gallery whose
+# answer is forgotten at the prompt is one you have to visit every run.
+# That is a single named choice, so it is a one-key file rather than a
+# configuration system.
+
+
+def settings_path() -> Path:
+    """Where the remembered theme is kept.
+
+    Never inside COPILOT_HOME: that is Copilot's own store, opened
+    read-only, and cs has no business writing next to it.
+    """
+    home = os.environ.get("CS_CONFIG_HOME") or os.environ.get("XDG_CONFIG_HOME")
+    base = Path(home) if home else Path.home() / ".config"
+    return base / "cs" / "settings.json"
+
+
+def _load_settings() -> dict:
+    """The stored choices. An unreadable or malformed file simply has none."""
+    try:
+        with open(settings_path(), encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return stored if isinstance(stored, dict) else {}
+
+
+def saved_theme() -> str | None:
+    """The theme last applied from the picker, or None if there isn't one.
+
+    None rather than "dark" for a name that no longer exists, so a theme
+    retired between releases falls back to the default instead of pinning
+    the file's stale answer over it.
+    """
+    name = _load_settings().get("theme")
+    if not isinstance(name, str):
+        return None
+    chosen = name.strip().lower()
+    chosen = _THEME_ALIASES.get(chosen, chosen)
+    return chosen if chosen in THEMES else None
+
+
+def save_theme(name: str) -> bool:
+    """Remember `name` for the next run. False when it could not be written.
+
+    Written to a neighbouring file and renamed over the target, so an
+    interrupted write leaves the previous choice intact rather than a
+    half-written file that reads as no choice at all.
+    """
+    path = settings_path()
+    settings = _load_settings()
+    settings["theme"] = _normalise_theme(name)
+    partial = path.with_name(path.name + ".partial")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(partial, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, indent=2)
+            handle.write("\n")
+        os.replace(partial, path)
+    except OSError:
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+# CS_THEME stays an explicit override for the run it is set on. Without it,
+# the theme you last applied from the picker is the one you come back to.
+_THEME = _normalise_theme(os.environ.get("CS_THEME") or saved_theme())
 _RAMP = _RAMPS[_THEME]
 
 

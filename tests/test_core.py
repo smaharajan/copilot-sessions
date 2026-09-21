@@ -1702,6 +1702,50 @@ class CSTest(StoreTest):
         code, _ = self._run("show", "sess-unused")
         self.assertEqual(code, 0)
 
+    def test_a_session_still_running_is_listed_before_its_first_turn(self):
+        """The session you open in the next window is the one cs hid.
+
+        Copilot records usage events as they are billed but only writes a
+        `turns` row once an exchange has been persisted, so a live session
+        sits at zero turns with real spend against it. The zero-turn rule
+        dropped it from every listing but `cs all`, while the landing strip
+        — which counts on all three axes in SQL — had already counted it.
+        """
+        import sqlite3 as sq
+
+        import cs.cli as cli
+
+        # The rule itself: credits are activity, a bare name is not.
+        live = ("sess-live", "2026-01-01 00:00", "Live right now", "",
+                "/tmp/e", 0, 1654336800)
+        self.assertFalse(cli._is_hidden(live[2], live[5], live[6], []))
+        self.assertFalse(cli._never_used(live))
+        self.assertTrue(cli._is_hidden("", 0, 0, []), "an abandoned launch")
+        self.assertTrue(cli._is_hidden("Named", 0, 0, []), "a name is not work")
+        # The ignore file still applies to a session that is running, and a
+        # summary the store never wrote is not an AttributeError.
+        self.assertTrue(cli._is_hidden("Run the pipeline", 0, 99,
+                                       ["Run the pipeline"]))
+        self.assertFalse(cli._is_hidden(None, 3, 0, ["Run the pipeline"]))
+
+        conn = sq.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute(
+            "INSERT INTO sessions VALUES ('sess-live','/tmp/e','acme/portal',"
+            "'local','main','Live right now', datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO assistant_usage_events (session_id, turn_index, model,"
+            " total_nano_aiu) VALUES ('sess-live', 0, 'gpt-5', 1654336800)"
+        )
+        conn.commit()
+        conn.close()
+
+        for command in ("recent", "all"):
+            with self.subTest(command=command):
+                code, out = self._run(command, "1")
+                self.assertEqual(code, 0)
+                self.assertIn("Live right now", out)
+
     def test_the_session_count_agrees_with_the_sessions_you_can_list(self):
         """The landing strip said 963 sessions and `cs all` listed 955.
 
@@ -1864,6 +1908,104 @@ class CSTest(StoreTest):
             line.split("=", 1) for line in _index_file().read_text().splitlines()
         )
         self.assertEqual(saved, {"1": "id-new", "2": "id-mid", "3": "id-old"})
+
+    def test_an_open_listing_picks_up_a_session_started_beside_it(self):
+        """The view read the store once and never again.
+
+        A session started in another window arrived only when the listing
+        was next reopened — which, on a screen you sit and watch with a
+        refresh running, reads as the listing simply being wrong.
+        """
+        from unittest.mock import patch
+
+        from cs import cli
+        from cs.cli import _index_file, _listing_tui
+
+        rows = [
+            ("id-new", "2026-08-01T12:00", "Newest", "r/a", "/tmp", 1, 50_000_000_000),
+            ("id-mid", "2026-08-01T11:00", "Middle", "r/b", "/tmp", 2, 5_000_000_000),
+        ]
+        # What the next read finds: a session that did not exist when the
+        # view opened, newest and therefore first in natural order.
+        arrived = ("id-live", "2026-08-01T13:00", "Started beside it", "r/c",
+                   "/tmp", 0, 1_600_000_000)
+        reload = lambda: ([arrived, *rows], "Sessions · 3 total")
+
+        # -1 is the heartbeat curses reports when nothing was typed.
+        screen = Screen([-1, ord("q")])
+        with patch.object(cli, "_REFRESH_SECONDS", 0):
+            _listing_tui(screen, rows, "Sessions · 2 total", reload=reload)
+
+        final = screen.frames[-1]
+        summaries = [final[(y, 47)].strip() for y in (5, 6, 7)]
+        self.assertIn("Started beside it", summaries)
+        self.assertIn("Sessions · 3 total", final[(0, 0)])
+
+        # #N identifies a session: the two that were already listed keep the
+        # numbers they were read under, and the newcomer takes the next free
+        # one rather than becoming #1 and shifting them.
+        saved = dict(
+            line.split("=", 1) for line in _index_file().read_text().splitlines()
+        )
+        self.assertEqual(saved, {"1": "id-new", "2": "id-mid", "3": "id-live"})
+        numbered = {final[(y, 47)].strip(): final[(y, 0)].strip() for y in (5, 6, 7)}
+        self.assertEqual(numbered["Started beside it"], "3")
+        self.assertEqual(numbered["Newest"], "1")
+
+    def test_a_quiet_heartbeat_changes_nothing_and_a_broken_one_is_survived(self):
+        """A refresh that reads the same store, or cannot read it at all,
+        must leave the rows already on screen exactly as they are."""
+        import sqlite3
+
+        from cs import cli
+
+        rows = [("id-a", "2026-08-01T12:00", "A", "r/a", "/tmp", 1, 5_000_000_000)]
+        numbers = {"id-a": 1}
+        state: dict = {}
+
+        unchanged, title, kept, follow = cli._reread_listing(
+            lambda: (list(rows), "same"), rows, "same", numbers, state, "id-a"
+        )
+        self.assertEqual(unchanged, rows)
+        self.assertEqual(kept, numbers)
+        self.assertIsNone(follow, "nothing moved, so nothing to follow")
+        self.assertEqual(state, {}, "an unchanged store is not a redraw")
+
+        def broken():
+            raise sqlite3.OperationalError("database is locked")
+
+        survived = cli._reread_listing(broken, rows, "same", numbers, state, "id-a")
+        self.assertEqual(survived, (rows, "same", numbers, None))
+
+    def test_a_refreshed_listing_keeps_the_cursor_on_its_own_session(self):
+        """A new arrival must not pull the highlight onto itself."""
+        from cs import cli
+
+        rows = [("id-a", "2026-08-01T12:00", "A", "r/a", "/tmp", 1, 5_000_000_000)]
+        arrived = ("id-b", "2026-08-01T13:00", "B", "r/b", "/tmp", 1, 9_000_000_000)
+        state: dict = {}
+        fresh, title, numbers, follow = cli._reread_listing(
+            lambda: ([arrived, *rows], "Sessions · 2 total"),
+            rows, "Sessions · 1 total", {"id-a": 1}, state, "id-a",
+        )
+        self.assertEqual(follow, "id-a")
+        self.assertEqual(numbers, {"id-a": 1, "id-b": 2})
+        self.assertEqual(state["rows"], fresh)
+        self.assertEqual(state["title"], "Sessions · 2 total")
+
+    def test_numbers_are_extended_by_a_refresh_never_reassigned(self):
+        from cs import cli
+
+        rows = [("a",), ("b",), ("c",)]
+        first = cli._number_rows(rows)
+        self.assertEqual(first, {"a": 1, "b": 2, "c": 3})
+        # A newcomer at the top of natural order takes the next free number.
+        grown = cli._number_rows([("d",), *rows], first)
+        self.assertEqual(grown, {"a": 1, "b": 2, "c": 3, "d": 4})
+        # A session that has fallen out of the window does not hold a number
+        # open, but it does not free one for reuse either.
+        shrunk = cli._number_rows([("b",), ("e",)], grown)
+        self.assertEqual(shrunk, {"b": 2, "e": 5})
 
     def test_a_session_without_a_repo_shows_a_dot_not_a_gap(self):
         """The repo column is counted and empty, not failed to draw.
