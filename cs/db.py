@@ -242,41 +242,71 @@ def _fts_fallback_query(term: str) -> str:
 
 
 def _fts_hits(
-    conn: sqlite3.Connection, term: str, scan: int
+    conn: sqlite3.Connection, term: str
 ) -> list[tuple[str, str, str]]:
-    """Best-first (session_id, source_type, snippet) for a full-text query.
+    """Best-first (session_id, source_type, snippet), one per matching session.
 
     The query is tried as typed so AND/OR/NEAR and "phrases" keep working,
     then retried sanitised. Returns [] when neither parses.
-    """
-    # No highlight markers: FTS would insert them at token boundaries, which
-    # inside a credential (`ghp` `_` `ZZZZ…` is three tokens) splits it into
-    # something no redaction pattern recognises. The match is coloured later,
-    # in Python, once the text has been masked. See cli._snippet.
-    sql = """
-        SELECT session_id, source_type,
-               snippet(search_index, 0, '', '', '…', 12),
-               bm25(search_index) AS rank
-        FROM search_index
-        WHERE search_index MATCH ?
-        ORDER BY rank
-        LIMIT ?
+
+    Every session that matches is returned. The ranking pass reads no text,
+    so it costs little however many rows match; snippet() is the expensive
+    part, and it is asked for only on each session's best row. Asking for it
+    on every row was what forced a cap in the first place — and the cap, at
+    forty sessions, hid real matches: a project name mentioned across fifty
+    sessions lost the rest with nothing on screen to say so.
     """
     for query in (term, _fts_fallback_query(term)):
         if not query:
             continue
         try:
-            rows = conn.execute(sql, (query, scan)).fetchall()
+            ranked = conn.execute(
+                """SELECT rowid, session_id, source_type FROM search_index
+                   WHERE search_index MATCH ?
+                   ORDER BY bm25(search_index)""",
+                (query,),
+            ).fetchall()
         except sqlite3.OperationalError:
             continue  # bad FTS syntax — try the sanitised form
-        return [(sid, source, snippet) for sid, source, snippet, _ in rows]
+        best: dict[str, tuple[int, str]] = {}
+        for rowid, sid, source in ranked:
+            best.setdefault(sid, (rowid, source))
+        # No highlight markers: FTS would insert them at token boundaries,
+        # which inside a credential (`ghp` `_` `ZZZZ…` is three tokens)
+        # splits it into something no redaction pattern recognises. The
+        # match is coloured later, in Python, once the text has been masked.
+        # See cli._snippet.
+        snippets: dict[int, str] = {}
+        rowids = [rowid for rowid, _ in best.values()]
+        for chunk in _chunks(rowids):
+            snippets.update(conn.execute(
+                f"""SELECT rowid, snippet(search_index, 0, '', '', '…', 12)
+                    FROM search_index
+                    WHERE search_index MATCH ?
+                      AND rowid IN ({','.join('?' * len(chunk))})""",
+                (query, *chunk),
+            ))
+        return [
+            (sid, source, snippets.get(rowid) or "")
+            for sid, (rowid, source) in best.items()
+        ]
     return []
 
 
+def _chunks(values: list, size: int = 500):
+    """Slices small enough for an IN (...) list on any SQLite build.
+
+    Older builds refuse more than 999 bound parameters in one statement, and
+    an uncapped search can name every session in the store.
+    """
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
+
+
 def search(
-    conn: sqlite3.Connection, term: str, limit: int = 40
+    conn: sqlite3.Connection, term: str
 ) -> tuple[list[tuple], dict[str, tuple[str, str]]]:
-    """Search sessions, best match first, with the snippet that matched.
+    """Every session that matches, best match first, with the snippet that matched.
 
     Metadata hits (summary, repo, directory) outrank full-text hits: if the
     term names the session, that is a stronger signal than a passing mention
@@ -293,43 +323,34 @@ def search(
         f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
             FROM sessions s
             WHERE {named}
-            ORDER BY MAX(s.created_at, s.updated_at) DESC
-            LIMIT ?2""",
-        (like, limit),
+            ORDER BY MAX(s.created_at, s.updated_at) DESC""",
+        (like,),
     ).fetchall()
 
-    ordered = [row[0] for row in meta]
+    # A dict for its order and its membership test: an uncapped search can
+    # name a thousand sessions, and `in` on a list of them is quadratic.
+    ordered = dict.fromkeys(row[0] for row in meta)
     hits: dict[str, tuple[str, str]] = {}
     if _has_fts(conn):
-        # Scanned wide because one session can own many matching rows, and
-        # only its best one is kept.
-        for sid, source, snippet in _fts_hits(conn, term, scan=limit * 20):
-            if sid not in hits:
-                hits[sid] = (source, " ".join(snippet.split()))
-            if sid not in ordered:
-                ordered.append(sid)
+        for sid, source, snippet in _fts_hits(conn, term):
+            hits.setdefault(sid, (source, " ".join(snippet.split())))
+            ordered.setdefault(sid)
     else:
         # No index: fall back to scanning the turns themselves.
-        ordered.extend(
-            sid
-            for (sid,) in conn.execute(
-                """SELECT DISTINCT session_id FROM turns
-                   WHERE user_message LIKE ?1 OR assistant_response LIKE ?1
-                   LIMIT 400""",
-                (like,),
-            )
-            if sid not in ordered
-        )
+        for (sid,) in conn.execute(
+            """SELECT DISTINCT session_id FROM turns
+               WHERE user_message LIKE ?1 OR assistant_response LIKE ?1""",
+            (like,),
+        ):
+            ordered.setdefault(sid)
 
-    ordered = ordered[:limit]
     known = {row[0]: row for row in meta}
     missing = [sid for sid in ordered if sid not in known]
-    if missing:
-        placeholders = ",".join("?" * len(missing))
+    for chunk in _chunks(missing):
         for row in conn.execute(
             f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
-                FROM sessions s WHERE s.id IN ({placeholders})""",
-            missing,
+                FROM sessions s WHERE s.id IN ({','.join('?' * len(chunk))})""",
+            chunk,
         ):
             known[row[0]] = row
 

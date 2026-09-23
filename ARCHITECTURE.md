@@ -227,14 +227,14 @@ flowchart TD
     HAS -->|yes| RAW["MATCH the query as typed<br/>keeps AND / OR / NEAR / phrases"]
     RAW -->|OperationalError| SAFE["retry: quote each word,<br/>join with AND"]
     RAW -->|ok| RANK
-    SAFE -->|ok| RANK["order by bm25, take snippet()"]
+    SAFE -->|ok| RANK["order every match by bm25<br/>snippet() on each session's best row only"]
     SAFE -->|still bad| NONE["no full-text hits"]
 
     META --> MERGE["merge: metadata hits first,<br/>then bm25 order"]
     RANK --> MERGE
     SCAN --> MERGE
     NONE --> MERGE
-    MERGE --> DEDUP["first hit per session wins<br/>scan 20× the limit, keep 40"]
+    MERGE --> DEDUP["first hit per session wins<br/>no cap: every matching session"]
     DEDUP --> OUT["rows, plus one snippet per session"]
 ```
 

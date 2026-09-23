@@ -5,6 +5,21 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Search finds every session that matches, not the first forty.** Results
+  were cut at 40 sessions with nothing on screen to say so, and the title
+  counted what survived the cut — so a term mentioned across more sessions
+  than that lost the rest, including recent ones, while the header read as
+  if that were all there was. A project acronym found in 55 sessions showed
+  40. Every match is returned now, from the full-text index and from the
+  turns scan an older store falls back to. It is also faster on common
+  words: the index is ranked without reading any text, and a snippet is
+  taken only from each session's best row rather than from every row, so a
+  search matching over a thousand sessions went from 0.8s to 0.2s.
+
 ## [1.1.0] — 2026-09-23
 
 ### Added
@@ -301,5 +316,6 @@ only.
   masked at the render edge in `cs/redact.py`, and terminal control sequences
   and row-breaking characters are stripped before anything is drawn.
 
+[Unreleased]: https://github.com/smaharajan/copilot-sessions/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.1.0
 [1.0.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.0.0

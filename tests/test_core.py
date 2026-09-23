@@ -131,6 +131,69 @@ class CSTest(StoreTest):
         self.assertEqual(code, 0)
         self.assertIn("Three.js", out)  # found via the turns table
 
+    def _add_matching_sessions(self, count: int, *, indexed: bool = True) -> None:
+        """`count` sessions that mention 'quokka' once, each in its own turn."""
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        sessions = [f"sess-q{n:03d}" for n in range(count)]
+        conn.executemany(
+            "INSERT INTO sessions (id, summary, created_at, updated_at) "
+            "VALUES (?, ?, datetime('now'), datetime('now'))",
+            [(sid, f"Session {sid}") for sid in sessions],
+        )
+        conn.executemany(
+            "INSERT INTO turns (session_id, turn_index, user_message, "
+            "assistant_response, timestamp) VALUES (?, 0, ?, 'ok', 't')",
+            [(sid, "where did the quokka go") for sid in sessions],
+        )
+        if indexed:
+            conn.executemany(
+                "INSERT INTO search_index (content, session_id, source_type) "
+                "VALUES (?, ?, 'turn')",
+                [("where did the quokka go", sid) for sid in sessions],
+            )
+        conn.commit()
+        conn.close()
+
+    def test_search_returns_every_matching_session(self):
+        """A term found in many sessions finds all of them, not the first 40.
+
+        The cap hid real matches with nothing on screen to say so. 520 also
+        crosses the 500-id batch the snippet and row lookups are split into.
+        """
+        from cs import db
+
+        self._add_matching_sessions(520)
+        conn = db.connect()
+        try:
+            rows, hits = db.search(conn, "quokka")
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 520)
+        self.assertEqual(len({row[0] for row in rows}), 520)
+        self.assertEqual(set(hits), {row[0] for row in rows})
+        self.assertTrue(all("quokka" in snippet for _, snippet in hits.values()))
+
+        code, out = self._run("search", "quokka")
+        self.assertEqual(code, 0)
+        self.assertIn("'quokka' · 520 sessions", out)
+
+    def test_search_without_fts_index_is_not_capped(self):
+        """The turns scan behind an old store has no limit either."""
+        from cs import db
+
+        self._add_matching_sessions(450, indexed=False)
+        raw = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        raw.execute("DROP TABLE search_index")
+        raw.commit()
+        raw.close()
+        conn = db.connect()
+        try:
+            rows, hits = db.search(conn, "quokka")
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 450)
+        self.assertEqual(hits, {})
+
     def test_cost(self):
         code, out = self._run("cost", "7")
         self.assertEqual(code, 0)
