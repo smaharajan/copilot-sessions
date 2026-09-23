@@ -608,7 +608,9 @@ def sgr_runs(line: str, palette: dict[str, int]) -> list[tuple[str, int]]:
 _GUTTER = " ▎│┃|>"
 
 
-def wrap_runs(runs: list[tuple[str, int]], width: int) -> list[list[tuple[str, int]]]:
+def wrap_runs(
+    runs: list[tuple[str, int]], width: int, *, starts: list[int] | None = None
+) -> list[list[tuple[str, int]]]:
     """One line's (text, attribute) runs as the rows a `width`-wide window holds.
 
     Cut at the cell, the way less wraps, not at a word: what runs past the
@@ -616,10 +618,13 @@ def wrap_runs(runs: list[tuple[str, int]], width: int) -> list[list[tuple[str, i
     boundary means nothing and every column does. Each continuation row
     repeats the line's gutter — its indent and quote bars — so a wrapped
     block still reads as one block. A gutter wider than half the window is
-    not repeated; there would be no room left for what it holds.
+    not repeated; there would be no room left for what it holds. `starts`,
+    when supplied, receives each row's character offset in the source line.
     """
     limit = max(1, width - 1)
     if sum(cells(text) for text, _ in runs) <= limit:
+        if starts is not None:
+            starts.append(0)
         return [runs]
     plain = "".join(text for text, _ in runs)
     depth = len(plain) - len(plain.lstrip(_GUTTER))
@@ -627,8 +632,12 @@ def wrap_runs(runs: list[tuple[str, int]], width: int) -> list[list[tuple[str, i
     gutter = _take_cells(runs, span)[0] if depth and span * 2 <= limit else []
     indent = sum(cells(text) for text, _ in gutter)
     rows, rest, room = [], runs, limit
+    consumed = 0
     while rest:
+        if starts is not None:
+            starts.append(consumed)
         head, rest = _take_cells(rest, room)
+        consumed += sum(len(text) for text, _ in head)
         rows.append(head if not rows else [*gutter, *head])
         room = limit - indent
     return rows
@@ -1326,15 +1335,22 @@ def _fit(text: str, width: int) -> str:
         return ""
     if cells(text) <= width:
         return text
+    return clip(text, width - 1) + "…"
+
+
+def clip(text: str, width: int) -> str:
+    """The prefix that fits in `width` cells, including attached zero-width marks."""
+    if width <= 0:
+        return ""
     # Measured a character at a time rather than re-measuring the whole
     # prefix on every step, which made a long title quadratic to fit.
     used, cut = 0, 0
     for at, ch in enumerate(text):
         used += cells(ch)
-        if used > width - 1:
+        if used > width:
             break
         cut = at + 1
-    return text[:cut] + "…"
+    return text[:cut]
 
 
 def _list_parts(text: str) -> tuple[str, str]:

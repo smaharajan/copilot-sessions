@@ -788,6 +788,7 @@ class CSTest(StoreTest):
         from cs.cli import _pause
 
         with mock.patch("cs.cli._drain_stdin") as drain, \
+             mock.patch("cs.cli._read_key", return_value=None), \
              mock.patch("builtins.input", return_value="") as prompt:
             self.assertTrue(_pause("x"))
             drain.assert_called_once()
@@ -2316,7 +2317,7 @@ class CSTest(StoreTest):
 
         drawn = [frame[(23, 0)] for frame in screen.frames
                  if frame.get((23, 0), "").startswith(" filter:")]
-        typed = [line.split("▏")[0].removeprefix(" filter:").strip()
+        typed = [line.split("|")[0].removeprefix(" filter:").strip()
                  for line in drawn]
         # First pass builds 'mid' a letter at a time; the second opens blank.
         self.assertEqual(typed[:4], ["", "m", "mi", "mid"])
@@ -2731,12 +2732,13 @@ class CSTest(StoreTest):
 
         from cs.cli import _pause
 
-        with mock.patch("builtins.input", return_value=""):
-            self.assertTrue(_pause("x"))          # Enter → back to the list
-        with mock.patch("builtins.input", return_value="q"):
-            self.assertFalse(_pause("x"))         # q → done
-        with mock.patch("builtins.input", side_effect=EOFError):
-            self.assertFalse(_pause("x"))         # Ctrl-D → done, no traceback
+        with mock.patch("cs.cli._read_key", return_value=None):
+            with mock.patch("builtins.input", return_value=""):
+                self.assertTrue(_pause("x"))          # Enter → back to the list
+            with mock.patch("builtins.input", return_value="q"):
+                self.assertFalse(_pause("x"))         # q → done
+            with mock.patch("builtins.input", side_effect=EOFError):
+                self.assertFalse(_pause("x"))         # Ctrl-D → done, no traceback
 
     def test_unknown_escape_sequence_does_not_quit(self):
         """A stray ESC-[ sequence must be swallowed, not read as Esc."""

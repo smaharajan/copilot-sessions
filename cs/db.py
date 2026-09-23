@@ -22,10 +22,18 @@ def default_db_path() -> Path:
     return base / "session-store.db"
 
 
-def connect(db_path: Path | None = None) -> sqlite3.Connection:
-    """Open the session store read-only. Exit with a clear message if absent."""
+def connect(db_path: Path | None = None, *, fatal: bool = True) -> sqlite3.Connection:
+    """Open the session store read-only.
+
+    CLI commands exit with a clear message when the store cannot be read.
+    Interactive refreshes use ``fatal=False`` to receive an exception
+    without printing over the screen, so their existing rows can survive a
+    temporarily unavailable store.
+    """
     path = db_path or default_db_path()
     if not path.exists():
+        if not fatal:
+            raise FileNotFoundError(f"no Copilot session store found at {path}")
         print(
             f"error: no Copilot session store found at {path}\n"
             f"       set COPILOT_HOME if your Copilot data lives elsewhere.",
@@ -42,6 +50,8 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
         shortfall = missing_essentials(conn)
     except sqlite3.DatabaseError as broken:
         conn.close()
+        if not fatal:
+            raise
         print(
             f"error: {path} is not readable as a database ({broken})\n"
             f"       if Copilot is mid-write, try again; otherwise set "
@@ -51,6 +61,10 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
         sys.exit(1)
     if shortfall:
         conn.close()
+        if not fatal:
+            raise sqlite3.DatabaseError(
+                f"{path} is not a Copilot session store: missing {', '.join(shortfall)}"
+            )
         print(
             f"error: {path} is not a Copilot session store\n"
             f"       missing {', '.join(shortfall)}\n"

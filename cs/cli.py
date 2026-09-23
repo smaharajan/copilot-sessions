@@ -1037,7 +1037,7 @@ def _find_sessions(query: str) -> tuple[set[str], dict[str, tuple[str, str]]]:
     cannot be read right now finds nothing extra, and the titles still match.
     """
     try:
-        conn = db.connect()
+        conn = db.connect(fatal=False)
         try:
             found, reasons = db.search(conn, query)
         finally:
@@ -1182,16 +1182,39 @@ def _prompt(screen, theme, y: int, width: int, prefix: str, initial: str) -> str
     # escape sequence belongs in neither the filter text nor the quit path.
     swallow: list[int] = []
     while True:
-        _addstr(screen, y, 0, f"{prefix}{text}▏".ljust(width), width, theme["status"])
+        # Keep the insertion point visible even when the query outgrows the
+        # window. Count cells, since a typed character need not be one cell.
+        room = max(0, width - ui.cells(prefix) - 2)
+        shown = text
+        if ui.cells(shown) > room:
+            used, start = 0, len(text)
+            for ch in reversed(text):
+                used += ui.cells(ch)
+                if used > max(0, room - 1):
+                    break
+                start -= 1
+            shown = "…" + text[start:]
+        _addstr(screen, y, 0, f"{prefix}{shown}|".ljust(width), width, theme["status"])
         screen.refresh()
         try:
-            key = screen.getch()
+            key = getattr(screen, "get_wch", screen.getch)()
+        except curses.error:
+            continue  # wide-character reads raise on a timeout
         except KeyboardInterrupt:
             return None  # cancel the filter, same as Esc
+        if isinstance(key, str):
+            if key.isprintable():
+                text += key
+                continue
+            key = ord(key)
         if key == -1:
             continue  # a timeout the caller left armed, not a keypress
         if key in (10, 13, curses.KEY_ENTER):
             return text
+        if key == curses.KEY_RESIZE:
+            height, width = screen.getmaxyx()
+            y = height - 1
+            continue
         if key == 27:
             # Esc cancels — but only a real Esc. Scrolling mid-filter used to
             # cancel it and then type the report's own bytes into the box.
@@ -1990,7 +2013,8 @@ def _addstr(screen, y: int, x: int, text: str, width: int, style: int = 0) -> No
     if y >= screen.getmaxyx()[0] or x >= screen.getmaxyx()[1]:
         return
     try:
-        screen.addnstr(y, x, text, max(min(width, screen.getmaxyx()[1] - x - 1), 0), style)
+        clipped = ui.clip(text, max(min(width, screen.getmaxyx()[1] - x - 1), 0))
+        screen.addnstr(y, x, clipped, len(clipped), style)
     except curses.error:
         pass
 
@@ -2636,7 +2660,8 @@ def _reader_tui(
     # tool output in it. The rows are shaped once per width (and per
     # re-sort), not once per keypress: a long transcript is thousands of
     # lines to measure.
-    shaped: dict = {"width": None, "lines": None, "rows": [], "term": None}
+    shaped: dict = {"width": None, "lines": None, "rows": [], "term": None,
+                    "anchors": []}
     # Find: less has it, and from the menu less is not what opens a
     # transcript — so a 1,700-row conversation could be scrolled but not
     # searched. `found` holds the rows that match, recomputed when the rows
@@ -2646,12 +2671,23 @@ def _reader_tui(
     selected_match: int | None = None
 
     def rows_for(width: int) -> list[list[tuple[str, int]]]:
-        nonlocal found, selected_match
+        nonlocal found, selected_match, offset
         if (shaped["width"] != width or shaped["lines"] is not lines
                 or shaped["term"] != term):
-            rows, found = _reader_rows(lines, palette, width, term)
-            shaped.update(width=width, lines=lines, rows=rows, term=term)
+            anchor = None
+            was_match = selected_match is not None
+            if shaped["lines"] is lines and shaped["term"] == term and shaped["anchors"]:
+                index = selected_match if was_match else offset
+                anchor = shaped["anchors"][min(index, len(shaped["anchors"]) - 1)]
+            anchors: list[tuple[int, int]] = []
+            rows, found = _reader_rows(lines, palette, width, term, anchors=anchors)
+            shaped.update(width=width, lines=lines, rows=rows, term=term, anchors=anchors)
             selected_match = None
+            if anchor is not None:
+                offset = next((i for i in range(len(anchors) - 1, -1, -1)
+                               if anchors[i] <= anchor), 0)
+                if was_match and offset in found:
+                    selected_match = offset
         return shaped["rows"]
 
     while True:
@@ -2684,23 +2720,36 @@ def _reader_tui(
             ("Esc back", "Esc", 0),
             ("q home", "q", 0),
         ]
-        hints.insert(3, ("/ find", "/", 1) if not term else ("n/N next", "n/N", 1))
+        hints.insert(3, ("/ find", "/", 0))
+        if term:
+            hints.insert(4, ("n/N next", "n/N", 0))
         if sort:
             hints.insert(0, ("←/→ sort", "←/→ sort", 1))
             hints.insert(1, ("s reverse", "s", 2))
         if mouse:
             hints.insert(0, ("scroll wheel", "wheel", 4))
         place = "end" if at_end else f"{min(offset + page, len(rows))}/{len(rows)}"
+        position = place
+        result = ""
         if term:
             here = sum(1 for index in found
                        if index <= (selected_match if selected_match is not None else offset))
-            place = (f"'{ui.trunc(term, 16)}' {max(here, 1)}/{len(found)} · {place}"
-                     if found else f"'{ui.trunc(term, 16)}' not found · {place}")
+            result = f"{max(here, 1)}/{len(found)}" if found else "not found"
+            place = f"'{ui.trunc(term, 16)}' {result} · {place}"
+        order = ""
         if sort:
             # The column belongs beside the position, not in the hints: hints
             # shrink to their short forms on a narrow window, and the one
             # thing you need after pressing ← is which column you landed on.
-            place = f"{sort['column']}{'↓' if sort['descending'] else '↑'} · {place}"
+            order = f"{sort['column']}{'↓' if sort['descending'] else '↑'}"
+            place = f"{order} · {place}"
+        # Allocate both sides before drawing: status must never overwrite
+        # the search keys or the way back on a narrow terminal.
+        budget = max(0, width - 3 - ui.cells(_fit_hints(hints, 0)))
+        forms = [place, " · ".join(part for part in (order, result, position) if part),
+                 " · ".join(part for part in (result, position) if part), result or position]
+        place = next((form for form in forms if ui.cells(form) <= budget),
+                     ui.trunc(forms[-1], budget))
         room = ui.cells(place)
         _addstr(screen, height - 1, 0,
                 f" {_fit_hints(hints, max(1, width - room - 3))} ".ljust(width),
@@ -2787,7 +2836,8 @@ def _reader_tui(
 
 
 def _reader_rows(
-    lines: list[str], palette: dict[str, int], width: int, term: str
+    lines: list[str], palette: dict[str, int], width: int, term: str,
+    *, anchors: list[tuple[int, int]] | None = None,
 ) -> tuple[list[list[tuple[str, int]]], list[int]]:
     """Wrap styled lines, marking matches before wrapping so words can cross rows.
 
@@ -2797,7 +2847,7 @@ def _reader_rows(
     """
     rows = []
     wanted = term.casefold()
-    for line in lines:
+    for line_number, line in enumerate(lines):
         runs = ui.sgr_runs(line, palette)
         if wanted:
             plain = "".join(text for text, _ in runs)
@@ -2818,7 +2868,10 @@ def _reader_rows(
                         begin = end
                 at += len(text)
             runs = styled
-        rows.extend(ui.wrap_runs(runs, width))
+        starts: list[int] = []
+        rows.extend(ui.wrap_runs(runs, width, starts=starts))
+        if anchors is not None:
+            anchors.extend((line_number, start) for start in starts)
     return rows, [at for at, runs in enumerate(rows) if any(attr == -1 for _, attr in runs)]
 
 
