@@ -19,6 +19,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   words: the index is ranked without reading any text, and a snippet is
   taken only from each session's best row rather than from every row, so a
   search matching over a thousand sessions went from 0.8s to 0.2s.
+- **A session you renamed is found, and listed, by the name you gave it.**
+  `/rename` writes the new name to `session-state/<id>/workspace.yaml`,
+  which is what Copilot's own session list shows, and never updates the
+  store's `summary`. Searching for a renamed title could therefore miss the
+  session, and listings still showed its original summary. A name
+  you gave a session is now its title in `recent`, `all`, `search` and
+  `files`, and on its page. Search also matches the name Copilot
+  generated, which is not promoted to the title, since the store's summary
+  is usually the better of the two. A session that matched on a title the
+  listing is not showing says which one, masked like any other session
+  text. The files are read, never written.
+- **No more gap between a session's title and its repository.** The
+  full-screen listing put the summary before the repository and gave it
+  every cell the other columns left, so on a wide window the repository sat
+  at the far edge — a hundred blank cells after a short title, with nothing
+  to carry the eye from one to the other. The repository now comes first,
+  only as wide as its longest name, and the summary is the last column, so
+  spare width falls off the end of the row. `←`/`→` step through the
+  columns in the order they are drawn.
+- **Filtering a listing reaches the conversations, not just the titles.**
+  `/` in *Recent* or *All sessions* matched only the summary, repository
+  and folder of the rows on screen, so a project named in dozens of
+  conversations but in few titles was nearly unreachable from a listing:
+  filtering *All sessions* for one found 5 sessions where `cs search`
+  found 56. The filter now asks the store the same question `cs search`
+  does and keeps the rows it answers, alongside the titles that contain
+  the letters typed, and the line under the list says what matched in the
+  highlighted session. Typing into a listing also starts the filter: a
+  letter with no job of its own used to do nothing, which read as a search
+  that found nothing. The listing's own keys (`v` `o` `t` `r` `s` `g` `q`)
+  keep their jobs.
+- **Long transcripts wrap and can be searched from the menu.** `/` finds
+  text, highlights matches across wrapped lines, and `n` / `N` move through
+  matching rows. Searching handles Unicode case folding and refreshes after
+  sorting or resizing. Quote and tool-output gutters repeat on wrapped rows.
+- **Small windows retain the useful parts of the interface.** Listings give
+  titles space before optional columns, wide characters fit their cells,
+  and menu arrows show when more entries are available by scrolling.
 
 ## [1.1.0] — 2026-09-23
 

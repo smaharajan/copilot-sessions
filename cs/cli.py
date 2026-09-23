@@ -161,6 +161,10 @@ def _never_used(row: tuple) -> bool:
 # the default. Sorting by either column still works when they are hidden.
 _KIT_MIN_WIDTH = 88
 
+# The fewest cells the summary is left with when a listing narrows. Every
+# other column gives way before it drops below this.
+_SUMMARY_MIN = 20
+
 
 def _kit_of(row: tuple) -> tuple[int, int]:
     """(skills, agents) for a listing row — (0, 0) for a row built without them.
@@ -310,10 +314,14 @@ def _hit_text(source: str, text: str) -> str:
 
     Search-index values are truncated FTS windows and need `_snippet`'s
     boundary handling. File hits are paths; treating their leading ellipsis
-    as an FTS marker used to discard the filename itself.
+    as an FTS marker used to discard the filename itself. A title the
+    listing does not show is masked like one it does: Copilot's generated
+    name is often the whole first prompt, pasted token and all.
     """
     if source in _SOURCE_LABELS:
         return _snippet(text)
+    if source in ("name", "summary"):
+        return redact.one_line(redact.redact(text))
     return redact.one_line(text)
 
 
@@ -355,7 +363,7 @@ _SORT_COLUMNS = {
     "skills": (7, True),
     "agents": (8, True),
 }
-_TUI_COLUMNS = ("active", "turns", "credits", "skills", "agents", "summary", "repo")
+_TUI_COLUMNS = ("active", "turns", "credits", "skills", "agents", "repo", "summary")
 _SORT_NAMES = "active, turns, credits, skills, agents, summary, repo, relevance"
 
 
@@ -1000,12 +1008,43 @@ def _render_listing(
     _save_index(index)
 
 
-def _filter_rows(rows: list[tuple], query: str) -> list[tuple]:
-    """Rows whose summary, repo or directory contain the query (case-insensitive)."""
+def _filter_rows(
+    rows: list[tuple], query: str, found: set[str] | frozenset[str] = frozenset()
+) -> list[tuple]:
+    """Rows whose summary, repo or directory contain the query, plus `found`.
+
+    The substring match is what lets a few letters find a title as they are
+    typed; `found` is what the store's full-text search returned for the
+    same words, which is how a session that mentions them only inside its
+    conversation stays in the list.
+    """
     if not query:
         return rows
     q = query.lower()
-    return [r for r in rows if any(q in (r[i] or "").lower() for i in (2, 3, 4))]
+    return [
+        r for r in rows
+        if r[0] in found or any(q in (r[i] or "").lower() for i in (2, 3, 4))
+    ]
+
+
+def _find_sessions(query: str) -> tuple[set[str], dict[str, tuple[str, str]]]:
+    """What `cs search` finds for a listing's filter: which sessions, and why.
+
+    The filter used to read only the titles on screen, so a session that
+    mentioned the words anywhere else — in a prompt, a reply, a checkpoint —
+    could not be reached from a listing at all, and typing a project's name
+    into 'All sessions' found five sessions out of fifty-six. A store that
+    cannot be read right now finds nothing extra, and the titles still match.
+    """
+    try:
+        conn = db.connect()
+        try:
+            found, reasons = db.search(conn, query)
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error):
+        return set(), {}
+    return {row[0] for row in found}, reasons
 
 
 def _interactive_listing(
@@ -1039,7 +1078,8 @@ def _interactive_listing(
     while True:
         try:
             action = _curses_wrapper(
-                _listing_tui, rows, title, default_sort, hits, state, reload
+                _listing_tui, rows, title, default_sort, hits, state, reload,
+                _find_sessions,
             )
             # The view re-reads the store on its own heartbeat; what it read
             # last is what a trip out to a detail view should come back to.
@@ -1540,6 +1580,13 @@ def _reread_listing(reload, rows: list[tuple], title: str,
     return fresh, fresh_title, numbers, here
 
 
+# Letters the full-screen listing gives a job to. Any other printable key
+# starts the filter; these never do, even with no row for them to act on —
+# 'r' on an empty result is a resume with nothing to resume, not the first
+# letter of a filter.
+_LISTING_KEYS = frozenset("vVoOtTrRsSgGqQ/")
+
+
 def _listing_tui(
     screen,
     rows: list[tuple],
@@ -1548,7 +1595,15 @@ def _listing_tui(
     hits: dict[str, tuple[str, str]] | None = None,
     state: dict | None = None,
     reload=None,
+    find=None,
 ) -> tuple[str, str] | None:
+    """The full-screen listing. Returns (verb, session id), or None to leave.
+
+    `reload` re-reads the rows on the refresh heartbeat. `find` answers a
+    filter the way `cs search` would — (session ids, why each matched) — so
+    that filtering reaches the conversations and not just the titles. With
+    neither, the rows are all there is, and the filter reads them alone.
+    """
     import curses
 
     # 'state' carries the view across a trip out to a detail view and back.
@@ -1571,6 +1626,17 @@ def _listing_tui(
     offset = state.get("offset", 0)
     cursor = state.get("cursor", 0)
     query = state.get("query", "")
+    # What `find` returned, and for which words. Kept in 'state' so a trip
+    # out to a session and back does not search the store again.
+    found_for, found, reasons = state.get("found", ("", set(), {}))
+
+    def refind() -> None:
+        nonlocal found_for, found, reasons
+        found_for = query
+        found, reasons = find(query) if find and query else (set(), {})
+
+    if query and found_for != query:
+        refind()
     follow = None  # session the cursor should stay on across a re-sort
     last_click = [0.0, -1]  # time and row, for pairing SGR clicks into one
     pending: list[int] = []  # keys read while probing for a mouse report
@@ -1603,7 +1669,7 @@ def _listing_tui(
     try:
         while True:
             sorted_rows, _ = _sort_rows(
-                _filter_rows(rows, query), sort_by, descending, numbers
+                _filter_rows(rows, query, found), sort_by, descending, numbers
             )
             if follow is not None:
                 # Re-sorting moves rows around; keep the highlight on the session
@@ -1615,8 +1681,13 @@ def _listing_tui(
 
             screen.erase()
             height, width = screen.getmaxyx()
-            # A search keeps the bottom line for the matching text of the row.
-            visible = max(height - 6 - (1 if hits else 0), 1)
+            # A search keeps the bottom line for the matching text of the
+            # row, and so does a filter, which is a search too. A filter's
+            # reason wins over the search's where both have one: it is about
+            # the words just typed.
+            why = {**(hits or {}), **reasons} if query else (hits or {})
+            explains = bool(hits) or bool(query)
+            visible = max(height - 6 - (1 if explains else 0), 1)
             cursor = min(cursor, max(len(sorted_rows) - 1, 0))
             # Keep the cursor on screen; scrolling follows it rather than the reverse.
             offset = min(max(offset, cursor - visible + 1), cursor)
@@ -1629,6 +1700,10 @@ def _listing_tui(
                 heading = f"◆  {title} · sorted by {sort_by} {arrow}"
             if query:
                 heading += f" · filter '{query}'"
+                # Cut at the edge, the filter was the part that went — and a
+                # filter you cannot see reads as sessions that have vanished.
+                if ui.cells(heading) > width:
+                    heading = f"◆  filter '{query}' · {title}"
             _addstr(screen, 0, 0, heading, width, theme["title"])
             _addstr(
                 screen,
@@ -1639,25 +1714,45 @@ def _listing_tui(
                 theme["help"],
             )
 
-            repo_width = min(22, max(12, width // 5))
-            # The kit columns are the first thing a narrow window gives up —
-            # they are a review column, and the summary is what the listing
-            # is for. Dropping them hands their 14 columns back to the summary
-            # rather than leaving a gap, and the mouse's column map is built
-            # from this same list, so a hidden column cannot be clicked.
-            kit = width >= _KIT_MIN_WIDTH
-            kit_span = 14 if kit else 0
-            summary_width = max(12, width - 39 - kit_span - repo_width)
-            columns = [
-                ("active", 5, 12),
-                ("turns", 17, 7),
-                ("credits", 24, 9),
-                *(
-                    [("skills", 33, 7), ("agents", 40, 7)] if kit else []
-                ),
-                ("summary", 33 + kit_span, summary_width),
-                ("repo", 33 + kit_span + summary_width, repo_width),
-            ]
+            # The summary is the last column, and the repository the one
+            # before it. The other way round, the summary took every cell
+            # the rest left over, so on a wide window the repository sat at
+            # the far edge, a hundred blank cells from the title it belonged
+            # to. Last, the slack falls off the end of the row where it is
+            # not a gap. The repository is only as wide as its longest name
+            # (never wider than it used to be), and it is measured over every
+            # row, not the filtered ones, so typing a filter does not slide
+            # the titles sideways.
+            longest_tag = max(
+                (ui.cells(_project_tag(row[3], row[4])) for row in rows), default=0
+            )
+            repo_width = min(22, max(12, width // 5), max(8, longest_tag + 2))
+            # Columns give way as the window narrows, least needed first —
+            # the kit pair, then turns, credits and the repository — and the
+            # summary keeps _SUMMARY_MIN cells whatever else has to go, since
+            # it is what a listing is read for. At 40 columns the numbers
+            # used to take every cell there was and no title showed at all.
+            # The mouse's column map is built from this same list, so a
+            # column that has given way cannot be clicked either.
+            spans = {"active": 12, "turns": 7, "credits": 9, "skills": 7,
+                     "agents": 7, "repo": repo_width}
+            room = width - 5 - spans["active"] - 1
+            kept = {"active"}
+            for group in (("repo",), ("credits",), ("turns",), ("skills", "agents")):
+                if group[0] == "skills" and width < _KIT_MIN_WIDTH:
+                    break
+                cost = sum(spans[name] for name in group)
+                if room - cost >= _SUMMARY_MIN:
+                    kept.update(group)
+                    room -= cost
+            columns = []
+            x = 5
+            for name in ("active", "turns", "credits", "skills", "agents", "repo"):
+                if name in kept:
+                    columns.append((name, x, spans[name]))
+                    x += spans[name]
+            columns.append(("summary", x, max(12, width - x - 1)))
+            summary_width = columns[-1][2]
             number_label = "  #" + (arrow if sort_by == "relevance" else " ")
             _addstr(
                 screen,
@@ -1678,39 +1773,30 @@ def _listing_tui(
                 skills, agents = _kit_of(row)
                 on_cursor = offset + line - 5 == cursor
                 tag = _project_tag(repo, cwd)
-                values = [
-                    f"{date.fromisoformat(started[:10]):%d %b %Y}",
-                    str(turns),
-                    ui.fmt_aiu(nano_aiu),
-                    *(
-                        [str(skills) if skills else "·",
-                         str(agents) if agents else "·"] if kit else []
-                    ),
-                    ui.trunc(
-                        redact.one_line(redact.redact(summary)) or _no_summary(turns),
-                        summary_width - 1,
-                    ),
-                    ui.trunc(tag, repo_width - 1) or "·",
-                ]
-                styles = [
-                    theme["active"],
-                    theme["turns"],
-                    theme["credits"] if nano_aiu else theme["number"],
-                    *(
-                        [theme["turns"] if skills else theme["number"],
-                         theme["turns"] if agents else theme["number"]] if kit else []
-                    ),
-                    theme["summary"],
+                cells = {
+                    "active": (f"{date.fromisoformat(started[:10]):%d %b %Y}",
+                               theme["active"]),
+                    "turns": (str(turns), theme["turns"]),
+                    "credits": (ui.fmt_aiu(nano_aiu),
+                                theme["credits"] if nano_aiu else theme["number"]),
+                    "skills": (str(skills) if skills else "·",
+                               theme["turns"] if skills else theme["number"]),
+                    "agents": (str(agents) if agents else "·",
+                               theme["turns"] if agents else theme["number"]),
                     # A session run outside any repository — from home, or a
                     # scratch directory too generic to name — has no tag to
                     # show. It gets the same dimmed '·' the skills and agents
                     # columns use for nothing, so the column reads as counted
                     # and empty rather than as a cell that failed to draw.
-                    theme["repo"] if tag else theme["number"],
-                ]
+                    "repo": (ui.trunc(tag, repo_width - 1) or "·",
+                             theme["repo"] if tag else theme["number"]),
+                    "summary": (ui.trunc(
+                        redact.one_line(redact.redact(summary)) or _no_summary(turns),
+                        summary_width - 1,
+                    ), theme["summary"]),
+                }
                 if on_cursor:
                     _addstr(screen, line, 0, " " * width, width, theme["cursor"])
-                    styles = [theme["cursor"]] * len(styles)
                 _addstr(
                     screen,
                     line,
@@ -1719,13 +1805,13 @@ def _listing_tui(
                     4,
                     theme["cursor"] if on_cursor else theme["number"],
                 )
-                for value, (_, x, column_width), style in zip(
-                    values, columns, styles, strict=True
-                ):
-                    _addstr(screen, line, x, f"{value:<{column_width}}", column_width, style)
+                for name, x, column_width in columns:
+                    value, style = cells[name]
+                    _addstr(screen, line, x, value, column_width,
+                            theme["cursor"] if on_cursor else style)
 
-            if hits:
-                hit = hits.get(sorted_rows[cursor][0]) if sorted_rows else None
+            if explains:
+                hit = why.get(sorted_rows[cursor][0]) if sorted_rows else None
                 if hit:
                     source, snippet = hit
                     text = (
@@ -1738,12 +1824,22 @@ def _listing_tui(
 
             if sorted_rows:
                 number = numbers[sorted_rows[cursor][0]]
-                status = (
-                    f" {cursor + 1} of {len(sorted_rows)} sessions "
-                    f"· Enter resumes, or 'cs resume {number}' later "
+                at, total = cursor + 1, len(sorted_rows)
+                forms = (
+                    f" {at} of {total:,} sessions · Enter resumes, or "
+                    f"'cs resume {number}' later ",
+                    f" {at} of {total:,} · ↵ resumes · cs resume {number} ",
+                    f" {at}/{total:,} · cs resume {number} ",
+                    f" {at}/{total:,} ",
                 )
             else:
-                status = " no sessions match the filter · press / to edit, Esc to clear "
+                forms = (
+                    " no sessions match the filter · press / to edit, Esc to clear ",
+                    " no match · / edits · Esc clears ",
+                    " no match ",
+                )
+            status = next((form for form in forms if ui.cells(form) <= width),
+                          forms[-1])
             _addstr(screen, height - 1, 0, status, width, theme["status"])
 
             screen.refresh()
@@ -1763,10 +1859,15 @@ def _listing_tui(
                 # parser, which reads -1 as the start of a broken sequence.
                 if time.monotonic() >= next_refresh:
                     next_refresh = time.monotonic() + _REFRESH_SECONDS
+                    before = rows
                     rows, title, numbers, follow = _reread_listing(
                         reload, rows, title, numbers, state,
                         sorted_rows[cursor][0] if sorted_rows else None,
                     )
+                    # A session that arrived since may be one the filter is
+                    # looking for.
+                    if query and rows is not before:
+                        refind()
                 continue
             event = _mouse_event(screen, curses, key, last_click, pending)
             if key in (ord("q"), ord("Q")):
@@ -1825,6 +1926,7 @@ def _listing_tui(
                 entered = _prompt(screen, theme, height - 1, width, " filter: ", "")
                 if entered is not None:
                     query, cursor, offset = entered, 0, 0
+                    refind()
             elif key in (ord("v"), ord("V"), ord("o"), ord("O")) and sorted_rows:
                 return "show", sorted_rows[cursor][0]
             elif key in (ord("t"), ord("T")) and sorted_rows:
@@ -1855,6 +1957,18 @@ def _listing_tui(
                 cursor = 0
             elif key in (ord("G"), curses.KEY_END):
                 cursor = max(len(sorted_rows) - 1, 0)
+            elif 32 < key < 127 and chr(key) not in _LISTING_KEYS:
+                # Typing finds, as it does on the landing page. A letter with
+                # no job of its own used to do nothing at all, so typing a
+                # project's name into a listing read as a search that found
+                # nothing. It opens the filter with that letter already in
+                # it; the letters that are keys here keep their jobs, even
+                # when there is no row for them to act on.
+                entered = _prompt(screen, theme, height - 1, width, " filter: ",
+                                  chr(key))
+                if entered is not None:
+                    query, cursor, offset = entered, 0, 0
+                    refind()
     finally:
         # Anything that leaves the loop keeps the view it left behind,
         # so returning from a detail view lands where you were.
@@ -1864,6 +1978,7 @@ def _listing_tui(
             cursor=cursor,
             offset=offset,
             query=query,
+            found=(found_for, found, reasons),
         )
         if timed:
             wait(-1)  # a detail view opened from here reads keys of its own
@@ -2515,27 +2630,52 @@ def _reader_tui(
     # reading is motion that says nothing and never stops saying it.
     reveal = 0 if wait(ui.REVEAL_MS) else None
 
+    # Long lines wrap rather than stopping at the edge. They used to be cut
+    # there with no sign that anything was missing — a transcript opened
+    # from the menu lost the right-hand end of every table and block of
+    # tool output in it. The rows are shaped once per width (and per
+    # re-sort), not once per keypress: a long transcript is thousands of
+    # lines to measure.
+    shaped: dict = {"width": None, "lines": None, "rows": [], "term": None}
+    # Find: less has it, and from the menu less is not what opens a
+    # transcript — so a 1,700-row conversation could be scrolled but not
+    # searched. `found` holds the rows that match, recomputed when the rows
+    # are reshaped.
+    term = ""
+    found: list[int] = []
+    selected_match: int | None = None
+
+    def rows_for(width: int) -> list[list[tuple[str, int]]]:
+        nonlocal found, selected_match
+        if (shaped["width"] != width or shaped["lines"] is not lines
+                or shaped["term"] != term):
+            rows, found = _reader_rows(lines, palette, width, term)
+            shaped.update(width=width, lines=lines, rows=rows, term=term)
+            selected_match = None
+        return shaped["rows"]
+
     while True:
         height, width = screen.getmaxyx()
         page = max(1, height - 1)
-        offset = max(0, min(offset, max(0, len(lines) - page)))
+        rows = rows_for(width)
+        offset = max(0, min(offset, max(0, len(rows) - page)))
         screen.erase()
         screen.bkgd(" ", theme["background"])
         span = width + ui.REVEAL_LAG * page
         swept = span if reveal is None else ui.reveal_columns(reveal, span)
-        for row, line in enumerate(lines[offset:offset + page]):
+        for row, runs in enumerate(rows[offset:offset + page]):
             column = 0
             # Each row trails the one above it, so the edge crossing the page
             # is a slant rather than a shutter.
             edge = width if reveal is None else min(
                 width, max(0, swept - row * ui.REVEAL_LAG))
-            for text, attr in ui.sgr_runs(line, palette):
+            for text, attr in runs:
                 if column >= edge:
                     break
                 _addstr(screen, row, column, text, edge - column,
-                        attr or theme["summary"])
+                        theme["cursor"] if attr == -1 else attr or theme["summary"])
                 column += ui.cells(text)
-        at_end = offset + page >= len(lines)
+        at_end = offset + page >= len(rows)
         hints = [
             ("↑/↓ scroll", "↑↓", 3),
             ("space page", "space", 2),
@@ -2544,21 +2684,28 @@ def _reader_tui(
             ("Esc back", "Esc", 0),
             ("q home", "q", 0),
         ]
+        hints.insert(3, ("/ find", "/", 1) if not term else ("n/N next", "n/N", 1))
         if sort:
             hints.insert(0, ("←/→ sort", "←/→ sort", 1))
             hints.insert(1, ("s reverse", "s", 2))
         if mouse:
             hints.insert(0, ("scroll wheel", "wheel", 4))
-        place = "end" if at_end else f"{min(offset + page, len(lines))}/{len(lines)}"
+        place = "end" if at_end else f"{min(offset + page, len(rows))}/{len(rows)}"
+        if term:
+            here = sum(1 for index in found
+                       if index <= (selected_match if selected_match is not None else offset))
+            place = (f"'{ui.trunc(term, 16)}' {max(here, 1)}/{len(found)} · {place}"
+                     if found else f"'{ui.trunc(term, 16)}' not found · {place}")
         if sort:
             # The column belongs beside the position, not in the hints: hints
             # shrink to their short forms on a narrow window, and the one
             # thing you need after pressing ← is which column you landed on.
             place = f"{sort['column']}{'↓' if sort['descending'] else '↑'} · {place}"
+        room = ui.cells(place)
         _addstr(screen, height - 1, 0,
-                f" {_fit_hints(hints, max(1, width - len(place) - 3))} ".ljust(width),
+                f" {_fit_hints(hints, max(1, width - room - 3))} ".ljust(width),
                 width, theme["status"])
-        _addstr(screen, height - 1, max(0, width - len(place) - 1), place, width, theme["status"])
+        _addstr(screen, height - 1, max(0, width - room - 1), place, width, theme["status"])
         screen.refresh()
         try:
             key = pending.pop(0) if pending else screen.getch()
@@ -2591,11 +2738,16 @@ def _reader_tui(
             kind, _x, _y = event
             if kind == "wheel-up":
                 offset -= 3
+                selected_match = None
             elif kind == "wheel-down":
                 offset += 3
+                selected_match = None
             continue
         if key in (ord("q"), ord("Q"), 27):
             return
+        if key in (curses.KEY_DOWN, curses.KEY_UP, curses.KEY_NPAGE, curses.KEY_PPAGE,
+                   curses.KEY_HOME, curses.KEY_END, *map(ord, "jk fbgG")):
+            selected_match = None
         if key in (curses.KEY_DOWN, ord("j")):
             offset += 1
         elif key in (curses.KEY_UP, ord("k")):
@@ -2607,7 +2759,18 @@ def _reader_tui(
         elif key in (curses.KEY_HOME, ord("g")):
             offset = 0
         elif key in (curses.KEY_END, ord("G")):
-            offset = len(lines)
+            offset = len(shaped["rows"])
+        elif key == ord("/"):
+            entered = _prompt(screen, theme, height - 1, width, " find: ", "")
+            if entered is not None:
+                term = entered
+                rows_for(width)
+                offset = _next_match(found, offset - 1, 1, offset)
+                selected_match = offset if found else None
+        elif key in (ord("n"), ord("N")) and found:
+            after = selected_match if selected_match is not None else offset
+            offset = _next_match(found, after, 1 if key == ord("n") else -1, offset)
+            selected_match = offset
         elif sort and key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("s"), ord("S")):
             if key == ord("s") or key == ord("S"):
                 sort["descending"] = not sort["descending"]
@@ -2621,6 +2784,54 @@ def _reader_tui(
             # Re-sorting reorders the whole table, so the row you were looking
             # at is not there any more. The top is the only honest place to be.
             offset = 0
+
+
+def _reader_rows(
+    lines: list[str], palette: dict[str, int], width: int, term: str
+) -> tuple[list[list[tuple[str, int]]], list[int]]:
+    """Wrap styled lines, marking matches before wrapping so words can cross rows.
+
+    Attribute -1 marks matching text until the reader assigns its highlight.
+    Case folding can expand a character (ß becomes ss), so folded positions
+    are mapped back to the original text before applying the highlight.
+    """
+    rows = []
+    wanted = term.casefold()
+    for line in lines:
+        runs = ui.sgr_runs(line, palette)
+        if wanted:
+            plain = "".join(text for text, _ in runs)
+            folded = plain.casefold()
+            positions = [at for at, ch in enumerate(plain) for _ in ch.casefold()]
+            marked: set[int] = set()
+            start = folded.find(wanted)
+            while start >= 0:
+                marked.update(range(positions[start], positions[start + len(wanted) - 1] + 1))
+                start = folded.find(wanted, start + len(wanted))
+            styled: list[tuple[str, int]] = []
+            at = 0
+            for text, attr in runs:
+                begin = 0
+                for end in range(1, len(text) + 1):
+                    if end == len(text) or ((at + end) in marked) != ((at + begin) in marked):
+                        styled.append((text[begin:end], -1 if at + begin in marked else attr))
+                        begin = end
+                at += len(text)
+            runs = styled
+        rows.extend(ui.wrap_runs(runs, width))
+    return rows, [at for at, runs in enumerate(rows) if any(attr == -1 for _, attr in runs)]
+
+
+def _next_match(found: list[int], after: int, step: int, stay: int) -> int:
+    """The match after (or before) row `after`, round the end if need be.
+
+    `stay` is where to remain when there is nothing to find.
+    """
+    if not found:
+        return stay
+    if step > 0:
+        return next((index for index in found if index > after), found[0])
+    return next((index for index in reversed(found) if index < after), found[-1])
 
 
 def _read_in_place(text: str, sort: dict | None = None) -> bool:
@@ -7202,8 +7413,18 @@ def _home_tui(screen, state: dict):
                 _addstr(screen, line, 6, f"{ui.trunc(label, 16):<16}", 16,
                         style or theme["label"])
                 if width > 45:
-                    _addstr(screen, line, 24, description, width - 25,
-                            style or theme["repo"])
+                    # Two cells short of the edge: room for the scroll marks,
+                    # and a description that does not fit ends in '…' rather
+                    # than stopping mid-word.
+                    _addstr(screen, line, 24, ui.trunc(description, width - 27),
+                            width - 25, style or theme["repo"])
+            # On a short window the menu scrolls, and without a mark the rows
+            # below the fold — Theme and Help, at 24 lines — simply did not
+            # exist as far as anyone could see.
+            if reveal is None and offset > 0:
+                _addstr(screen, top, width - 2, "↑", 1, theme["title"])
+            if reveal is None and offset + visible < len(layout):
+                _addstr(screen, top + visible - 1, width - 2, "↓", 1, theme["title"])
             if not shown:
                 _addstr(screen, top, 3, f"nothing matches '{query}'", width,
                         theme["repo"])
@@ -7424,7 +7645,7 @@ def cmd_help() -> None:
 
   {ui.BOLD}Find{ui.RST}
     cs search <words>     Full-text search, best match first
-                          {ui.DIM}Searches summaries, repos, both sides of every turn and
+                          {ui.DIM}Searches names, summaries, repos, both sides of every turn and
                           session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
 
   {ui.BOLD}Inspect & resume{ui.RST}
@@ -7499,7 +7720,10 @@ def cmd_help() -> None:
     double-click a row to resume it straight away, click a column header
     to sort by it, and scroll with the wheel.
     Sorting keeps the highlight on your session, so it never moves out
-    from under you.{ui.RST}
+    from under you.
+    Reports and transcripts opened from the menu wrap long lines:
+      /      find text                  n/N    next/previous matching row
+    An empty find clears the highlights; Esc cancels the find prompt.{ui.RST}
 
   {ui.BOLD}Sorting{ui.RST}
     {ui.DIM}Listings — recent, all, search, 'files <path>':

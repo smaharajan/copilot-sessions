@@ -458,6 +458,36 @@ class CellWidthTest(StoreTest):
                   ("\u200d", "zero-width joiner"),
                   ("\u0301", "combining acute accent"))
 
+    def test_wrapping_preserves_text_attributes_and_quote_gutters(self):
+        from cs import ui
+
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width):
+                body = "日本語 e\u0301 " * 60
+                rows = ui.wrap_runs([("  │ ", 1), (body, 2)], width)
+                self.assertGreater(len(rows), 1)
+                self.assertEqual("".join(text for row in rows for text, attr in row if attr == 2),
+                                 body)
+                for row in rows:
+                    self.assertTrue("".join(text for text, _ in row).startswith("  │ "))
+                    self.assertLessEqual(sum(ui.cells(text) for text, _ in row), width - 1)
+
+    def test_wrapping_survives_tiny_windows_and_deep_indents(self):
+        from cs import ui
+
+        for width in (1, 2, 3, 10):
+            with self.subTest(width=width):
+                text = " " * 8 + "日本語"
+                rows = ui.wrap_runs([(text, 1)], width)
+                self.assertEqual("".join(part for row in rows for part, _ in row), text)
+
+    def test_trunc_handles_wide_titles_and_empty_budgets(self):
+        from cs import ui
+
+        self.assertEqual(ui.trunc("日本語", 5), "日本…")
+        self.assertEqual(ui.trunc("abc", 0), "")
+        self.assertEqual(ui.trunc("abc", -1), "")
+
     def test_a_zero_width_character_costs_no_column(self):
         from cs import ui
 

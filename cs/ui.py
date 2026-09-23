@@ -603,6 +603,64 @@ def sgr_runs(line: str, palette: dict[str, int]) -> list[tuple[str, int]]:
     return runs
 
 
+# What a wrapped line repeats at the start of each continuation row: its
+# indent, and the bars that mark a quote or a block of tool output.
+_GUTTER = " ▎│┃|>"
+
+
+def wrap_runs(runs: list[tuple[str, int]], width: int) -> list[list[tuple[str, int]]]:
+    """One line's (text, attribute) runs as the rows a `width`-wide window holds.
+
+    Cut at the cell, the way less wraps, not at a word: what runs past the
+    edge is nearly always a table or a block of tool output, where a word
+    boundary means nothing and every column does. Each continuation row
+    repeats the line's gutter — its indent and quote bars — so a wrapped
+    block still reads as one block. A gutter wider than half the window is
+    not repeated; there would be no room left for what it holds.
+    """
+    limit = max(1, width - 1)
+    if sum(cells(text) for text, _ in runs) <= limit:
+        return [runs]
+    plain = "".join(text for text, _ in runs)
+    depth = len(plain) - len(plain.lstrip(_GUTTER))
+    span = cells(plain[:depth])
+    gutter = _take_cells(runs, span)[0] if depth and span * 2 <= limit else []
+    indent = sum(cells(text) for text, _ in gutter)
+    rows, rest, room = [], runs, limit
+    while rest:
+        head, rest = _take_cells(rest, room)
+        rows.append(head if not rows else [*gutter, *head])
+        room = limit - indent
+    return rows
+
+
+def _take_cells(
+    runs: list[tuple[str, int]], room: int
+) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """Split runs after `room` cells: (what fits, the rest).
+
+    Always takes at least one character, so a wrap can never stall on a
+    wide character that is broader than the room left for it.
+    """
+    head: list[tuple[str, int]] = []
+    used = 0
+    for at, (text, attr) in enumerate(runs):
+        cut = 0
+        for ch in text:
+            size = cells(ch)
+            if used + size > room and (head or cut):
+                break
+            used += size
+            cut += 1
+        if cut < len(text):
+            if cut:
+                head.append((text[:cut], attr))
+            rest = [(text[cut:], attr), *runs[at + 1:]]
+            return head, [run for run in rest if run[0]]
+        head.append((text, attr))
+    return head, []
+
+
 # ── Copilot gradient (purple → cyan) ─────────────────────────────────
 GRADIENT = [
     (139, 92, 246),
@@ -617,8 +675,13 @@ GRADIENT = [
 
 
 def trunc(s: str, n: int) -> str:
-    """Truncate a string to n chars with an ellipsis."""
-    return (s[: n - 1] + "…") if len(s) > n else s
+    """Truncate a string to n columns with an ellipsis.
+
+    Columns, not characters: a title with an emoji or CJK in it is wider on
+    screen than it is long, and cutting it by character count let it run
+    into the column beside it.
+    """
+    return _fit(s, n)
 
 
 def fmt_aiu(nano: int | None) -> str:
@@ -1259,14 +1322,19 @@ def cells(text: str) -> int:
 
 def _fit(text: str, width: int) -> str:
     """Truncate to a column count, not a character count."""
+    if width <= 0:
+        return ""
     if cells(text) <= width:
         return text
-    out = ""
-    for ch in text:
-        if cells(out + ch) > width - 1:
+    # Measured a character at a time rather than re-measuring the whole
+    # prefix on every step, which made a long title quadratic to fit.
+    used, cut = 0, 0
+    for at, ch in enumerate(text):
+        used += cells(ch)
+        if used > width - 1:
             break
-        out += ch
-    return out + "…"
+        cut = at + 1
+    return text[:cut] + "…"
 
 
 def _list_parts(text: str) -> tuple[str, str]:

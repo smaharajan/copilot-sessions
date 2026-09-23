@@ -17,6 +17,12 @@ from support import Screen, StoreTest, _Tty
 from cs.ui import cells as ui_cells
 
 
+def _column_x(frame: dict, label: str) -> int:
+    """Where a listing column starts, found by its header rather than assumed."""
+    return next(x for (y, x), text in frame.items()
+                if y == 3 and text.startswith(label))
+
+
 class CSTest(StoreTest):
     def test_help(self):
         code, out = self._run("help")
@@ -193,6 +199,112 @@ class CSTest(StoreTest):
             conn.close()
         self.assertEqual(len(rows), 450)
         self.assertEqual(hits, {})
+
+    def _name_session(self, session_id: str, yaml_body: str) -> None:
+        folder = Path(os.environ["COPILOT_HOME"]) / "session-state" / session_id
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "workspace.yaml").write_text(f"id: {session_id}\n{yaml_body}")
+
+    def test_search_finds_a_session_by_the_name_you_gave_it(self):
+        """/rename writes workspace.yaml and never the store's summary.
+
+        The session is found by the name, listed under it, and its page is
+        headed with it — the one name you would recognise it by.
+        """
+        self._name_session(
+            "sess-alpha", "name: Checkout QRX review\nuser_named: true\n"
+        )
+        code, out = self._run("search", "QRX")
+        self.assertEqual(code, 0)
+        self.assertIn("'QRX' · 1 session", out)
+        self.assertIn("Checkout QRX review", out)
+        self.assertNotIn("Build Three.js portal", out)  # the stale summary
+
+        _, listed = self._run("recent", "7")
+        self.assertIn("Checkout QRX review", listed)
+        _, page = self._run("show", "sess-alpha")
+        self.assertIn("Checkout QRX review", page)
+
+    def test_search_finds_copilots_generated_name_and_says_so(self):
+        """A name Copilot generated is searched, but not promoted to the title."""
+        self._name_session(
+            "sess-alpha", "name: Explain QRX pilot\nuser_named: false\n"
+        )
+        from cs import db
+
+        conn = db.connect()
+        try:
+            rows, hits = db.search(conn, "qrx")
+        finally:
+            conn.close()
+        self.assertEqual([row[0] for row in rows], ["sess-alpha"])
+        self.assertEqual(rows[0][2], "Build Three.js portal")
+        self.assertEqual(hits["sess-alpha"], ("name", "Explain QRX pilot"))
+
+    def test_a_name_hit_is_masked(self):
+        token = "ghp_" + "Z" * 36
+        self._name_session(
+            "sess-alpha", f"name: 'deploy QRX with {token}'\nuser_named: false\n"
+        )
+        code, out = self._run("search", "QRX")
+        self.assertEqual(code, 0)
+        self.assertIn("name", out)
+        self.assertNotIn(token, out)
+
+    def test_search_explains_a_stored_summary_hidden_by_a_rename(self):
+        self._name_session("sess-alpha", "name: Something else\nuser_named: true\n")
+        from cs import db
+
+        conn = db.connect()
+        try:
+            rows, hits = db.search(conn, "three.js")
+        finally:
+            conn.close()
+        self.assertEqual(rows[0][2], "Something else")
+        self.assertEqual(hits["sess-alpha"], ("summary", "Build Three.js portal"))
+
+    def test_workspace_names_in_every_form_copilot_writes(self):
+        from cs import db
+
+        cases = {
+            "name: Plain name\n": "Plain name",
+            "name: 'It''s: quoted'\n": "It's: quoted",
+            'name: "Double \\"quoted\\""\n': 'Double "quoted"',
+            "name: |-\n  First line\n  second line\nuser_named: true\n":
+                "First line second line",
+            "summary: |-\n  name: not a key\nname: Real\n": "Real",
+        }
+        for body, expected in cases.items():
+            with self.subTest(body=body):
+                self.assertEqual(db._yaml_fields(body, ("name",))["name"], expected)
+
+    def test_no_session_state_folder_is_no_names(self):
+        from cs import db
+
+        self.assertEqual(db.session_names(), {})
+        self.assertIsNone(db.session_name("sess-alpha"))
+
+    def test_workspace_names_stay_inside_session_state(self):
+        from cs import db
+
+        root = Path(os.environ["COPILOT_HOME"])
+        (root / "workspace.yaml").write_text("name: Outside\nuser_named: true\n")
+        state = root / "session-state"
+        state.mkdir()
+        (state / "linked").symlink_to(root, target_is_directory=True)
+        for sid in ("..", ".", "", str(root), "../", "linked"):
+            with self.subTest(sid=sid):
+                self.assertIsNone(db.session_name(sid))
+
+    def test_renamed_titles_are_masked_in_machine_output_and_file_results(self):
+        token = "ghp_" + "Z" * 36
+        self._name_session("sess-alpha", f"name: Review {token}\nuser_named: true\n")
+        for args in (("recent", "--json"), ("recent", "--csv"),
+                     ("files", "src"), ("show", "sess-alpha")):
+            with self.subTest(args=args):
+                code, out = self._run(*args)
+                self.assertEqual(code, 0)
+                self.assertNotIn(token, out)
 
     def test_cost(self):
         code, out = self._run("cost", "7")
@@ -1961,9 +2073,8 @@ class CSTest(StoreTest):
         _listing_tui(screen, rows, "Sessions")
 
         final = screen.frames[-1]
-        # The summary column starts after the kit columns, which a 100-column
-        # window is wide enough to draw.
-        shown = [(final[(y, 0)].strip(), final[(y, 47)].strip()) for y in (5, 6, 7)]
+        at = _column_x(final, "Summary")
+        shown = [(final[(y, 0)].strip(), final[(y, at)].strip()) for y in (5, 6, 7)]
         # Highest credits now sits on the top row but keeps its number.
         self.assertEqual(shown, [("3", "Oldest"), ("1", "Newest"), ("2", "Middle")])
 
@@ -2001,7 +2112,8 @@ class CSTest(StoreTest):
             _listing_tui(screen, rows, "Sessions · 2 total", reload=reload)
 
         final = screen.frames[-1]
-        summaries = [final[(y, 47)].strip() for y in (5, 6, 7)]
+        at = _column_x(final, "Summary")
+        summaries = [final[(y, at)].strip() for y in (5, 6, 7)]
         self.assertIn("Started beside it", summaries)
         self.assertIn("Sessions · 3 total", final[(0, 0)])
 
@@ -2012,7 +2124,7 @@ class CSTest(StoreTest):
             line.split("=", 1) for line in _index_file().read_text().splitlines()
         )
         self.assertEqual(saved, {"1": "id-new", "2": "id-mid", "3": "id-live"})
-        numbered = {final[(y, 47)].strip(): final[(y, 0)].strip() for y in (5, 6, 7)}
+        numbered = {final[(y, at)].strip(): final[(y, 0)].strip() for y in (5, 6, 7)}
         self.assertEqual(numbered["Started beside it"], "3")
         self.assertEqual(numbered["Newest"], "1")
 
@@ -2091,10 +2203,51 @@ class CSTest(StoreTest):
         _listing_tui(screen, rows, "Sessions")
 
         final = screen.frames[-1]
-        repo_x = next(x for (y, x), text in final.items()
-                      if y == 3 and text.startswith("Repo"))
+        repo_x = _column_x(final, "Repo")
         self.assertEqual(final[(5, repo_x)].strip(), "acme")
         self.assertEqual(final[(6, repo_x)].strip(), "·")
+
+    def test_a_wide_listing_leaves_no_gap_between_repo_and_title(self):
+        """The summary took every spare cell and pushed the repository to the
+        far edge — on a wide window, a hundred blanks after a short title.
+        It is the last column now, and the repository is only as wide as
+        its longest name.
+        """
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-a", "2026-08-01T12:00", "Short title", "org/acme",
+             "/tmp/acme", 3, 5_000_000_000),
+            ("id-b", "2026-08-01T11:00", "Another", "org/widgets",
+             "/tmp/widgets", 2, 3_000_000_000),
+        ]
+        for width in (100, 220):
+            with self.subTest(width=width):
+                screen = Screen([ord("q")])
+                screen.getmaxyx = lambda w=width: (24, w)
+                _listing_tui(screen, rows, "Sessions")
+
+                final = screen.frames[-1]
+                repo_x = _column_x(final, "Repo")
+                title_x = _column_x(final, "Summary")
+                self.assertLess(repo_x, title_x)
+                self.assertLessEqual(title_x - repo_x, len("widgets") + 2 + 1)
+                self.assertEqual(final[(5, title_x)].strip(), "Short title")
+
+    def test_listing_preserves_titles_at_supported_widths(self):
+        from cs import cli, ui
+
+        rows = [("id-a", "2026-08-01T12:00", "日本語 title", "org/widgets",
+                 "/tmp/widgets", 3, 5_000_000_000)]
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width):
+                screen = Screen([ord("q")])
+                screen.getmaxyx = lambda w=width: (24, w)
+                cli._listing_tui(screen, rows, "Sessions")
+                frame = screen.frames[-1]
+                self.assertEqual(frame[(5, _column_x(frame, "Summary"))], "日本語 title")
+                for (_, column), text in frame.items():
+                    self.assertLessEqual(column + ui.cells(text), width)
 
     def test_listing_dates_use_an_unambiguous_month_name(self):
         from cs.cli import _listing_tui
@@ -2362,6 +2515,54 @@ class CSTest(StoreTest):
         self.assertEqual(frame[(0, 0)], "line 57")
         self.assertEqual(frame[(22, 0)], "line 79")
         self.assertIn("end", frame[(23, 0)])
+
+    def test_reader_find_cycles_through_matches_on_the_last_page(self):
+        from cs.cli import _reader_tui
+
+        lines = [f"row {i}" for i in range(40)]
+        lines[37] = lines[39] = "needle"
+        for tail, count in (("", "1/2"), ("n", "2/2"), ("nn", "1/2"), ("N", "2/2")):
+            with self.subTest(tail=tail):
+                screen = Screen([*map(ord, "/needle"), 10, *map(ord, tail + "q")])
+                _reader_tui(screen, lines, False)
+                self.assertTrue(any(count in text for text in screen.frames[-1].values()))
+
+    def test_reader_find_recomputes_after_sorting_same_length_report(self):
+        from cs.cli import _reader_tui
+
+        lines = ["needle", *[f"row {i}" for i in range(39)]]
+        sort = {"column": "name", "descending": False,
+                "render": lambda *_: "\n".join(reversed(lines))}
+        screen = Screen([*map(ord, "/needle"), 10, ord("s"), ord("n"), ord("q")])
+        _reader_tui(screen, lines, False, sort)
+        self.assertEqual(screen.frames[-1][(22, 0)], "needle")
+
+    def test_reader_find_empty_clears_and_escape_keeps_previous_search(self):
+        from cs.cli import _reader_tui
+
+        for key, remains in ((10, False), (27, True)):
+            with self.subTest(key=key):
+                ending = [27, -1, -1, -1] if key == 27 else [key]
+                screen = Screen([*map(ord, "/missing"), 10, ord("/"), *ending, ord("q")])
+                _reader_tui(screen, ["some text"], False)
+                status = " ".join(text for (row, _), text in screen.frames[-1].items()
+                                  if row == 23)
+                self.assertEqual("not found" in status, remains)
+
+    def test_reader_search_wraps_and_highlights_original_unicode_characters(self):
+        from cs.cli import _reader_rows
+
+        rows, found = _reader_rows(["prefix Straße target"], {}, 14, "STRASSE")
+        self.assertEqual(found, [0])
+        self.assertEqual("".join(text for row in rows for text, attr in row if attr == -1),
+                         "Straße")
+        rows, found = _reader_rows(["x" * 36 + "needle"], {}, 40, "needle")
+        self.assertEqual(found, [0, 1])
+        self.assertEqual("".join(text for row in rows for text, attr in row if attr == -1),
+                         "needle")
+        rows, _ = _reader_rows(["Straße target"], {}, 40, "target")
+        self.assertEqual([text for row in rows for text, attr in row if attr == -1],
+                         ["target"])
 
     def test_scrolling_mid_filter_neither_cancels_it_nor_types_into_it(self):
         """The filter prompt reads Esc too, and had the same blind spot."""
@@ -2645,6 +2846,75 @@ class CSTest(StoreTest):
         # A filter matching nothing must not crash or return a phantom session.
         no_match = Screen([ord("/"), *[ord(c) for c in "zzz"], 10, ord("r"), ord("q")])
         self.assertIsNone(_listing_tui(no_match, rows, "Sessions"))
+
+    def test_a_filter_reaches_the_conversation_not_just_the_title(self):
+        """Filtering 'All sessions' for a project found only the sessions
+        with its name in the title — five of fifty-six. The filter now asks
+        the store the way `cs search` does, and says why each row matched.
+        """
+        import curses
+
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-title", "2026-08-01T12:00", "QRX dashboard", "r/a", "/tmp", 1, 10),
+            ("id-text", "2026-08-01T11:00", "Resume work", "r/b", "/tmp", 2, 20),
+            ("id-none", "2026-08-01T10:00", "Unrelated", "r/c", "/tmp", 3, 30),
+        ]
+        asked: list[str] = []
+
+        def find(query):
+            asked.append(query)
+            return {"id-text"}, {"id-text": ("turn", "the QRX pilot baseline")}
+
+        state: dict = {}
+        screen = Screen([ord("/"), *map(ord, "QRX"), 10, curses.KEY_DOWN, ord("q")])
+        _listing_tui(screen, rows, "Sessions", state=state, find=find)
+
+        final = screen.frames[-1]
+        at = _column_x(final, "Summary")
+        listed = [final.get((y, at), "").strip() for y in (5, 6, 7)]
+        self.assertEqual(listed, ["QRX dashboard", "Resume work", ""])
+        self.assertIn("turn: the QRX pilot baseline", final[(22, 0)])
+
+        # Back from a session with the filter still up: the answer is kept,
+        # not asked for again.
+        _listing_tui(Screen([ord("q")]), rows, "Sessions", state=state, find=find)
+        self.assertEqual(asked, ["QRX"])
+
+    def test_typing_in_a_listing_starts_the_filter(self):
+        """A letter with no job of its own did nothing, so typing a name into
+        a listing looked like a search that found nothing."""
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-alpha", "2026-08-01T10:00", "Alpha work", "repo/alpha", "/tmp", 1, 10),
+            ("id-beta", "2026-08-01T11:00", "Beta work", "repo/beta", "/tmp", 2, 20),
+        ]
+        # 'B' opens the box with itself in it; the rest is typed into the box,
+        # 't' included, so a shortcut inside a word does not fire.
+        screen = Screen([*map(ord, "Beta"), 10, ord("r")])
+        self.assertEqual(_listing_tui(screen, rows, "Sessions"), ("resume", "id-beta"))
+        self.assertIn("filter 'Beta'", screen.frames[-1][(0, 0)])
+
+    def test_every_listing_can_search_the_store(self):
+        from unittest import mock
+
+        from cs import cli
+
+        seen: list[tuple] = []
+        with mock.patch.object(cli, "_curses_wrapper",
+                               side_effect=lambda view, *args: seen.append(args)):
+            cli._interactive_listing(
+                [("sess-alpha", "2026-08-01T10:00", "Build Three.js portal",
+                  "acme/portal", "/tmp/a", 2, 10)],
+                "Sessions", show_all=True,
+            )
+        self.assertIs(seen[0][-1], cli._find_sessions)
+
+        found, reasons = cli._find_sessions("globe")  # only in a turn's text
+        self.assertEqual(found, {"sess-alpha"})
+        self.assertEqual(reasons["sess-alpha"][0], "turn")
 
     def test_sort_rejects_unknown_column(self):
         code, _ = self._run("recent", "--sort", "nonsense")

@@ -141,12 +141,13 @@ The same windows work from the shell: `cs cost all`, `cs efficiency 7`,
 |-----|-------------|-------------|--------------|
 | `↑` `↓` | move | scroll a line | move the row cursor |
 | `Enter` | open | — | resume the session |
-| letters | narrow the menu as you type | — | — |
+| letters | narrow the menu as you type | — | start the filter, already typed (any letter that is not a key here) |
 | `space` / `b` | — | page down / up | — |
 | `g` / `G` | — | top / bottom | first / last row |
 | `←` `→` | step the counting window | re-sort by column | re-sort by column |
 | `s` | — | reverse sort | reverse sort |
-| `/` | full-text search | — | filter |
+| `/` | full-text search | find text; submit an empty search to clear | filter: titles, repos, folders and the full text, as `cs search` reads them |
+| `n` / `N` | — | next / previous matching row, wrapping at the ends | — |
 | `v` `o` `t` | — | — | session page (`v` and `o` both) · transcript (`t`) |
 | `Esc` | clear the filter, then quit | back to the menu | clear filter, then back |
 | `q` | quit, when nothing is typed | back to the menu | back to the menu |
@@ -156,6 +157,12 @@ The same windows work from the shell: `cs cost all`, `cs efficiency 7`,
 rather than in `less`, because `less` treats `Esc` as a meta prefix and cannot
 return you to the menu. Run the same command from the shell and you get your
 own `$PAGER` as usual.
+
+Long report and transcript lines wrap to fit the window, repeating quote and
+tool-output gutters on continuation rows. Search highlights matching text even
+when a word crosses a wrap, and its counter counts matching display rows.
+Narrow listings drop optional columns to keep their titles readable. Arrows at
+the menu's right edge indicate more entries above or below the visible rows.
 
 ```mermaid
 stateDiagram-v2

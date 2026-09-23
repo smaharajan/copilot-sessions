@@ -220,7 +220,7 @@ a match, and survive whatever the user types. FTS5 rejects punctuation
 
 ```mermaid
 flowchart TD
-    Q["cs search entra group"] --> META["LIKE on summary, repo, cwd<br/>naming the session is a strong signal"]
+    Q["cs search entra group"] --> META["LIKE on summary, repo, cwd,<br/>plus workspace.yaml names<br/>naming the session is a strong signal"]
     Q --> HAS{"search_index<br/>present?"}
 
     HAS -->|no| SCAN["scan turns:<br/>user_message + assistant_response"]
@@ -517,13 +517,18 @@ One curses window, drawn from scratch each keystroke:
  row 0   ◆  Sessions · last 7 days · … · sorted by active ↓     ← heading
  row 1   click · ↑↓ · ←→ · ↵ resume · v brief · t read · q home  ← key help, fitted
  row 2
- row 3     #↑ Active      Turns  Credits  Summary      Repo     ← headers (clickable)
+ row 3     #↑ Active      Turns  Credits  Repo    Summary      ← headers (clickable)
  row 4   ────────────────────────────────────────────────────
- row 5     1  08-03T17:03  13     4.2k    Migrate CI …          ← rows, `visible` of them
+ row 5     1  08-03T17:03  13     4.2k    webshop Migrate CI …  ← rows, `visible` of them
    …
  row h-2  next steps: wire the charts to live data              ← search hit (search only)
  row h-1   3 of 299 sessions · Enter resumes, or 'cs resume 3'  ← status
 ```
+
+The summary is the last column so that the width a wide window has spare
+falls off the end of the row. Ahead of the repository, it took every spare
+cell and left a gap of a hundred blanks between a short title and the repo it
+belonged to. The repository column is only as wide as its longest name.
 
 State that survives a trip out to a detail view and back:
 

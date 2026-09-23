@@ -87,6 +87,16 @@ class HomeMenuTest(StoreTest):
                         f"{label} is unreachable at {height} rows",
                     )
 
+    def test_short_menu_marks_more_rows_above_and_below(self):
+        import curses
+
+        from cs import cli
+
+        screen = Screen([curses.KEY_DOWN] * 30 + [ord("q")])
+        cli._home_tui(screen, {"revealed": True})
+        self.assertIn("↓", screen.frames[0].values())
+        self.assertIn("↑", screen.frames[-1].values())
+
     def test_every_menu_action_runs_with_no_arguments(self):
         """The menu calls actions blind, so none may need a term it won't get."""
         from cs import cli

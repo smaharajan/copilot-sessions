@@ -6,6 +6,7 @@ variable (defaults to ``~/.copilot``). All access is read-only.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -106,6 +107,115 @@ def ignored_prefixes() -> list[str]:
         line.strip()
         for line in path.read_text().splitlines()
         if line.strip() and not line.startswith("#")
+    ]
+
+
+# ── Names Copilot keeps outside the store ────────────────────────────
+# Copilot writes each session's name to session-state/<id>/workspace.yaml,
+# and that is the name its own session list shows. The store's `summary` is
+# not kept in step with it: rename a session with /rename and the store goes
+# on holding whatever the session was first summarised as. Searching for
+# the new name must still find it, and listings must show that name.
+
+
+def session_names() -> dict[str, tuple[str, bool]]:
+    """{session id: (name, whether you gave it)} from every workspace.yaml.
+
+    Read from disk on every call — the store is live and so is this.
+    A folder that cannot be read, or
+    a file with no name in it, is simply a session without one.
+    """
+    names: dict[str, tuple[str, bool]] = {}
+    try:
+        folders = list(_session_state().iterdir())
+    except OSError:
+        return names
+    for folder in folders:
+        found = session_name(folder.name)
+        if found:
+            names[folder.name] = found
+    return names
+
+
+def session_name(session_id: str) -> tuple[str, bool] | None:
+    """(name, whether you gave it) for one session, or None if it has none."""
+    if not session_id or session_id in (".", "..") or "/" in session_id or "\\" in session_id:
+        return None
+    try:
+        root = _session_state().resolve()
+        path = (root / session_id / "workspace.yaml").resolve()
+        if not path.is_relative_to(root):
+            return None
+        text = path.read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except (OSError, ValueError, RuntimeError):
+        return None
+    fields = _yaml_fields(text, ("name", "user_named"))
+    name = fields.get("name", "").strip()
+    return (name, fields.get("user_named") == "true") if name else None
+
+
+def _session_state() -> Path:
+    return default_db_path().parent / "session-state"
+
+
+def _yaml_fields(text: str, wanted: tuple[str, ...]) -> dict[str, str]:
+    """Top-level scalars from a flat YAML mapping, in the forms Copilot writes.
+
+    Not a YAML parser — the standard library has none, and a workspace file
+    is one flat mapping of scalars. A value may run onto indented lines
+    below its key; those are read as part of it and never as keys.
+    """
+    found: dict[str, str] = {}
+    lines = text.splitlines()
+    for at, line in enumerate(lines):
+        key, colon, value = line.partition(":")
+        if not colon or key not in wanted or key in found:
+            continue
+        rest = []
+        for more in lines[at + 1:]:
+            if more and not more[0].isspace():
+                break
+            if more.strip():
+                rest.append(more.strip())
+        found[key] = _yaml_scalar(value.strip(), rest)
+    return found
+
+
+def _yaml_scalar(head: str, rest: list[str]) -> str:
+    """One scalar, on one line: a name is a title, however it was stored.
+
+    Plain, 'single-quoted' (a doubled quote is a quote), "double-quoted",
+    and the |- block Copilot uses when a name is a pasted multi-line prompt.
+    """
+    if head[:1] in ("|", ">"):
+        return " ".join(rest)
+    joined = " ".join([head, *rest]).strip()
+    if len(joined) >= 2 and joined[0] == joined[-1] == "'":
+        return joined[1:-1].replace("''", "'")
+    if len(joined) >= 2 and joined[0] == joined[-1] == '"':
+        try:
+            return json.loads(joined)
+        except ValueError:
+            return joined[1:-1]
+    return joined
+
+
+def _given_names(rows: list[tuple], names: dict[str, tuple[str, bool]]) -> list[tuple]:
+    """Listing rows titled with the name you gave the session, where you gave one.
+
+    Only a name you chose outranks the store's summary. Copilot's own
+    generated names are left where they are: for most sessions the store's
+    summary is the later and better of the two, and a generated name is
+    often the whole first prompt.
+    """
+    given = {sid: name for sid, (name, yours) in names.items() if yours}
+    if not given:
+        return rows
+    return [
+        (row[0], row[1], given[row[0]], *row[3:]) if row[0] in given else row
+        for row in rows
     ]
 
 
@@ -212,13 +322,14 @@ def recent_sessions(conn: sqlite3.Connection, days: int) -> list[tuple]:
     keep them.
     """
     window = "WHERE MAX(s.created_at, s.updated_at) >= datetime('now', ?)" if days > 0 else ""
-    return conn.execute(
+    rows = conn.execute(
         f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
             FROM sessions s
             {window}
             ORDER BY MAX(s.created_at, s.updated_at) DESC""",
         (f"-{days} days",) if days > 0 else (),
     ).fetchall()
+    return _given_names(rows, session_names())
 
 
 def _has_fts(conn: sqlite3.Connection) -> bool:
@@ -308,9 +419,11 @@ def search(
 ) -> tuple[list[tuple], dict[str, tuple[str, str]]]:
     """Every session that matches, best match first, with the snippet that matched.
 
-    Metadata hits (summary, repo, directory) outrank full-text hits: if the
-    term names the session, that is a stronger signal than a passing mention
-    inside one of its turns.
+    Metadata hits (summary, name, repo, directory) outrank full-text hits: if
+    the term names the session, that is a stronger signal than a passing
+    mention inside one of its turns. A name is every name the session goes
+    by — the one you gave it, and the one Copilot generated — because either
+    may be the one you remember it as.
     """
     like = f"%{term}%"
     # A store missing one of these fields simply has one fewer way to match:
@@ -327,10 +440,38 @@ def search(
         (like,),
     ).fetchall()
 
+    # The names live on disk, not in the store, so they are matched here.
+    # LIKE folds case for ASCII only; casefold() does it for all of it,
+    # which is what anyone typing a name would expect of it.
+    names = session_names()
+    wanted = term.casefold()
+    by_name = {sid for sid, (name, _) in names.items() if wanted in name.casefold()}
+    known_ids = {row[0] for row in meta}
+    extra = [sid for sid in by_name if sid not in known_ids]
+    for chunk in _chunks(extra):
+        meta.extend(conn.execute(
+            f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
+                FROM sessions s WHERE s.id IN ({','.join('?' * len(chunk))})""",
+            chunk,
+        ))
+    stored = {row[0]: row[2] or "" for row in meta}
+    # Newest first, as the SQL had them; sorted() is stable, so the store's
+    # own order survives among sessions active in the same minute.
+    meta = sorted(_given_names(meta, names), key=lambda row: row[1] or "", reverse=True)
+
     # A dict for its order and its membership test: an uncapped search can
     # name a thousand sessions, and `in` on a list of them is quadratic.
     ordered = dict.fromkeys(row[0] for row in meta)
     hits: dict[str, tuple[str, str]] = {}
+    # A session found under a title the listing does not show says which
+    # one, or it reads as a result with no reason to be there.
+    for row in meta:
+        if wanted in (row[2] or "").casefold():
+            continue
+        if row[0] in by_name:
+            hits[row[0]] = ("name", " ".join(names[row[0]][0].split()))
+        elif wanted in stored[row[0]].casefold():
+            hits[row[0]] = ("summary", " ".join(stored[row[0]].split()))
     if _has_fts(conn):
         for sid, source, snippet in _fts_hits(conn, term):
             hits.setdefault(sid, (source, " ".join(snippet.split())))
@@ -347,11 +488,11 @@ def search(
     known = {row[0]: row for row in meta}
     missing = [sid for sid in ordered if sid not in known]
     for chunk in _chunks(missing):
-        for row in conn.execute(
+        for row in _given_names(conn.execute(
             f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
                 FROM sessions s WHERE s.id IN ({','.join('?' * len(chunk))})""",
             chunk,
-        ):
+        ).fetchall(), names):
             known[row[0]] = row
 
     rows = [known[sid] for sid in ordered if sid in known]
@@ -362,7 +503,7 @@ def search(
 def session_detail(conn: sqlite3.Connection, session_id: str) -> tuple | None:
     # An absent column reads as '-', the same as a column the store has but
     # never filled in: either way the answer is "not recorded".
-    return conn.execute(
+    row = conn.execute(
         f"""SELECT COALESCE({optional(conn, 'sessions', 'summary')}, '(no summary)'),
                   COALESCE({optional(conn, 'sessions', 'repository')}, '-'),
                   COALESCE({optional(conn, 'sessions', 'cwd')}, '-'),
@@ -372,6 +513,11 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> tuple | None:
            FROM sessions WHERE id = ?""",
         (session_id,),
     ).fetchone()
+    # The page opened from a listing carries the title that listing showed.
+    named = session_name(session_id) if row else None
+    if named and named[1]:
+        return (named[0], *row[1:])
+    return row
 
 
 def session_turn_count(conn: sqlite3.Connection, session_id: str) -> int:
@@ -551,7 +697,8 @@ def sessions_for_file(
             ordered,
         )
     }
-    rows = [found[sid] for sid in ordered if sid in found]
+    rows = _given_names([found[sid] for sid in ordered if sid in found],
+                        session_names())
     return rows, {sid: hits[sid] for sid in ordered if sid in found}
 
 
