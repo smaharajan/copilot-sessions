@@ -1929,7 +1929,8 @@ class CSTest(StoreTest):
         # view opened, newest and therefore first in natural order.
         arrived = ("id-live", "2026-08-01T13:00", "Started beside it", "r/c",
                    "/tmp", 0, 1_600_000_000)
-        reload = lambda: ([arrived, *rows], "Sessions · 3 total")
+        def reload():
+            return [arrived, *rows], "Sessions · 3 total"
 
         # -1 is the heartbeat curses reports when nothing was typed.
         screen = Screen([-1, ord("q")])
@@ -2735,7 +2736,9 @@ class InterpreterFloorTest(StoreTest):
 
     def _run_guard(self, version: tuple[int, ...]):
         source = Path("cs/__init__.py").read_text(encoding="utf-8")
-        _, _, guard = source.partition('__version__ = "1.0.0"')
+        # Split on the declaration rather than a version literal: pinning the
+        # number here made every release break a test about interpreters.
+        _, guard = re.split(r'^__version__ = ".*"$', source, maxsplit=1, flags=re.M)
         stub = type(
             "StubSys",
             (),

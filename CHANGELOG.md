@@ -5,7 +5,7 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] — 2026-09-23
 
 ### Added
 
@@ -301,4 +301,5 @@ only.
   masked at the render edge in `cs/redact.py`, and terminal control sequences
   and row-breaking characters are stripped before anything is drawn.
 
+[1.1.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.1.0
 [1.0.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.0.0
