@@ -2758,3 +2758,27 @@ class InterpreterFloorTest(StoreTest):
     def test_a_supported_interpreter_passes_through(self):
         self._run_guard((3, 10, 0))
         self._run_guard((3, 13, 2))
+
+
+class DeclaredVersionTest(StoreTest):
+    """One number, quoted in several files that no bump goes near.
+
+    `cs/__init__.py` is the version; the README sample and the bug report's
+    placeholder only echo it. The 1.1.0 release left `cs 1.0.0` behind in the
+    issue template, inviting every reporter to file against a build nobody is
+    running, and nothing failed. The changelog is history and keeps its own
+    numbers, so it is not read here.
+    """
+
+    ECHOES = ("README.md", ".github/ISSUE_TEMPLATE/bug_report.yml")
+
+    def test_every_echoed_version_is_the_declared_one(self):
+        from cs import __version__
+
+        root = Path(__file__).resolve().parent.parent
+        for name in self.ECHOES:
+            text = (root / name).read_text(encoding="utf-8")
+            for quoted in re.findall(r"\bcs (\d+\.\d+\.\d+)", text):
+                self.assertEqual(
+                    quoted, __version__, f"{name} still says cs {quoted}"
+                )
