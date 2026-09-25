@@ -248,6 +248,15 @@ class GovernanceTest(StoreTest):
             "subagents": lambda: cli._render_subagents(3650),
             "switches": lambda: cli._render_switches(3650),
             "endings": lambda: cli._render_endings(3650),
+            "next": lambda: cli._render_next(cli._next_data(3650)),
+            "eod": lambda: cli._render_eod(cli._eod_data()),
+            "weekly": lambda: cli._render_weekly(cli._weekly_data()),
+            "asks": lambda: cli._render_asks(cli._asks_data(3650)),
+            "cleanup": lambda: cli._render_cleanup(cli._cleanup_data(1)),
+            "file history": lambda: cli._render_file_history(
+                cli._file_history_data("portal")),
+            "saved": lambda: cli._render_saved({"a-long-saved-name": "three.js "
+                                                "portal charts globe live data"}),
         }
         views.update(narrow)
         for name, render in views.items():

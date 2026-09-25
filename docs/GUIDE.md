@@ -14,8 +14,8 @@ Run `cs` with no arguments in a terminal and you get a home screen rather than
 a wall of output. It is the home every other view returns to, so nothing is a
 dead end.
 
-The menu is always grouped — five short lists you learn the shape of, rather
-than nineteen rows you re-read every time. On a shorter window the wordmark
+The menu is always grouped — six short lists you learn the shape of, rather
+than forty rows you re-read every time. On a shorter window the wordmark
 shrinks to pay for the headings, and below about twenty rows it becomes a
 single line:
 
@@ -185,6 +185,80 @@ stateDiagram-v2
 ```
 
 ---
+
+## ☀️ Today
+
+The first group on the home screen is about now: what to pick up, and what
+the day and the week came to.
+
+### 👉 `cs next` — what to pick up
+
+```
+  ── Next up · last 14 days ──────────────────────────────────────────────
+
+    3 sessions to pick up, most urgent first
+
+    1  Migrate the billing webhooks
+       · last call ended: error at turn 7
+       · stuck: bash failed 4× in a row · turns 6–7
+       cs resume 1
+    2  Notes for the release
+       · open handoff: wrote HANDOFF.md; no later session opened it
+       cs resume 2
+    3  Try the new parser
+       · tagged wip
+       · pinned
+       cs resume 3
+```
+
+Five kinds of reason, weighted in this order: an **open handoff** (a session
+wrote a handoff document and no later session opened it), an **unclean
+ending** (the last call ended in `error`, `length` or `content_filter` — an
+unrecorded reason is not something to act on, so it is left to `cs endings`),
+a **stuck loop**, a **`wip` tag** (`cs tag N wip`) and a **pin**. A session
+with several reasons ranks higher. Handoffs, endings and loops are looked for
+in the last 14 days (`cs next 30`, `cs next all`); tags and pins always count.
+In a terminal, and from the home row, it opens as a listing — `r` or Enter
+resumes the highlighted session.
+
+### 🌙 `cs eod` and 📆 `cs weekly`
+
+`cs eod` is since local midnight: sessions active today, commits and PRs they
+recorded, handoffs written, spend against your daily budget, and tool calls
+with their failures and stuck loops. `cs weekly` is the last seven days: spend
+against the seven before, spend per day, the five dearest sessions, tools that
+failed in more than one session, and your top three `cs coach` habits. Both
+take `--md` for Markdown to paste into a standup channel or a review, and
+`--json`. Everything is masked on the way out.
+
+### 💳 Budget
+
+The Budget row shows the daily limit; ←/→ on it steps the limit through
+5, 10, 20, 25, 50, 75, 100, 150, 200, 300, 500 and 1000 AIU (← from the lowest
+turns it off), saves it, and the header updates at once. Enter opens today's
+spend against it. For hooks and scripts there is a check that prints one line
+and sets the exit code:
+
+```bash
+cs budget --check     # budget: 12.40 / 25 AIU in the last 24 hours · within
+echo $?               # 0 — or 1 when over; always 0 when no budget is set
+```
+
+As a Copilot hook, in a file under your Copilot home's `hooks/` directory:
+
+```json
+{
+  "hooks": {
+    "userPromptSubmitted": [
+      { "type": "command", "command": "cs budget --check" }
+    ]
+  }
+}
+```
+
+The hook prints the line into the session's hook output and exits 1 once the
+day is over budget. What Copilot does with a failing hook depends on the
+event; `cs hooks` will then count its runs and failures.
 
 ## 🔎 Reading a session
 
@@ -381,6 +455,36 @@ cs search three.js              # punctuation FTS5 rejects — retried for you
     2  03-05T19:31   23     4.4k   Refactor cart service   #acme/webshop
        turn …each `assistant` message carries a `usage` block…
 ```
+
+### 🔭 `cs similar` — like this, and it shipped
+
+The same query as `cs search` (phrases, `AND` / `OR` / `NEAR`), re-ranked so
+the sessions that recorded a commit or a PR come first, each showing its
+outcome — `2 commits · 1 PR`, or `no commit or PR`. Within each half the
+search's own ranking is kept.
+
+### 💬 `cs asks` — what you opened each session asking for
+
+One line per opening request: turn 0 of each session, plus the first request
+after a handoff was picked up. Each shows the turn, the session's spend and
+its outcome. `--repo .` keeps sessions from the directory you are in, and
+`--repo <name>` matches a repository or path. In a terminal it is a listing:
+press `c` to copy the whole ask, masked, with `pbcopy`, `wl-copy` or `xclip` —
+whichever exists; without one it is printed for you to copy.
+
+### 🔖 Saved searches
+
+`cs search --save weekly-infra terraform AND drift` runs the search and keeps
+it; `cs saved` lists what you have kept and `cs saved weekly-infra` runs it
+again, live. They are stored under `saved_searches` in
+`~/.config/cs/settings.json`. The home row opens a picker.
+
+### 📜 `cs files <path> --history` — every touch of a file
+
+For each file matching the path: which session touched it, on which turn,
+with which tool, whether the main agent or a sub-agent made the edit (read
+from that session's event log, on demand), and the request that turn was
+answering, masked.
 
 ### 📁 `cs files` — from a file back to the work
 
@@ -900,6 +1004,13 @@ marked with `·` rather than coloured red: making the block visible is useful,
 calling it bad is not this report's job. The window cuts by the **turn**, not
 the session — a session touched yesterday may have opened in March, and its
 March evenings do not belong in this month's histogram.
+
+### 🚮 `cs cleanup` — what has gone stale
+
+Pins on sessions quiet for 14 days or more (`cs cleanup 30` changes that),
+`wip` tags on sessions quiet for 7 days or more, and handoffs nobody picked up
+in a week. Each line ends in the command that would tidy it — `cs unpin`,
+`cs untag`, or `cs handoff` to look — and `cs` runs none of them itself.
 
 ### `cs context` — what the repo hands the agent
 

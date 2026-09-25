@@ -342,9 +342,13 @@ then the goal and the final request. The full turn list is behind `--asks`.
 
 `cs` with no arguments opens `cmd_home()`: a curses menu over `_home_items()`,
 which is one line per view — label, description, the callable to run, and
-whether it needs text first. Every action is callable and only one entry
-(Search) needs a term, so choosing a row cannot call something that isn't
-there: the menu collects the term and `cmd_home` passes it in.
+what it needs first (`asks`): nothing, a window (`period`, set with ←/→), a
+term (Search, Similar work, File history), the theme gallery, or `budget`,
+whose row takes ←/→ itself to change the limit. Every action is callable, so
+choosing a row cannot call something that isn't there: the menu collects what
+the row asks for and `cmd_home` passes it in. The groups are anchored by label
+in `_HOME_GROUP_STARTS` — Today, Find, Measure, Govern, Improve, Reference —
+and a label that is not on the menu fails at start-up.
 
 The loop is the same shape as the listing's: the menu **returns a choice**, the
 action runs after curses has restored the terminal, and then the menu is drawn

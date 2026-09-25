@@ -164,7 +164,14 @@ def _render_listing(
     print()
     sortable = ("active|turns|credits|skills|agents|summary|repo"
                 + ("|relevance" if hits else ""))
-    _note(f"Sort: --sort {sortable} [--asc|--desc]", width - 4, indent=2)
+    sort_line = f"Sort: --sort {sortable} [--asc|--desc]"
+    if ui.cells(sort_line) + 2 <= width:
+        _note(sort_line, width - 4, indent=2)
+    else:
+        # One unbreakable word of column names ran off a narrow window; the
+        # names are listed as words instead, so they can wrap.
+        _note("Sort: --sort <column> [--asc|--desc] · columns: "
+              + ", ".join(sortable.split("|")), width - 4, indent=2)
     _note("Credits = AI units (AIU) spent  ·  cs show #1  ·  cs read #1  ·  "
           "cs resume #1", width - 4, indent=2)
     if stuck:
@@ -225,8 +232,12 @@ def _interactive_listing(
     hits: dict[str, tuple[str, str]] | None = None,
     term: str = "",
     reload=None,
+    copy: dict[str, str] | None = None,
 ) -> bool:
     """True when the full-screen view ran and so already waited for the user.
+
+    `copy` is text to hand the clipboard per session — `c` copies the row's
+    — for a listing whose rows stand for something worth pasting.
 
     It does not always run: with nothing to list, or on a terminal curses
     cannot drive, this prints instead — and a caller that skipped its pause
@@ -249,7 +260,7 @@ def _interactive_listing(
         try:
             action = _curses_wrapper(
                 _listing_tui, rows, title, default_sort, hits, state, reload,
-                _find_sessions,
+                copy, _find_sessions,
             )
             # The view re-reads the store on its own heartbeat; what it read
             # last is what a trip out to a detail view should come back to.
@@ -270,6 +281,13 @@ def _interactive_listing(
         verb, session_id = action
         if verb == "resume":
             _resume_from_listing(session_id)
+            continue
+        if verb == "copy":
+            from .today import _copy_ask
+
+            _copy_ask((copy or {}).get(session_id, ""))
+            if not _pause("Esc or Enter for the list · q quits "):
+                return True
             continue
         # A pager already waited for the user, so returning is immediate;
         # output printed straight to the terminal needs an explicit pause,
@@ -315,6 +333,7 @@ def _listing_tui(
     hits: dict[str, tuple[str, str]] | None = None,
     state: dict | None = None,
     reload=None,
+    copy: dict[str, str] | None = None,
     find=None,
 ) -> tuple[str, str] | None:
     """The full-screen listing. Returns (verb, session id), or None to leave.
@@ -420,7 +439,11 @@ def _listing_tui(
             offset = max(offset, 0)
             arrow = "↓" if descending else "↑"
 
-            if sort_by == "relevance":
+            if sort_by == "relevance" and not descending and title.endswith(" first"):
+                # A ranked view that already says what its order means
+                # ("most urgent first") needs no second, vaguer name for it.
+                heading = f"◆  {title}"
+            elif sort_by == "relevance":
                 heading = f"◆  {title} · best match {'last' if descending else 'first'}"
             else:
                 heading = f"◆  {title} · sorted by {sort_by} {arrow}"
@@ -680,6 +703,10 @@ def _listing_tui(
                 return "read", sorted_rows[cursor][0]
             elif key in (ord("r"), ord("R")) and sorted_rows:
                 return "resume", sorted_rows[cursor][0]
+            elif copy and key in (ord("c"), ord("C")) and sorted_rows:
+                # Only where the listing has something to copy; elsewhere 'c'
+                # is a letter like any other and starts a filter.
+                return "copy", sorted_rows[cursor][0]
             elif key in (ord("p"), ord("P")) and sorted_rows:
                 sid = sorted_rows[cursor][0]
                 ui.toggle_pin(sid)

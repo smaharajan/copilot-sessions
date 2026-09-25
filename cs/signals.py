@@ -281,6 +281,36 @@ def handoffs(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def open_handoffs(conn: sqlite3.Connection) -> list[dict]:
+    """Sessions that wrote a handoff nobody has picked up yet.
+
+    A session that was asked to write a handoff (emitted or both) is open
+    while no *later* session has touched any handoff document it touched.
+    Each row carries its evidence: the documents, and that no newer session
+    opened them. A later session that only quoted this one's id is not
+    counted as a pickup — the document is the contract here.
+    """
+    docs = _docs_by_session(conn)
+    started = dict(conn.execute("SELECT id, created_at FROM sessions"))
+    touched: dict[str, list[str]] = defaultdict(list)
+    for sid, paths in docs.items():
+        for path in paths:
+            touched[path].append(sid)
+    out = []
+    for row in handoffs(conn):
+        if row["role"] not in ("emitted", "both"):
+            continue
+        mine = started.get(row["id"]) or ""
+        later = {other for path in row["docs"] for other in touched[path]
+                 if other != row["id"] and (started.get(other) or "") > mine}
+        if not later:
+            names = sorted({path.rsplit("/", 1)[-1] for path in row["docs"]})
+            out.append({**row, "evidence": (
+                f"wrote {', '.join(names)}; no later session opened it"
+                if names else "asked for a handoff; no later session picked it up")})
+    return out
+
+
 def session_handoff(conn: sqlite3.Connection, session_id: str) -> dict:
     """Whether one session handed work on, took it up, or neither."""
     docs = sorted(_docs_by_session(conn).get(session_id, []))

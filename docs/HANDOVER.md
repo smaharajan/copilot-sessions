@@ -14,8 +14,8 @@ home screen (`cs` / `cs home`), in five phases:
 |---|---|---|
 | 1 | `cs/events.py`: streamed, cached digests of `events.jsonl` (no UI) | **done** |
 | 2 | Evidence views: tool failures, stuck loops, hook health, autonomy evidence, sub-agents, model switches, unclean endings | **done** |
-| 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | next |
-| 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | — |
+| 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | **done** |
+| 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | next |
 | 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | — |
 
 The standing rules are in `AGENTS.md` and `CONTRIBUTING.md`: the store is
@@ -149,10 +149,59 @@ Decisions worth knowing:
   opens and cancels; `updated HH:MM:SS` advanced 60 s after a mouse hover
   and 60 s after returning from a view.
 
+## Phase 3 — day-to-day workflow
+
+All in `cs/cli/today.py`, readings as `_*_data` shared with `--json`.
+
+| Command | Home row | Notes |
+|---|---|---|
+| `cs next [N\|all]` | Next up → Today (first row) | handoff 5 · ended 4 · stuck 3 · wip 2 · pin 1; opens as a listing (`r` resumes) |
+| `cs standup` | Standup → Today (moved) | unchanged |
+| `cs eod [--md]` | End of day → Today | since local midnight |
+| `cs weekly [--md]` | Weekly review → Today | vs the previous 7 days; top 3 `coach` findings |
+| `cs budget --check` | Budget → Today | ←/→ on the row steps `ui.BUDGET_STEPS` |
+| `cs similar <words>` | Similar work → Find (term) | `db.search`, shipped first, stable |
+| `cs asks [--repo .] [N\|all]` | My asks → Find (period) | `c` copies in the listing |
+| `cs search --save`, `cs saved [name]` | Saved searches → Find | picker; settings key `saved_searches` |
+| `cs files <path> --history` | File history → Find (term) | agent read from the log on demand, never cached |
+| `cs cleanup [N]` | Clean-up → Improve | suggests commands; removes nothing |
+
+Decisions worth knowing:
+
+- **Open handoff** = a session asked to write a handoff (role emitted or
+  both) where no *later* session touched any handoff document it touched
+  (`signals.open_handoffs`). A later session that only quoted its id is not
+  a pickup; the document is the contract.
+- **Next up ignores an unrecorded finish reason.** `cs endings` still lists
+  it as unknown, but there is nothing in it to act on.
+- **End of day is since local midnight**; the budget and the header remain
+  "last 24 hours", which is what the budget has always meant.
+- The home loop now treats `budget` as an ask that takes no argument, and
+  ←/→ on that row steps the limit instead of the window. The refresh
+  deadline is untouched; the header is re-read so the new limit shows.
+- Home grouping now needs `heads * 2 + 4` spare rows (was `heads * 3`), so
+  six groups still show from 20 rows up.
+- Functions in `today.py` import listing helpers at module level, not
+  inside the function, so they resolve through `cs.cli` like everything else
+  and tests that patch `cs.cli.*` reach them.
+- A ranked listing whose title ends "… first" no longer adds "best match
+  first" to its heading.
+
+### Verified
+
+- Lint and the full suite (668 tests) pass on 3.12 and 3.10.
+- Width test covers next, eod, weekly, asks, clean-up, file history and
+  saved searches at 40–140; every view also checked at 40 on an empty store.
+- tmux, `TERM=xterm-ghostty`, 100x40 and 40x24: all nine new rows found by
+  typing, opened (term rows with a typed term), and returned; ←/→ on Budget
+  changed the limit (at 40 columns the descriptions are hidden and the change
+  shows in the header); arrows reach Help; theme gallery; `updated` advanced
+  after a hover and after a view.
+
 ## What's next
 
-Phase 3: the Today group (Next up, Standup, End of day, Weekly review,
-Budget, Watch live), and the Find additions.
+Phase 4: compare, replay, spend anomalies, repo health, prompt patterns, and
+agent-config columns on `cs profiles` / `cs skills`.
 
 ## Earlier history
 

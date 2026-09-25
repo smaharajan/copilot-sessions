@@ -77,6 +77,7 @@ ARGUMENTS = {
     "export": ["sess-alpha"],
     "resume": ["sess-alpha"], "r": ["sess-alpha"],
     "search": ["portal"], "find": ["portal"], "grep": ["portal"],
+    "similar": ["portal"], "like": ["portal"],
     "files": ["globe.js"],
     "completion": ["bash"],
     "pin": ["sess-alpha"], "unpin": ["sess-alpha"],

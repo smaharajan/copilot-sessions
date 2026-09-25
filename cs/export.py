@@ -39,6 +39,8 @@ VIEWS = (
     "sessions", "search", "stats", "cost", "efficiency",
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
     "standup", "failures", "loops", "subagents", "switches", "endings",
+    "next", "eod", "weekly", "similar", "asks", "saved", "file-history",
+    "cleanup", "budget",
 )
 
 # What someone actually types to reach each of those. The names above are what
@@ -50,6 +52,7 @@ DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
+    "next", "eod", "weekly", "similar", "asks", "saved", "cleanup", "budget",
 )
 
 
@@ -410,6 +413,61 @@ def switches(days: int) -> dict:
 def endings(days: int) -> dict:
     from .cli.evidence import _endings_data
     return {"view": "endings", **_endings_data(days)}
+
+
+# ── Today and Find ───────────────────────────────────────────────────
+
+def next_up(days: int = 14) -> dict:
+    from .cli.today import _next_data
+    return {"view": "next", **_next_data(days)}
+
+
+def eod() -> dict:
+    from .cli.today import _eod_data
+    return {"view": "eod", **_eod_data()}
+
+
+def weekly() -> dict:
+    from .cli.today import _weekly_data
+    return {"view": "weekly", **_weekly_data()}
+
+
+def similar(term: str) -> dict:
+    from .cli.today import _similar_data
+    return {"view": "similar", **_similar_data(term)}
+
+
+def asks(days: int, repo: str | None = None) -> dict:
+    from .cli.today import _asks_data
+    return {"view": "asks", **_asks_data(days, repo)}
+
+
+def saved() -> dict:
+    from . import ui
+    return {"view": "saved", "searches": [
+        {"name": redact.one_line(redact.redact(name)),
+         "term": redact.one_line(redact.redact(term))}
+        for name, term in ui.saved_searches().items()]}
+
+
+def file_history(pattern: str) -> dict:
+    from .cli.today import _file_history_data
+    return {"view": "file-history", **_file_history_data(pattern)}
+
+
+def cleanup(days: int = 14) -> dict:
+    from .cli.today import _cleanup_data
+    return {"view": "cleanup", **_cleanup_data(days)}
+
+
+def budget() -> dict:
+    from . import ui
+    from .cli.workflow import _today_nano
+    limit = ui.daily_budget_aiu()
+    spent = _today_nano()
+    return {"view": "budget", "window": "last 24 hours", "nano_aiu": spent,
+            "limit_aiu": limit,
+            "over": bool(limit is not None and spent / 1e9 > limit)}
 
 
 def emit(payload: dict, fmt: str = "json") -> None:

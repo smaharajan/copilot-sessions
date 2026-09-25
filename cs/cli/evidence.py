@@ -197,9 +197,9 @@ def cmd_failures(days: int = 30, loops: bool = False) -> bool:
 
 def _no_logs(inner: int, found: int) -> None:
     if found:
-        print(f"  {ui.MUTED}No tool call in this window failed.{ui.RST}")
+        _note("No tool call in this window failed.", inner)
     else:
-        print(f"  {ui.MUTED}No session in this window left an event log.{ui.RST}")
+        _note("No session in this window left an event log.", inner)
         print()
         _note("Tool calls are read from session-state/<id>/events.jsonl, "
               "which older Copilot releases do not write.", inner)
@@ -303,8 +303,8 @@ def _render_loops(days: int) -> None:
     inner = _frame("Stuck loops", days)
     loops = data["loops"]
     if not loops:
-        print(f"  {ui.MINT}No tool failed {events.LOOP_MIN} or more times in a "
-              f"row in this window.{ui.RST}")
+        _note(f"No tool failed {events.LOOP_MIN} or more times in a row in this "
+              f"window.", inner)
         print()
         return
     _headline(f"{_plural(len(loops), 'loop')} in "
@@ -396,7 +396,7 @@ def _render_subagents(days: int) -> None:
     inner = _frame("Sub-agents", days)
     agents = data["agents"]
     if not agents:
-        print(f"  {ui.MUTED}No sub-agent run was logged in this window.{ui.RST}")
+        _note("No sub-agent run was logged in this window.", inner)
         print()
         return
     _headline(f"{_plural(data['runs'], 'run')} of "
@@ -486,8 +486,8 @@ def _render_switches(days: int) -> None:
     data = _switches_data(days)
     inner = _frame("Model switches", days)
     if not data["sessions"]:
-        print(f"  {ui.MUTED}No session changed model or effort part-way through "
-              f"in this window.{ui.RST}")
+        _note("No session changed model or effort part-way through in this "
+              "window.", inner)
         print()
         return
     _headline(f"{_plural(data['switches'], 'switch', 'switches')} in "
@@ -556,7 +556,7 @@ def _render_endings(days: int) -> None:
     data = _endings_data(days)
     inner = _frame("Unclean endings", days)
     if not data["recorded"]:
-        print(f"  {ui.MUTED}This store records no finish reasons.{ui.RST}")
+        _note("This store records no finish reasons.", inner)
         print()
         return
     endings = data["endings"]

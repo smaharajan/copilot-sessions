@@ -53,6 +53,7 @@ from . import (  # noqa: E402
     reports,
     resume,
     session,
+    today,
     workflow,
 )
 
@@ -62,6 +63,7 @@ _SUBMODULES = (
     reports,
     governance,
     evidence,
+    today,
     practice_cmds,
     inventory,
     session,

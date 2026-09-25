@@ -2096,3 +2096,121 @@ def usage_stamps(conn: sqlite3.Connection,
         ):
             out[sid].append((when or "", spent or 0))
     return out
+
+
+# ── The day's work ───────────────────────────────────────────────────
+# What the Today views ask: what shipped, what was spent since a moment, and
+# what each session was opened to do.
+
+def refs_by_session(conn: sqlite3.Connection,
+                    session_ids: list[str] | None = None) -> dict[str, dict[str, int]]:
+    """{session: {"commit": n, "pr": n}} — what each session shipped.
+
+    Every session when `session_ids` is None. Empty where the store keeps no
+    refs, which callers read as "not recorded".
+    """
+    if not _has_table(conn, "session_refs"):
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    query = ("SELECT session_id, ref_type, COUNT(*) FROM session_refs "
+             "{where} GROUP BY session_id, ref_type")
+    batches = ([None] if session_ids is None
+               else list(_chunks(list(session_ids))) or [])
+    for chunk in batches:
+        where = "" if chunk is None else (
+            f"WHERE session_id IN ({','.join('?' * len(chunk))})")
+        for sid, kind, count in conn.execute(query.format(where=where),
+                                             chunk or ()):
+            out.setdefault(sid, {"commit": 0, "pr": 0})
+            out[sid][kind if kind in ("commit", "pr") else "commit"] += count
+    return out
+
+
+def refs_since(conn: sqlite3.Connection, since: str,
+               session_ids: list[str]) -> list[tuple[str, str, str]]:
+    """(session, ref_type, value) recorded at or after `since` in those sessions.
+
+    Where refs carry no time, every ref of the given sessions counts: the
+    sessions were already chosen by when they were active.
+    """
+    if not _has_table(conn, "session_refs") or not session_ids:
+        return []
+    timed = _has_columns(conn, "session_refs", "created_at")
+    out = []
+    for chunk in _chunks(list(session_ids)):
+        marks = ",".join("?" * len(chunk))
+        where = f"session_id IN ({marks})"
+        args: tuple = tuple(chunk)
+        if timed:
+            where += f" AND {_stamp_sql('created_at')} >= ?"
+            args = (*args, since)
+        out.extend(conn.execute(
+            f"SELECT session_id, ref_type, ref_value FROM session_refs "
+            f"WHERE {where} ORDER BY rowid", args))
+    return out
+
+
+def spend_since(conn: sqlite3.Connection, since: str) -> int | None:
+    """Nano-AIU billed at or after `since`. None when the store cannot say."""
+    if not _has_usage(conn) or not _has_columns(
+            conn, "assistant_usage_events", "created_at"):
+        return None
+    return conn.execute(
+        f"""SELECT COALESCE(SUM(total_nano_aiu), 0) FROM assistant_usage_events
+            WHERE {_stamp_sql('created_at')} >= ?""",
+        (since,),
+    ).fetchone()[0]
+
+
+def opening_prompts(conn: sqlite3.Connection,
+                    session_ids: list[str]) -> dict[str, list[tuple[int, str]]]:
+    """Every (turn_index, prompt) per session — the caller picks the openers."""
+    out: dict[str, list[tuple[int, str]]] = {sid: [] for sid in session_ids}
+    for chunk in _chunks(list(session_ids)):
+        marks = ",".join("?" * len(chunk))
+        for sid, index, prompt in conn.execute(
+            f"""SELECT session_id, turn_index, COALESCE(user_message, '')
+                FROM turns WHERE session_id IN ({marks})
+                  AND COALESCE(user_message, '') <> ''
+                ORDER BY session_id, turn_index""",
+            chunk,
+        ):
+            out[sid].append((index, prompt))
+    return out
+
+
+def turn_prompt(conn: sqlite3.Connection, session_id: str, turn: int) -> str:
+    """One turn's prompt, or ''."""
+    row = conn.execute(
+        "SELECT COALESCE(user_message, '') FROM turns "
+        "WHERE session_id = ? AND turn_index = ?",
+        (session_id, turn),
+    ).fetchone()
+    return row[0] if row else ""
+
+
+def file_touches(conn: sqlite3.Connection, pattern: str,
+                 limit: int = 200) -> list[tuple[str, str, str, int | None, str]]:
+    """(path, session, tool, turn_index, session last active) for a path pattern.
+
+    The same matching `sessions_for_file` uses, one row per recorded touch,
+    newest session first — what a file's history is drawn from.
+    """
+    if not _has_files(conn):
+        return []
+    like = pattern.replace("*", "%")
+    if "%" not in like:
+        like = f"%{like}%"
+    elif not like.startswith(("%", "/")):
+        like = f"%{like}"
+    tool = optional(conn, "session_files", "tool_name", "f")
+    turn = optional(conn, "session_files", "turn_index", "f")
+    return conn.execute(
+        f"""SELECT f.file_path, f.session_id, COALESCE({tool}, ''), {turn},
+                   substr(MAX(s.created_at, s.updated_at), 1, 16)
+            FROM session_files f JOIN sessions s ON s.id = f.session_id
+            WHERE f.file_path LIKE ?
+            ORDER BY f.file_path, MAX(s.created_at, s.updated_at) DESC, {turn}
+            LIMIT ?""",
+        (like, limit),
+    ).fetchall()

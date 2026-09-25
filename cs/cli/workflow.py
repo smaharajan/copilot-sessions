@@ -11,6 +11,7 @@ from .. import (
 )
 from ._common import (
     _HOME_ACTIVE,
+    _capture,
     _page,
     _resolve_ref,
     _with_assets,
@@ -151,6 +152,35 @@ def _today_nano() -> int:
     return int(totals.get("nano_aiu", 0) or 0) if totals else 0
 
 
+def budget_check() -> int:
+    """One line for a hook or a script, and an exit code: 1 over budget, else 0.
+
+    Over means strictly over — spending exactly the limit is still within it.
+    No budget set is never over.
+    """
+    limit = ui.daily_budget_aiu()
+    spent = _today_nano() / 1e9
+    if limit is None:
+        print(f"budget: none set · {spent:,.2f} AIU in the last 24 hours")
+        return 0
+    over = spent > limit
+    print(f"budget: {spent:,.2f} / {limit:g} AIU in the last 24 hours · "
+          f"{'over by ' + format(spent - limit, ',.2f') if over else 'within'}")
+    return 1 if over else 0
+
+
+def cmd_budget_view() -> bool:
+    """The home screen's Budget row: today against the limit, as a page."""
+    import shutil
+
+    inner = min(shutil.get_terminal_size().columns, 96) - 4
+    return _page("\n" + ui.rule(inner, "Budget · last 24 hours") + "\n"
+                 + _capture(lambda: cmd_budget(None)) + "\n\n"
+                 + "\n".join(f"  {ui.DIM}{line}{ui.RST}" for line in (
+                     "←/→ on the home row changes the limit.",
+                     "For hooks and scripts: cs budget --check")) + "\n")
+
+
 def cmd_budget(arg: str | None) -> None:
     """Show, set, or clear the daily AIU budget."""
     if arg is None:
@@ -159,8 +189,8 @@ def cmd_budget(arg: str | None) -> None:
         spent = spent_nano / 1e9
         print()
         if limit is None:
-            print(f"  {ui.DIM}No daily budget set. "
-                  f"Set one with 'cs budget <aiu>'.{ui.RST}")
+            print(f"  {ui.DIM}No daily budget set.{ui.RST}")
+            print(f"  {ui.DIM}Set one with 'cs budget <aiu>'.{ui.RST}")
             print(f"  spent last 24h  {ui.fmt_aiu(spent_nano)} AIU")
         else:
             colour = ui.budget_colour(spent, limit)

@@ -235,7 +235,10 @@ class HomeMenuTest(StoreTest):
         import cs.cli as cli
 
         shown = list(range(len(cli._home_items())))
-        layout, art = cli._home_plan(100, 44, shown, True)
+        # Tall enough for every row, every heading and the full wordmark —
+        # the menu has grown past forty rows, so "tall" is measured off it.
+        height = len(shown) + len(cli._HOME_GROUP_STARTS) + 14
+        layout, art = cli._home_plan(100, height, shown, True)
         self.assertTrue(any(kind == "head" for kind, _ in layout),
                         "a tall window should show its groups")
         self.assertGreater(len(art), 4, "and still have the full wordmark")

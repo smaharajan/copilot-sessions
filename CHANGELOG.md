@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Improve now starts at Practice.** Standup moved to the new Today group.
+- **Narrow listings wrap their sort footnote** instead of running a
+  sixty-character run of column names off a 40-column window.
+
 - **Typing on the home screen lands on the row you named.** A row whose
   label matches now beats one that only mentions the word in its
   description, so typing `sub-agents` opens Sub-agents rather than
@@ -28,6 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Today group opens the home screen.** `cs next [N|all]` ranks what to
+  pick up — open handoffs, unclean endings, stuck loops, `wip` tags and pins
+  — with each reason and a ready `cs resume N`, and opens as a listing where
+  `r` resumes. `cs eod [--md]` covers the day since midnight (sessions,
+  commits and PRs, handoffs written, spend against the budget, tool
+  failures), and `cs weekly [--md]` the last seven days against the seven
+  before (spend trend, dearest sessions, repeated failures, top three
+  habits); `--md` prints masked Markdown to paste. Standup moved into Today.
+- **The Budget row changes the limit with ←/→**, and `cs budget --check`
+  prints one line and exits 1 when over, for hooks and scripts.
+- **Finding past work.** `cs similar <words>` ranks sessions that shipped a
+  commit or PR first and shows the outcome; `cs asks [--repo .] [N|all]`
+  lists your opening requests (and the first after a handoff) with outcome
+  and cost, and `c` copies one, masked, where a clipboard tool exists;
+  `cs search --save <name> <words>` and `cs saved [name]` keep searches, with
+  a picker on the home row; `cs files <path> --history` shows every session,
+  agent and turn that touched a file, and what was asked.
+- **`cs cleanup`** lists stale pins, quiet `wip` tags and handoffs nobody
+  took, each with the command that would tidy it. It removes nothing.
+- All of the above have home rows and `--json`.
 - **Evidence views from the event log.** `cs failures [N|all]` (tool calls
   that failed, by tool, by repository and the worst sessions, numbered for
   `cs show N`); `cs failures --loops` / `cs loops` (three or more consecutive

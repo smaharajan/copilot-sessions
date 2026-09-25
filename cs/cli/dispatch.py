@@ -9,6 +9,7 @@ from .. import (
     __version__,
     db,
     export,
+    ui,
 )
 from ._common import (
     _REPORT_COLUMNS,
@@ -51,7 +52,18 @@ from .session import (
     cmd_read,
     cmd_show,
 )
+from .today import (
+    cmd_asks,
+    cmd_cleanup,
+    cmd_eod,
+    cmd_file_history,
+    cmd_next,
+    cmd_saved,
+    cmd_similar,
+    cmd_weekly,
+)
 from .workflow import (
+    budget_check,
     cmd_budget,
     cmd_note,
     cmd_pin,
@@ -67,6 +79,7 @@ _COMPLETION_COMMANDS = (
     "instructions", "hooks", "mcp", "standup", "daily", "coach", "rhythm",
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
     "failures", "loops", "subagents", "switches", "endings",
+    "next", "eod", "weekly", "similar", "asks", "saved", "cleanup",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
 )
@@ -75,6 +88,7 @@ _COMPLETION_COMMANDS = (
 _COMPLETION_FLAGS = (
     "--json", "--csv", "--sort", "--asc", "--desc",
     "--all", "--turn", "--asks", "--short", "--by-repo", "--loops",
+    "--md", "--save", "--repo", "--history", "--check",
 )
 
 
@@ -139,6 +153,11 @@ compdef _cs cs
             "complete -c cs -l all -d 'every record, not just the window'",
             "complete -c cs -l by-repo -d 'skills grouped by where they ran'",
             "complete -c cs -l loops -d 'stuck loops rather than failures'",
+            "complete -c cs -l md -d 'paste-ready Markdown'",
+            "complete -c cs -l save -d 'save this search under a name'",
+            "complete -c cs -l repo -d 'only sessions in this repository'",
+            "complete -c cs -l history -d 'every touch of the file'",
+            "complete -c cs -l check -d 'exit 1 when over the daily budget'",
         ]
         script = "\n".join(lines) + "\n"
     else:
@@ -450,6 +469,54 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(build(30 if days is None else days), fmt)
         return 0
 
+    if cmd in ("next", "eod", "weekly", "cleanup"):
+        days, _sort, _desc, _word, _flags, error = _report_options(
+            rest, None, days=cmd in ("next", "cleanup"), flags=("--md",)
+        )
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        builders = {"next": lambda: export.next_up(14 if days is None else days),
+                    "eod": export.eod, "weekly": export.weekly,
+                    "cleanup": lambda: export.cleanup(14 if days is None else days)}
+        export.emit(builders[cmd](), fmt)
+        return 0
+
+    if cmd == "similar":
+        _days, _sort, _desc, term, error = _listing_options(rest, term=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        export.emit(export.similar(term), fmt)
+        return 0
+
+    if cmd == "asks":
+        repo, rest, error = _repo_option(rest)
+        if not error:
+            days, _sort, _desc, _word, _flags, error = _report_options(
+                rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        export.emit(export.asks(30 if days is None else days, repo), fmt)
+        return 0
+
+    if cmd == "saved":
+        export.emit(export.saved(), fmt)
+        return 0
+
+    if cmd == "files" and "--history" in rest:
+        words = [arg for arg in rest if arg != "--history"]
+        if not words:
+            print("error: files <path> --history — which file", file=sys.stderr)
+            return 1
+        export.emit(export.file_history(" ".join(words)), fmt)
+        return 0
+
+    if cmd == "budget":
+        export.emit(export.budget(), fmt)
+        return 0
+
     if cmd in ("standup", "daily"):
         if fmt == "csv":
             print("error: standup has no CSV form — use '--json'",
@@ -520,10 +587,17 @@ def _dispatch(argv: list[str] | None = None) -> int:
             return 1
         cmd_recent(days, show_all=True, sort_by=sort_by, descending=descending)
     elif cmd in ("search", "find", "grep"):
-        _, sort_by, descending, term, error = _listing_options(rest, term=True)
+        name, rest, error = _save_option(rest)
+        if not error:
+            _, sort_by, descending, term, error = _listing_options(rest, term=True)
         if error:
             print(f"error: {error}", file=sys.stderr)
             return 1
+        if name:
+            if not ui.save_search(name, term):
+                print("error: could not write settings", file=sys.stderr)
+                return 1
+            print(f"  saved '{name}' · run it again with 'cs saved {name}'")
         cmd_search(term, sort_by=sort_by, descending=descending)
     elif cmd in ("show", "view", "info"):
         _require(rest, "show <#N|id> [--short] [--asks]")
@@ -551,6 +625,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_read(rest[0], turn)
+    elif cmd == "files" and "--history" in rest:
+        words = [arg for arg in rest if arg != "--history"]
+        if not words:
+            print("error: files <path> --history — which file", file=sys.stderr)
+            return 1
+        cmd_file_history(" ".join(words))
     elif cmd == "files":
         _, sort_by, descending, pattern, _, error = _report_options(
             rest, None, word=True
@@ -781,11 +861,53 @@ def _dispatch(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 1
         cmd_untag(rest[0], rest[1])
+    elif cmd == "budget" and "--check" in rest:
+        if len(rest) > 1:
+            print("error: --check takes nothing else", file=sys.stderr)
+            return 1
+        return budget_check()
     elif cmd == "budget":
         if len(rest) > 1:
             print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
             return 1
         cmd_budget(rest[0] if rest else None)
+    elif cmd in ("next", "up"):
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_next(14 if days is None else days)
+    elif cmd in ("eod", "weekly"):
+        _, _, _, _, flags, error = _report_options(rest, None, flags=("--md",))
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        (cmd_eod if cmd == "eod" else cmd_weekly)(markdown="--md" in flags)
+    elif cmd in ("similar", "like"):
+        _, _, _, term, error = _listing_options(rest, term=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_similar(term)
+    elif cmd == "asks":
+        repo, rest, error = _repo_option(rest)
+        if not error:
+            days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_asks(30 if days is None else days, repo)
+    elif cmd == "saved":
+        if len(rest) > 1:
+            print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
+            return 1
+        cmd_saved(rest[0] if rest else None)
+    elif cmd in ("cleanup", "clean-up", "tidy"):
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_cleanup(14 if days is None else days)
     elif cmd in ("help", "-h", "--help"):
         cmd_help()
     elif cmd in ("version", "-v", "--version"):
@@ -794,6 +916,28 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print(f"error: unknown command '{cmd}' — run 'cs help'", file=sys.stderr)
         return 1
     return 0
+
+
+def _save_option(rest: list[str]) -> tuple[str | None, list[str], str | None]:
+    """Pull `--save NAME` out of a search's arguments."""
+    if "--save" not in rest:
+        return None, rest, None
+    at = rest.index("--save")
+    if at + 1 >= len(rest) or rest[at + 1].startswith("-"):
+        return None, rest, "--save wants a name: cs search --save <name> <words>"
+    return rest[at + 1], rest[:at] + rest[at + 2:], None
+
+
+def _repo_option(rest: list[str]) -> tuple[str | None, list[str], str | None]:
+    """Pull `--repo X` (or `--repo=X`) out of the arguments. '.' is here."""
+    for at, arg in enumerate(rest):
+        if arg.startswith("--repo="):
+            return arg.split("=", 1)[1] or ".", rest[:at] + rest[at + 1:], None
+        if arg == "--repo":
+            if at + 1 < len(rest) and not rest[at + 1].startswith("-"):
+                return rest[at + 1], rest[:at] + rest[at + 2:], None
+            return ".", rest[:at] + rest[at + 1:], None
+    return None, rest, None
 
 
 def _require(rest: list[str], usage: str) -> None:

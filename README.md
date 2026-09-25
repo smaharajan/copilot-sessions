@@ -93,9 +93,9 @@ new charges remain visible. They stay visible first as the window narrows.
 
 **Pins and a daily budget** live in the same settings file. `cs pin <ref>`
 keeps a session on a Pinned home row (and floats it to the top of listings;
-press `p` in a listing to toggle). `cs budget 5` sets a daily AIU limit; the
-home header then shows today's spend against it and turns amber near the
-limit, rose when over.
+press `p` in a listing to toggle). `cs budget 5` sets a daily AIU limit — or
+use ←/→ on the home screen's Budget row; the home header then shows today's
+spend against it and turns amber near the limit, rose when over.
 
 On legacy ncurses builds, terminals with native SGR mouse reporting (such as
 Ghostty) use xterm-compatible decoding inside `cs`; the original terminal
@@ -164,6 +164,28 @@ first-token latency, reasoning share, per model.
 sessions, turns, spend, what moved, handoffs, and light autonomy risks when
 cheap to ask. `cs coach`, `cs rhythm` and `cs context` sit beside it under
 **Improve** on the landing screen.
+
+### ☀️ Today, and finding the work again
+
+The home screen now opens on a **Today** group. **`cs next`** ranks what to pick
+up — open handoffs nobody took, sessions whose last call ended in an error,
+stuck loops, sessions tagged `wip`, and pins — each with the reason it is there
+and a ready `cs resume N`. **`cs eod`** is the day since midnight (sessions,
+commits and PRs, handoffs written, spend against your budget, tool failures)
+and **`cs weekly`** is the last seven days against the seven before (spend
+trend, dearest sessions, failures that repeat across sessions, your top three
+habits); both take `--md` for paste-ready Markdown, masked. The **Budget** row
+shows the daily limit and ←/→ changes it; `cs budget --check` prints one line
+and exits 1 when over, for hooks and scripts.
+
+Finding past work: **`cs similar <words>`** is a search that ranks sessions
+which shipped a commit or PR first; **`cs asks`** lists what you opened each
+session asking for, one line each, with outcome and cost (`c` copies one in
+the listing); **`cs search --save <name> <words>`** and **`cs saved`** keep the
+searches you run every week; **`cs files <path> --history`** shows every
+session, agent and turn that touched a file. **`cs cleanup`** lists stale pins,
+quiet `wip` tags and abandoned handoffs, with the command that would tidy each
+— it never removes anything itself.
 
 ### 🧾 What actually happened in a session
 

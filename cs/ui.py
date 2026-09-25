@@ -431,6 +431,47 @@ def remove_tag(session_id: str, tag: str) -> bool:
     return _save_settings(settings)
 
 
+def saved_searches() -> dict[str, str]:
+    """Named searches, in the order they were saved. Malformed entries dropped."""
+    saved = _load_settings().get("saved_searches")
+    if not isinstance(saved, dict):
+        return {}
+    return {name: term for name, term in saved.items()
+            if isinstance(name, str) and name.strip()
+            and isinstance(term, str) and term.strip()}
+
+
+def save_search(name: str, term: str) -> bool:
+    """Remember `term` under `name`, replacing one of the same name."""
+    settings = _load_settings()
+    saved = saved_searches()
+    saved[name.strip()] = term.strip()
+    settings["saved_searches"] = saved
+    return _save_settings(settings)
+
+
+# The steps ←/→ walk on the home screen's Budget row. 0 is "no limit".
+BUDGET_STEPS = (0, 5, 10, 20, 25, 50, 75, 100, 150, 200, 300, 500, 1000)
+
+
+def step_budget(delta: int) -> float | None:
+    """Move the daily budget one step along BUDGET_STEPS and save it.
+
+    A budget between two steps moves to the next one in that direction, so
+    a hand-set 42 goes to 50 on → and 25 on ←. Returns the new limit, or
+    None when it is now off.
+    """
+    current = daily_budget_aiu() or 0
+    if delta > 0:
+        chosen = next((step for step in BUDGET_STEPS if step > current),
+                      BUDGET_STEPS[-1])
+    else:
+        chosen = next((step for step in reversed(BUDGET_STEPS) if step < current),
+                      0)
+    set_daily_budget(chosen or None)
+    return daily_budget_aiu()
+
+
 def daily_budget_aiu() -> float | None:
     """User-facing daily AIU budget, or None when unset / cleared."""
     budget = _load_settings().get("budget")
@@ -1147,6 +1188,16 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "endings": ("🏁", "e"),
     "subagents": ("🐝", "a"),
     "switches": ("🔀", "w"),
+    # Today and the Find additions.
+    "next": ("👉", "n"),
+    "eod": ("🌙", "d"),
+    "weekly": ("📆", "k"),
+    "budget": ("💳", "b"),
+    "similar": ("🔭", "s"),
+    "asks": ("💬", "q"),
+    "saved": ("🔖", "v"),
+    "history": ("📜", "h"),
+    "cleanup": ("🚮", "c"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
 # up) rather than from the older symbol blocks at U+2100–U+2BFF. Both are

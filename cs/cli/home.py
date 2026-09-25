@@ -45,7 +45,17 @@ from .reports import (
     cmd_repos,
     cmd_stats,
 )
-from .workflow import cmd_pins
+from .today import (
+    cmd_asks,
+    cmd_cleanup,
+    cmd_eod,
+    cmd_file_history,
+    cmd_next,
+    cmd_saved_menu,
+    cmd_similar,
+    cmd_weekly,
+)
+from .workflow import cmd_budget_view, cmd_pins
 
 
 def _home_items(period: int = 30,
@@ -71,7 +81,25 @@ def _home_items(period: int = 30,
     """
     window = _window_label(period)
     theme = theme or ui.theme_name()
+    limit = ui.daily_budget_aiu()
     return [
+        # Today · what to do now, and what the day and week came to.
+        (ui.menu_icon("next"), "Next up",
+         "open handoffs, cut-off endings, stuck loops, wip, pins",
+         cmd_next, ""),
+        (ui.menu_icon("standup"), "Standup",
+         f"today's brief: what moved, handoffs, risks · {window}",
+         cmd_standup, "period"),
+        (ui.menu_icon("eod"), "End of day",
+         "commits, PRs, handoffs, spend and failures since midnight",
+         cmd_eod, ""),
+        (ui.menu_icon("weekly"), "Weekly review",
+         "7 days against the 7 before: spend, failures, habits",
+         cmd_weekly, ""),
+        (ui.menu_icon("budget"), "Budget",
+         (f"daily limit {limit:g} AIU · ←/→ changes it" if limit
+          else "no daily limit · ←/→ sets one"),
+         cmd_budget_view, "budget"),
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
          lambda: cmd_recent(7), ""),
@@ -83,6 +111,18 @@ def _home_items(period: int = 30,
          lambda: cmd_recent(0, show_all=True), ""),
         (ui.menu_icon("search"), "Search", "full text across every turn and checkpoint",
          cmd_search, "term"),
+        (ui.menu_icon("similar"), "Similar work",
+         "like this, the sessions that shipped something first",
+         cmd_similar, "term"),
+        (ui.menu_icon("asks"), "My asks",
+         f"what you opened each session asking for · {window}",
+         cmd_asks, "period"),
+        (ui.menu_icon("saved"), "Saved searches",
+         "pick one and run it live",
+         cmd_saved_menu, ""),
+        (ui.menu_icon("history"), "File history",
+         "every session, agent and turn that touched a file",
+         cmd_file_history, "term"),
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
         (ui.menu_icon("stats"), "Stats",
@@ -130,13 +170,8 @@ def _home_items(period: int = 30,
         (ui.menu_icon("endings"), "Unclean endings",
          f"sessions cut off by an error, length or filter · {window}",
          cmd_endings, "period"),
-        # Improve · Standup first so the daily brief is one key from the menu;
-        # Practice / Rhythm / Context follow. Working days stays off (see above).
-        # The ("Standup", "Improve") anchor in _HOME_GROUP_STARTS must stay
-        # aligned with the first row of this group.
-        (ui.menu_icon("standup"), "Standup",
-         f"today's brief: what moved, handoffs, risks · {window}",
-         cmd_standup, "period"),
+        # Improve · Standup moved up to Today, so Practice opens this group;
+        # the ("Practice", "Improve") anchor in _HOME_GROUP_STARTS follows it.
         (ui.menu_icon("practice"), "Practice",
          f"habits the record shows, worst first · {window}",
          cmd_coach, "period"),
@@ -146,6 +181,9 @@ def _home_items(period: int = 30,
         (ui.menu_icon("context"), "Context",
          "what this repo hands the agent before you type",
          cmd_context, ""),
+        (ui.menu_icon("cleanup"), "Clean-up",
+         "stale pins, quiet wip, handoffs nobody took · suggests only",
+         cmd_cleanup, ""),
         (ui.menu_icon("skills"), "Skills", "what Copilot can load here versus used",
          lambda: cmd_assets("skills"), ""),
         (ui.menu_icon("profiles"), "Agents",
@@ -193,6 +231,7 @@ def _step_period(current: int, delta: int) -> int:
 
 
 _HOME_GROUP_TONE = {
+    "Today": "turns",       # the ramp's last hue: the one group about now
     "Find": "title",        # 39  — the product blue
     "Measure": "credits",   # 177 — violet, as spend is everywhere else
     "Govern": "warn",       # 214 — amber: this group is the bad news
@@ -202,12 +241,19 @@ _HOME_GROUP_TONE = {
 
 
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
+    ("Next up", "Today"),
     ("Recent sessions", "Find"),
     ("Repositories", "Measure"),
     ("Autonomy", "Govern"),
-    ("Standup", "Improve"),
+    ("Practice", "Improve"),
     ("Skills", "Reference"),
 )
+
+# What the prompt says on a row that asks for text. Search is the default.
+_TERM_PROMPTS = {
+    "Similar work": " similar to: ",
+    "File history": " file: ",
+}
 
 
 def _home_groups(items: list | None = None) -> dict[int, str]:
@@ -440,7 +486,7 @@ def _home_plan(width: int, height: int, shown: list[int],
     One function so the loop and its tests cannot disagree about the trade.
     Two rules, in this order:
 
-    1. **The menu is grouped.** Five captioned blocks are what makes nineteen
+    1. **The menu is grouped.** Six captioned blocks are what makes forty
        destinations navigable; an undivided column is a list you re-read
        every time. This used to be the other way round — headings happened
        only if they were free — and on any window under about forty rows
@@ -456,7 +502,10 @@ def _home_plan(width: int, height: int, shown: list[int],
     heads = len({_home_group(index) for index in shown})
     wanted = len(shown) + heads
     room = height - 1 - _home_header_rows(width, height, wanted, spark)
-    layout = _home_layout(shown, room >= heads * 3)
+    # Headings go only when the menu gets at least two rows per heading
+    # beyond a small floor — below that the captions would be most of what
+    # is on screen.
+    layout = _home_layout(shown, room >= heads * 2 + 4)
     return layout, _home_art(width, height, len(layout), spark)
 
 
@@ -790,13 +839,14 @@ def _home_tui(screen, state: dict):
         no term is not a view that can be opened at all.
         """
         asks = items[index][4]
-        if not asks:
+        if not asks or asks == "budget":
             return index
         if asks == "theme":
             activate_theme(_theme_picker(screen, active_theme))
             return None
         if asks == "term":
-            term = _prompt(screen, theme, height - 1, width, " search: ", "")
+            term = _prompt(screen, theme, height - 1, width,
+                           _TERM_PROMPTS.get(items[index][1], " search: "), "")
             return (index, term) if term else None
         return (index, state.get("period", 30))
 
@@ -979,6 +1029,14 @@ def _home_tui(screen, state: dict):
                 cursor = _home_step(shown, cursor, -1)
             elif key == curses.KEY_DOWN:
                 cursor = _home_step(shown, cursor, 1)
+            elif key in (curses.KEY_LEFT, curses.KEY_RIGHT) and (
+                    items[cursor][4] == "budget"):
+                # On the Budget row the arrows move the limit, not the window:
+                # the row is the setting, and it is saved as it changes. The
+                # header re-reads so it shows the new limit straight away;
+                # the refresh deadline is left where it was.
+                ui.step_budget(1 if key == curses.KEY_RIGHT else -1)
+                _refresh_home(state)
             elif key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 # The same keys that step a column in the listing and the
                 # reader, stepping the window here. They are free on this
@@ -1056,11 +1114,14 @@ def cmd_home() -> None:
                 return
             index, given = choice if isinstance(choice, tuple) else (choice, None)
             *_naming, action, asks = _home_items()[index]
-            if asks and given is None:
+            # Rows that open on Enter alone take no argument; the rest were
+            # handed one by the menu (a window, a term, a session).
+            takes = asks not in ("", "budget", "theme")
+            if takes and given is None:
                 continue  # nothing chosen — straight back to the menu
             try:
                 # `is None`, not falsy: 0 is a window, and it means all time.
-                waited = action(given) if asks else action()
+                waited = action(given) if takes else action()
             except SystemExit:
                 # A view that has nothing to show exits the process when run
                 # as a one-shot command. From the menu that would take the
@@ -1079,6 +1140,16 @@ def cmd_help() -> None:
   {ui.BOLD}Start here{ui.RST}
     cs                    Landing screen — every view a keypress away
     cs home               The same, by name
+
+  {ui.BOLD}Today{ui.RST}
+    cs next [N|all]       What to pick up: open handoffs, cut-off endings,
+                          stuck loops, wip tags and pins — each with its reason
+                          {ui.DIM}default: the last 14 days; pins and wip always{ui.RST}
+    cs eod [--md]         End of day: commits, PRs, handoffs, spend against the
+                          budget and tool failures since midnight
+    cs weekly [--md]      Last 7 days against the 7 before: spend, dearest
+                          sessions, repeated failures, top 3 habits
+                          {ui.DIM}--md prints Markdown ready to paste; text is masked{ui.RST}
 
   {ui.BOLD}List{ui.RST}
     cs recent [N|all]     Interactive sessions, last N days (default 7)
@@ -1112,6 +1183,8 @@ def cmd_help() -> None:
     cs coach [N|all]      Habits the record shows, scored and worst first
     cs rhythm [N|all]     When the work happens: hours, days, streaks
     cs context            What this repo hands the agent before you type
+    cs cleanup [N]        Stale pins (quiet N days, default 14), wip quiet 7+
+                          days, handoffs nobody took — suggests, never removes
                           {ui.DIM}standup, coach and rhythm read the sessions; context and
                           hooks read disk. Scheduled runs hidden by
                           .cs-ignore are left out.{ui.RST}
@@ -1140,6 +1213,7 @@ def cmd_help() -> None:
     cs tag <ref> <tag>    Add a tag to a session
     cs untag <ref> <tag>  Remove a tag
     cs budget [N|clear]   Daily AIU budget — show, set, or clear
+    cs budget --check     One line, exit 1 when over budget — for hooks/scripts
                           {ui.DIM}Stored in ~/.config/cs/settings.json · home header
                           colours amber at 70% and rose when over.{ui.RST}
 
@@ -1147,6 +1221,14 @@ def cmd_help() -> None:
     cs search <words>     Full-text search, best match first
                           {ui.DIM}Searches names, summaries, repos, both sides of every turn and
                           session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
+    cs search --save <name> <words>   Save a search under a name, and run it
+    cs saved [name]       List saved searches, or run one
+    cs similar <words>    The same search, sessions that shipped a commit or
+                          PR first, each with its outcome
+    cs asks [--repo .] [N|all]  Your opening request in each session, one line,
+                          with outcome and cost ('c' copies one in a listing)
+    cs files <path> --history   Every touch of a file: session, agent, turn,
+                          and what was asked
 
   {ui.BOLD}Inspect & resume{ui.RST}
     {ui.DIM}Two views of one session: show is the page, read is the words.{ui.RST}
@@ -1165,7 +1247,9 @@ def cmd_help() -> None:
     cs <view> --json      Structured output, for any of:
                           {ui.DIM}recent, all, search, stats, timeline, cost, efficiency,
                           agents, repos, skills, profiles, standup, failures,
-                          loops, subagents, switches, endings{ui.RST}
+                          loops, subagents, switches, endings, next, eod,
+                          weekly, similar, asks, saved, cleanup, budget,
+                          files --history{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
     cs completion <shell> Completions for bash, zsh or fish
