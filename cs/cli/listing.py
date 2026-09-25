@@ -44,6 +44,7 @@ from ._common import (
     _window_label,
     _with_assets,
 )
+from .evidence import loop_ids
 from .resume import _resume_from_listing
 from .session import cmd_read, cmd_show
 
@@ -112,6 +113,7 @@ def _render_listing(
 
     index: dict[int, str] = {}
     current_day = ""
+    stuck = loop_ids([row[0] for row in rows])
     for sid, started, summary, repo, cwd, turns, nano_aiu, *kit_values in rows:
         skills, agents = (kit_values + [0, 0])[:2]
         day = started[:10]
@@ -149,7 +151,9 @@ def _render_listing(
         active = clock if group_by_day else started[5:16]
         # One-cell marker so the # column stays aligned under the header.
         mark = f"{ui.AMBER}*{ui.RST}" if ui.is_pinned(sid) else " "
-        row = (f"  {mark}{num}  {ui.DIM}{active}{ui.RST}  {turns_txt}  {cred_txt}"
+        # And one more in the gap after it, for a session that got stuck.
+        loop = f"{ui.ROSE}!{ui.RST}" if sid in stuck else " "
+        row = (f"  {mark}{num}{loop} {ui.DIM}{active}{ui.RST}  {turns_txt}  {cred_txt}"
                f"{_kit_cells(skills, agents) if kit else ''}   {title_txt}{tag_txt}")
         print(row)
         if hits and sid in hits:
@@ -163,6 +167,9 @@ def _render_listing(
     _note(f"Sort: --sort {sortable} [--asc|--desc]", width - 4, indent=2)
     _note("Credits = AI units (AIU) spent  ·  cs show #1  ·  cs read #1  ·  "
           "cs resume #1", width - 4, indent=2)
+    if stuck:
+        _note("! = a tool failed 3+ times in a row  ·  cs failures --loops",
+              width - 4, indent=2)
     if kit:
         _note("Skills = skills the session used  ·  Agents = sub-agents it ran"
               "  ·  cs show #1 names them and shows the evidence",
@@ -378,6 +385,9 @@ def _listing_tui(
 
     timed = reload is not None and wait(-1)
     next_refresh = time.monotonic() + _REFRESH_SECONDS
+    # Sessions the event-log cache already knows got stuck. Cache only, and
+    # read again only when the rows change, so a heartbeat never reads a log.
+    stuck_for, stuck = None, set()
 
     try:
         while True:
@@ -385,6 +395,8 @@ def _listing_tui(
                 _filter_rows(rows, query, found), sort_by, descending, numbers
             )
             sorted_rows = ui.float_pins(sorted_rows)
+            if stuck_for is not rows:
+                stuck_for, stuck = rows, loop_ids([row[0] for row in rows])
             if follow is not None:
                 # Re-sorting moves rows around; keep the highlight on the session
                 # the user picked rather than on whatever lands at that position.
@@ -529,6 +541,16 @@ def _listing_tui(
                         "*",
                         1,
                         theme["cursor"] if on_cursor else theme["warn"],
+                    )
+                # The cell after it marks a stuck loop, for the same reason.
+                if sid in stuck:
+                    _addstr(
+                        screen,
+                        line,
+                        4,
+                        "!",
+                        1,
+                        theme["cursor"] if on_cursor else theme["danger"],
                     )
                 for name, x, column_width in columns:
                     value, style = cells[name]

@@ -1141,6 +1141,12 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "rhythm": ("🎵", "'"),
     "context": ("📍", "."),
     "pin": ("📌", ","),
+    # Evidence read from the per-session event log and the last billed call.
+    "failures": ("💥", "x"),
+    "loops": ("🌀", "o"),
+    "endings": ("🏁", "e"),
+    "subagents": ("🐝", "a"),
+    "switches": ("🔀", "w"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
 # up) rather than from the older symbol blocks at U+2100–U+2BFF. Both are

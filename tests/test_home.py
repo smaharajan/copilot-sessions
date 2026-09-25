@@ -497,6 +497,19 @@ class HomeMenuTest(StoreTest):
         self.assertEqual(cli._home_step(shown, shown[-1], 1), shown[-1])
         self.assertEqual(cli._home_step([], 3, 1), 3)
 
+    def test_typing_lands_on_the_row_whose_name_matches(self):
+        """Delegation's description mentions sub-agents and sits above the
+        Sub-agents row; typing the row's name must not open Delegation."""
+        import curses
+
+        import cs.cli as cli
+
+        items = cli._home_items()
+        wanted = next(i for i, item in enumerate(items) if item[1] == "Sub-agents")
+        screen = Screen([*map(ord, "sub-agents"), curses.KEY_ENTER])
+        choice = cli._home_tui(screen, {"period": 30, "revealed": True})
+        self.assertEqual(choice, (wanted, 30))
+
     def test_a_heading_only_appears_when_its_group_does(self):
         """Filtering to two rows should show two headings, not all five."""
         import cs.cli as cli

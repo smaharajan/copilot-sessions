@@ -165,6 +165,19 @@ sessions, turns, spend, what moved, handoffs, and light autonomy risks when
 cheap to ask. `cs coach`, `cs rhythm` and `cs context` sit beside it under
 **Improve** on the landing screen.
 
+### 🧾 What actually happened in a session
+
+Copilot's per-session event log records what the store does not, and `cs`
+reads it (read-only, counts only, cached): **`cs failures`** — which tools
+fail, by tool, by repository and by session; **`cs failures --loops`** — one
+tool failing three or more times in a row, with the turns it happened on;
+**`cs endings`** — sessions whose last call ended in an error, the length
+limit or a content filter; **`cs subagents`** — which agents ran, on which
+models, and whether a declared `model:` was ever applied; **`cs switches`** —
+model or effort changes mid-run and the spend either side. `cs hooks` gains
+how often each lifecycle event ran and failed, and `cs yolo` labels its
+evidence **recorded** (allow-all switched on, per the log) or **inferred**.
+
 ### 🔐 Prove it was safe
 
 Masking hides a secret on screen but leaves it in the store. `cs audit` scans

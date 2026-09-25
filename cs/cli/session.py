@@ -33,6 +33,7 @@ from ._common import (
     _why,
     _why_hint,
 )
+from .evidence import _print_session_failures
 from .governance import _governance, _print_governance
 from .inventory import _asset_names
 
@@ -322,6 +323,10 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
         print(ui.heading("How the work was done", ui.ACCENT))
         _print_work_split(split, inner)
         print()
+
+    # From the session's event log, when it has one: every tool call, which
+    # failed, and on which turn — the store keeps none of that.
+    _print_session_failures(session_id, inner)
 
     if usage:
         # The total is already in the header; this block is the breakdown.

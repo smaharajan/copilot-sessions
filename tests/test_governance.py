@@ -237,8 +237,23 @@ class GovernanceTest(StoreTest):
             "handoffs": cli._render_handoffs,
             "audit": lambda: cli._render_audit(None),
         }
+        # Views built for this width contract from the start are held to it
+        # from 40 columns; the older ones above still start at 52.
+        from support import _alpha_events, _write_events
+
+        _write_events(Path(self._tmp.name), "sess-alpha", _alpha_events())
+        narrow = {
+            "failures": lambda: cli._render_failures(3650),
+            "loops": lambda: cli._render_loops(3650),
+            "subagents": lambda: cli._render_subagents(3650),
+            "switches": lambda: cli._render_switches(3650),
+            "endings": lambda: cli._render_endings(3650),
+        }
+        views.update(narrow)
         for name, render in views.items():
-            for columns in (52, 60, 72, 80, 100, 140):
+            widths = (40, 60, 80, 100, 140) if name in narrow else (52, 60, 72,
+                                                                  80, 100, 140)
+            for columns in widths:
                 size = os.terminal_size((columns, 40))
                 with self.subTest(view=name, columns=columns), \
                         mock.patch.object(shutil, "get_terminal_size",

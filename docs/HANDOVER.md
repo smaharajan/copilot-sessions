@@ -13,8 +13,8 @@ home screen (`cs` / `cs home`), in five phases:
 | Phase | Scope | State |
 |---|---|---|
 | 1 | `cs/events.py`: streamed, cached digests of `events.jsonl` (no UI) | **done** |
-| 2 | Evidence views: tool failures, stuck loops, hook health, autonomy evidence, sub-agents, model switches, unclean endings | next |
-| 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | — |
+| 2 | Evidence views: tool failures, stuck loops, hook health, autonomy evidence, sub-agents, model switches, unclean endings | **done** |
+| 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | next |
 | 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | — |
 | 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | — |
 
@@ -81,11 +81,78 @@ log, reports progress on stderr, and the home heartbeat never calls it.
 - The suite points `XDG_CACHE_HOME` at scratch directories, as it already
   does for `CS_CONFIG_HOME`, so no test reads or writes a real cache.
 
+## Phase 2 — evidence views
+
+All in `cs/cli/evidence.py`; each has a `_*_data(days)` reading (masked,
+used by `--json` through `export.py`) and a renderer.
+
+| Command | Home row | Evidence shown |
+|---|---|---|
+| `cs failures [N\|all]` | Tool failures → Govern (period) | by tool, by repo, worst sessions numbered for `cs show N` |
+| `cs failures --loops` / `cs loops` | Stuck loops → Govern (period) | tool, run length, turn range, main or sub-agent |
+| `cs endings [N\|all]` | Unclean endings → Govern (period) | finish reason and turn of the last billed call (store only) |
+| `cs subagents [N\|all]` | Sub-agents → Measure (period) | declared `model:` vs overrides and models actually used |
+| `cs switches [N\|all]` | Model switches → Measure (period) | from → to, effort, source, AIU before and after |
+| `cs hooks` (extended) | Hooks → Reference | `ran`, `failed`, `last failure` per event, last 30 days |
+| `cs yolo` (extended) | Autonomy → Govern | `recorded` (permissions_changed) vs `inferred` |
+| `cs show` (extended) | — | failures per turn, stuck loops |
+
+Decisions worth knowing:
+
+- A loop is `LOOP_MIN = 3` consecutive failures of one tool **by one agent**;
+  a success of that tool by that agent ends the run. Other tools' calls in
+  between do not.
+- Listings show a `!` in the cell after `#N` (the pin precedent uses the one
+  before it), read from the digest cache only. A cold cache shows no marker
+  until an events-backed view has run; the Stuck loops view is the full
+  answer.
+- Endings flag `error`, `length`, `content_filter` and empty. `tool_calls`
+  is treated as clean: on the reference store it is how a session you stop
+  between steps ends (47 of 924 sessions).
+- Ranked tables number their sessions and save the `#N` index, as a
+  listing does, so `cs show 1` after `cs failures` opens the worst session.
+  That replaces the previous listing's numbers, which is the documented
+  meaning of `#N` ("a row from your last listing").
+- The yolo evidence column now gives way last on a narrow window; the
+  `source` column goes before it.
+- Home type-to-filter now prefers a row whose label matches over one whose
+  description does (typing `sub-agents` used to open Delegation). Found in
+  the tmux check.
+
+### Measured (reference store, warm cache, read-only)
+
+| View | Time |
+|---|---|
+| `cs failures` | 0.47 s |
+| `cs failures --loops` | 0.23 s |
+| `cs subagents` | 0.45 s |
+| `cs switches` | 0.50 s |
+| `cs endings` | 0.43 s |
+| `cs hooks` | 0.28 s |
+| `cs yolo` | 0.37 s |
+| home snapshot, cold process | 1.65 s |
+
+### Verified
+
+- Lint and the full suite pass on Python 3.12 and 3.10.
+  `tests/test_evidence.py` covers every view, its `--json`, the evidence on
+  each row, the listing and TUI markers, the home rows, and masking of a
+  credential seeded in a tool name, an agent name, a model name and a
+  session summary.
+- The shared width test (`test_no_report_runs_off_the_window`) now holds
+  the five new views to 40, 60, 80, 100 and 140 columns.
+- `test_surface` gains a whole-tree hash check: after every command runs,
+  with and without `--json`, `COPILOT_HOME` including `session-state` is
+  byte-identical.
+- tmux, `TERM=xterm-ghostty`, at 100x40 and 40x24: every new row is found by
+  typing and opens; Esc returns home; arrows reach Help; the theme gallery
+  opens and cancels; `updated HH:MM:SS` advanced 60 s after a mouse hover
+  and 60 s after returning from a view.
+
 ## What's next
 
-Phase 2. Each events-backed view reads digests for its window only, masks
-anything it prints, and shows the evidence (tool, run length and turn range
-for a loop; the reason and turn for an unclean ending).
+Phase 3: the Today group (Next up, Standup, End of day, Weekly review,
+Budget, Watch live), and the Find additions.
 
 ## Earlier history
 

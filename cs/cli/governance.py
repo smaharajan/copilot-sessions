@@ -9,6 +9,7 @@ from collections import Counter
 
 from .. import (
     db,
+    events,
     redact,
     signals,
     ui,
@@ -59,8 +60,10 @@ def cmd_yolo(show_all: bool = False, sort_by: str | None = None,
 # ── Autonomy ─────────────────────────────────────────────────────────
 
 _AUTONOMY = {
-    "yes": (ui.ROSE, "YOLO", "approvals off, on the evidence of the session itself",
-            "Approvals off", "You turned approvals off yourself."),
+    "yes": (ui.ROSE, "YOLO", "approvals off, recorded or typed in the session",
+            "Approvals off",
+            "Approvals were turned off. 'recorded' is Copilot's own event log "
+            "saying allow-all went on; 'inferred' is a flag or toggle you typed."),
     "high": (ui.AMBER, "unattended", "no evidence either way, but it ran unattended",
              "Ran unattended",
              "No flag either way — these ran too far between prompts for "
@@ -79,7 +82,8 @@ def _yolo_evidence(why: str) -> str:
     part that differs; the section heading carries the rest.
     """
     passed = "you passed "
-    return why[len(passed):] if why.startswith(passed) else "typed in session"
+    return why[len(passed):] if why.startswith(passed) else (
+        why if why.startswith("allow-all") else "typed in session")
 
 
 def _yolo_table(rows: list[dict], inner: int, column: str, descending: bool,
@@ -93,12 +97,14 @@ def _yolo_table(rows: list[dict], inner: int, column: str, descending: bool,
     columns = [
         ("active", "last active", "<"), ("session", "session", "<"),
         ("turns", "turns", ">"), ("steps", "steps", ">"),
-        ("ratio", "per turn", ">"), ("evidence", "evidence", "<"),
-        ("summary", "summary", "<"),
+        ("ratio", "per turn", ">"), ("source", "source", "<"),
+        ("evidence", "evidence", "<"), ("summary", "summary", "<"),
     ]
-    optional = [("active", 12), ("turns", 5), ("steps", 6)]
+    optional = [("active", 12), ("turns", 5), ("steps", 6), ("source", 8)]
     if evidence:
-        optional.insert(2, ("evidence", 17))
+        # Last to give way: a verdict without what triggered it is the one
+        # thing this table must never print.
+        optional.append(("evidence", 21))
     spans = _fit_columns(inner - 2, 20, optional, gaps=_extra_gaps(columns))
     spans.update(session=9, ratio=9)
     shown = [spec for spec in columns if spans.get(spec[0])]
@@ -112,6 +118,8 @@ def _yolo_table(rows: list[dict], inner: int, column: str, descending: bool,
             "turns": (str(row["turns"]), ""),
             "steps": (str(row["steps"]), ""),
             "ratio": (f"{row['ratio']:.1f}", colour),
+            "source": (row.get("source", "inferred"),
+                       ui.ROSE if row.get("source") == "recorded" else ui.MUTED),
             "evidence": (_yolo_evidence(row["why"]), ui.CODE),
             "summary": (redact.redact(row["summary"]) or "(untitled)", ""),
         }
@@ -119,10 +127,19 @@ def _yolo_table(rows: list[dict], inner: int, column: str, descending: bool,
     print()
 
 
+def _recorded_approvals() -> dict[str, str]:
+    """What the event logs record about allow-all, per session."""
+    return signals.recorded_approvals({
+        sid: digest["permissions"]
+        for sid, digest in events.digests().items() if digest["permissions"]
+    })
+
+
 def _render_yolo(show_all: bool, column: str = "risk",
                  descending: bool = True) -> None:
+    recorded = _recorded_approvals()
     conn = db.connect()
-    rows = signals.autonomy(conn)
+    rows = signals.autonomy(conn, recorded)
     conn.close()
     rows = _sort_report(rows, "yolo", column, descending)
     width = min(shutil.get_terminal_size().columns, 96)
@@ -191,7 +208,9 @@ def _render_yolo(show_all: bool, column: str = "risk",
     if not show_all and grouped["no"]:
         _hint(f"cs yolo --all — the {len(grouped['no']):,} supervised sessions too",
               inner)
-    _why("The store records no approval mode, so YOLO is read from what the "
+    _why("The store records no approval mode. Copilot's event log does: a "
+         "session.permissions_changed event turning allow-all on is "
+         "'recorded' evidence. Without one, YOLO is inferred from what the "
          "session shows: a flag or a toggle you typed, in one of your own "
          "messages — the store is full of the agent explaining these flags, "
          "and none of that counts. Unattended is inferred instead, from "

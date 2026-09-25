@@ -240,6 +240,31 @@ class SurfaceTest(StoreTest):
             self._try(name, *args)
         self.assertEqual(hashlib.sha256(store.read_bytes()).hexdigest(), before)
 
+    def test_no_command_writes_anywhere_under_copilot_home(self):
+        """The event logs are read too, now, so the promise covers the whole
+        tree: after every command has run, `COPILOT_HOME` is byte-identical.
+        The settings and cache directories the suite points inside it are the
+        only things allowed to change, and they are cs's own."""
+        from support import _alpha_events, _write_events
+
+        home = Path(os.environ["COPILOT_HOME"])
+        _write_events(home, "sess-alpha", _alpha_events())
+        ours = {home / ".config", home / ".cache"}
+
+        def listing() -> dict[str, str]:
+            return {
+                str(path.relative_to(home)):
+                    hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(home.rglob("*"))
+                if path.is_file() and not any(p in ours for p in path.parents)
+            }
+
+        before = listing()
+        for name, args in self._commands():
+            self._try(name, *args)
+            self._try(name, *args, "--json")
+        self.assertEqual(listing(), before)
+
     def test_no_command_leaves_a_journal_beside_the_store(self):
         """A write attempt shows up as a -wal or -journal file even when the
         write itself fails, so their absence is the stronger claim."""

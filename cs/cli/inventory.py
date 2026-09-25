@@ -11,6 +11,7 @@ from pathlib import Path
 from .. import (
     context,
     db,
+    events,
     hooks,
     mcp,
     redact,
@@ -636,6 +637,7 @@ def _render_hooks(column: str = "when", descending: bool = False) -> None:
         print()
         _search_paths(hooks.search_paths(), inner)
         print()
+        _print_hook_runs(Counter(), inner)
         _print_hook_problems(problems, switched_off, inner)
         return
 
@@ -659,14 +661,7 @@ def _render_hooks(column: str = "when", descending: bool = False) -> None:
     # Lifecycle order, not commonest first: the question a hook list answers
     # is "what happens to my session, in what order", and sorting by count
     # shuffles the answer.
-    print(ui.heading(f"When they run · {len(by_event)}", ui.ACCENT, inner))
-    peak = max(by_event.values())
-    for name in sorted(by_event, key=hooks.order):
-        count = by_event[name]
-        known = "" if name in hooks.EVENTS else f" {ui.AMBER}?{ui.RST}"
-        print(f"    {ui.MINT}{count:>5}{ui.RST}  {ui.trunc(name, 22):<22}"
-              f" {ui.bar(count, peak, 12)}{known}")
-    print()
+    _print_hook_runs(by_event, inner)
 
     if absent:
         print(ui.heading(f"Scripts that are gone · {len(absent)}", ui.ROSE, inner))
@@ -706,14 +701,62 @@ def _render_hooks(column: str = "when", descending: bool = False) -> None:
         print("    " + _row(shown, spans, values).rstrip())
     print()
     _print_hook_problems(problems, switched_off, inner)
-    _why("Hooks are configuration, not history: the session store records "
-          "no hook event, so this is what Copilot will run — never a count "
-          "of what it did run.", inner)
+    _why("The commands are configuration: what Copilot will run next time. "
+          "'ran' and 'failed' are history, read from the event logs of "
+          f"sessions active in the last {_HOOK_RUN_DAYS} days — the store "
+          "itself records no hook event.", inner)
     drill = ui.trunc("cs hooks <event> — one event, commands in full", inner - 2)
     print(f"  {ui.MUTED}{drill}{ui.RST}")
     print(_sort_note("hooks", column, descending, inner))
     _why_hint(inner)
     print()
+
+
+_HOOK_RUN_DAYS = 30
+
+
+def _hook_runs(days: int = _HOOK_RUN_DAYS) -> dict[str, list]:
+    """hookType → [ran, failed, last failure stamp], from recent event logs."""
+    runs: dict[str, list] = {}
+    for digest in events.digests(days=days).values():
+        for kind, (ran, failed, last) in digest["hooks"].items():
+            name = redact.one_line(redact.redact(kind)) or "unknown"
+            entry = runs.setdefault(name, [0, 0, ""])
+            entry[0] += ran
+            entry[1] += failed
+            entry[2] = max(entry[2], last)
+    return runs
+
+
+def _print_hook_runs(by_event: Counter, inner: int) -> None:
+    """Each lifecycle event: commands configured, and how the runs went.
+
+    The configured count is what is on disk now; ran and failed are what the
+    logs recorded. An event can have runs and no command here — a plugin or
+    another checkout declared it — and it is listed rather than hidden.
+    """
+    from .evidence import _table
+
+    runs = _hook_runs()
+    names = sorted(set(by_event) | set(runs), key=hooks.order)
+    if not names:
+        return
+    print(ui.heading(f"When they run · {len(names)}", ui.ACCENT, inner))
+    rows = []
+    for name in names:
+        ran, failed, last = runs.get(name, (0, 0, ""))
+        rows.append({
+            "count": (str(by_event.get(name, 0)), ui.MINT if by_event.get(name)
+                      else ui.MUTED),
+            "when": (name + ("" if name in hooks.EVENTS else " ?"), ""),
+            "ran": (f"{ran:,}", "" if ran else ui.MUTED),
+            "failed": (f"{failed:,}", ui.ROSE if failed else ui.MUTED),
+            "last": (_when(last) if last else "—", ui.ROSE if last else ui.MUTED),
+        })
+    _table([("count", "set", ">"), ("when", "when", "<"), ("ran", "ran", ">"),
+            ("failed", "failed", ">"), ("last", "last failure", "<")],
+           rows, inner, {"count": 3, "ran": 7, "failed": 6},
+           [("last", 12)], flex="when", least=12)
 
 
 def _print_hook_problems(problems: list, switched_off: list, inner: int) -> None:

@@ -618,3 +618,27 @@ def gaps(found: dict) -> list[tuple[str, str, str]]:
             "names the files.",
         ))
     return out
+
+
+def declared_model(path: Path) -> str:
+    """The `model:` an agent profile asks for in its front matter, or ''.
+
+    Read from the first block between `---` lines and nowhere else: a model
+    named in the body is prose about a model, not a request for one. Only
+    the head of the file is read, so a long profile costs nothing.
+    """
+    target = path / "AGENT.md" if path.is_dir() else path
+    try:
+        with open(target, encoding="utf-8", errors="replace") as handle:
+            head = [handle.readline() for _ in range(60)]
+    except OSError:
+        return ""
+    if not head or head[0].strip() != "---":
+        return ""
+    for line in head[1:]:
+        if line.strip() == "---":
+            break
+        key, colon, value = line.partition(":")
+        if colon and key.strip() == "model":
+            return value.strip().strip("'\"")[:80]
+    return ""

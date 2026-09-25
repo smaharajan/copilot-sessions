@@ -17,6 +17,12 @@ from ._common import (
     _visible,
     _with_assets,
 )
+from .evidence import (
+    cmd_endings,
+    cmd_failures,
+    cmd_subagents,
+    cmd_switches,
+)
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .home import cmd_help, cmd_home
 from .inventory import (
@@ -60,6 +66,7 @@ _COMPLETION_COMMANDS = (
     "agents", "timeline", "yolo", "handoff", "audit", "skills", "profiles",
     "instructions", "hooks", "mcp", "standup", "daily", "coach", "rhythm",
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
+    "failures", "loops", "subagents", "switches", "endings",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
 )
@@ -67,7 +74,7 @@ _COMPLETION_COMMANDS = (
 
 _COMPLETION_FLAGS = (
     "--json", "--csv", "--sort", "--asc", "--desc",
-    "--all", "--turn", "--asks", "--short", "--by-repo",
+    "--all", "--turn", "--asks", "--short", "--by-repo", "--loops",
 )
 
 
@@ -131,6 +138,7 @@ compdef _cs cs
             "complete -c cs -l turn -d 'one turn of a transcript'",
             "complete -c cs -l all -d 'every record, not just the window'",
             "complete -c cs -l by-repo -d 'skills grouped by where they ran'",
+            "complete -c cs -l loops -d 'stuck loops rather than failures'",
         ]
         script = "\n".join(lines) + "\n"
     else:
@@ -425,6 +433,23 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(build(fallback if days is None else days), fmt)
         return 0
 
+    evidence_views = {
+        "failures": export.failures, "fails": export.failures,
+        "loops": export.loops, "subagents": export.subagents,
+        "sub-agents": export.subagents, "switches": export.switches,
+        "endings": export.endings,
+    }
+    if cmd in evidence_views:
+        days, _sort, _desc, _word, flags, error = _report_options(
+            rest, None, days=True, flags=("--loops",)
+        )
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        build = export.loops if "--loops" in flags else evidence_views[cmd]
+        export.emit(build(30 if days is None else days), fmt)
+        return 0
+
     if cmd in ("standup", "daily"):
         if fmt == "csv":
             print("error: standup has no CSV form — use '--json'",
@@ -629,6 +654,33 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_standup(1 if days is None else days)
+    elif cmd in ("failures", "fails", "loops"):
+        days, _, _, _, flags, error = _report_options(
+            rest, None, days=True, flags=("--loops",)
+        )
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_failures(30 if days is None else days,
+                     loops=cmd == "loops" or "--loops" in flags)
+    elif cmd in ("subagents", "sub-agents"):
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_subagents(30 if days is None else days)
+    elif cmd in ("switches", "model-switches"):
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_switches(30 if days is None else days)
+    elif cmd in ("endings", "unclean"):
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_endings(30 if days is None else days)
     elif cmd in ("coach", "practice", "review"):
         days, sort_by, descending, _, _, error = _report_options(
             rest, "coach", days=True

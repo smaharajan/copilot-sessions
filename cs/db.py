@@ -2000,3 +2000,99 @@ def timeline(conn: sqlite3.Connection, days: int) -> list[tuple]:
         (day, counts.get(day, 0), turns_by_day.get(day, 0), spend_by_day.get(day, 0))
         for day in sorted(set(counts) | set(turns_by_day) | set(spend_by_day))
     ]
+
+
+# ── Joining the event log to the store ───────────────────────────────
+# The event log (`events.py`) numbers steps within a request, not turns
+# within a session, and it keeps no spend. These answer the questions its
+# views have to ask the store to say which turn and what it cost.
+
+def _stamp_sql(column: str) -> str:
+    """A stored time as `YYYY-MM-DDTHH:MM:SS`, whichever way it was written.
+
+    Copilot writes ISO-8601 with a `T` and a `Z`; SQLite's own `datetime()`
+    writes a space. Compared as text, the two disagree at the eleventh
+    character, so everything the event views compare goes through this.
+    """
+    return f"replace(substr({column}, 1, 19), ' ', 'T')"
+
+
+def turn_times(conn: sqlite3.Connection,
+               session_ids: list[str]) -> dict[str, list[tuple[int, str]]]:
+    """(turn_index, timestamp) per session, in turn order.
+
+    Empty stamps where the store keeps none — an older Copilot — which every
+    caller reads as "cannot join on time", never as turn 0.
+    """
+    out: dict[str, list[tuple[int, str]]] = {sid: [] for sid in session_ids}
+    if not session_ids:
+        return out
+    stamp = optional(conn, "turns", "timestamp", default="''")
+    stamped = _stamp_sql(stamp) if stamp != "''" else "''"
+    for chunk in _chunks(list(session_ids)):
+        marks = ",".join("?" * len(chunk))
+        for sid, index, when in conn.execute(
+            f"""SELECT session_id, turn_index, COALESCE({stamped}, '')
+                FROM turns WHERE session_id IN ({marks})
+                ORDER BY session_id, turn_index""",
+            chunk,
+        ):
+            out[sid].append((index, when if len(when) == 19 else ""))
+    return out
+
+
+def last_calls(conn: sqlite3.Connection) -> dict[str, tuple]:
+    """Each session's last billed model call: (turn, finish_reason, model, at).
+
+    The last call is how a session actually stopped. A clean stop reads
+    `stop` (answered) or `tool_calls` (asked for a tool and was cut short by
+    you, not by the model); `error`, `length` and `content_filter` are the
+    model or the service ending it. Empty when the store keeps no usage or
+    no finish reasons — absent, never "clean".
+    """
+    if not _has_usage(conn):
+        return {}
+    if not _has_columns(conn, "assistant_usage_events", "finish_reason"):
+        return {}
+    turn = optional(conn, "assistant_usage_events", "turn_index", "u")
+    model = optional(conn, "assistant_usage_events", "model", "u", "''")
+    created = optional(conn, "assistant_usage_events", "created_at", "u", "''")
+    return {
+        sid: (index, reason or "", name or "", _normalise_stamp(at))
+        for sid, index, reason, name, at in conn.execute(
+            f"""SELECT u.session_id, {turn}, u.finish_reason, {model}, {created}
+                FROM assistant_usage_events u
+                JOIN (SELECT session_id, MAX(rowid) AS last
+                      FROM assistant_usage_events GROUP BY session_id) m
+                  ON u.rowid = m.last"""
+        )
+    }
+
+
+def _normalise_stamp(value) -> str:
+    return value[:19].replace(" ", "T") if isinstance(value, str) else ""
+
+
+def usage_stamps(conn: sqlite3.Connection,
+                 session_ids: list[str]) -> dict[str, list[tuple[str, int]]]:
+    """(time, nano-AIU) for every billed call in the given sessions.
+
+    What the model-switch view needs to say what a session spent before a
+    switch and after it. Empty where the store keeps no usage or no times.
+    """
+    out: dict[str, list[tuple[str, int]]] = {sid: [] for sid in session_ids}
+    if not session_ids or not _has_usage(conn):
+        return out
+    if not _has_columns(conn, "assistant_usage_events", "created_at"):
+        return out
+    nano = optional(conn, "assistant_usage_events", "total_nano_aiu", default="0")
+    for chunk in _chunks(list(session_ids)):
+        marks = ",".join("?" * len(chunk))
+        for sid, when, spent in conn.execute(
+            f"""SELECT session_id, {_stamp_sql('created_at')}, COALESCE({nano}, 0)
+                FROM assistant_usage_events WHERE session_id IN ({marks})
+                ORDER BY rowid""",
+            chunk,
+        ):
+            out[sid].append((when or "", spent or 0))
+    return out

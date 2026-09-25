@@ -183,6 +183,13 @@ cache cannot be written. The log numbers steps *within* a request, not turns
 within the session, so an event is joined to a store turn on time
 (`events.turn_of`), never on its `turnId`.
 
+The views built on it live in `cli/evidence.py`. Each is a `_*_data(days)`
+function returning the reading as plain, already-masked data — which is what
+`--json` returns through `export.py` — and a renderer that draws the same
+dict, so the page and the export cannot drift. A listing's stuck-loop marker
+reads the digest cache only (`events.digests(..., compute=False)`), and the
+home heartbeat reads no log at all.
+
 Two details that shape the code:
 
 - **Spend is per event, not per session.** Every listing needs a session's

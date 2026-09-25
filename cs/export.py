@@ -38,6 +38,7 @@ from . import db, redact
 VIEWS = (
     "sessions", "search", "stats", "cost", "efficiency",
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
+    "standup", "failures", "loops", "subagents", "switches", "endings",
 )
 
 # What someone actually types to reach each of those. The names above are what
@@ -48,6 +49,7 @@ VIEWS = (
 DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
     "agents", "repos", "skills", "profiles", "standup", "export",
+    "failures", "loops", "subagents", "switches", "endings",
 )
 
 
@@ -379,6 +381,35 @@ def standup(days: int) -> dict:
         out["risks"] = {"yolo": risk_rows}
     return out
 
+
+# ── Evidence views ───────────────────────────────────────────────────
+# The readings are built once, in `cli.evidence`, already masked; the page
+# draws them and these hand them back. One computation, so the two cannot
+# disagree.
+
+def failures(days: int) -> dict:
+    from .cli.evidence import _failures_data
+    return {"view": "failures", **_failures_data(days)}
+
+
+def loops(days: int) -> dict:
+    from .cli.evidence import _loops_data
+    return {"view": "loops", **_loops_data(days)}
+
+
+def subagents(days: int) -> dict:
+    from .cli.evidence import _subagents_data
+    return {"view": "subagents", **_subagents_data(days)}
+
+
+def switches(days: int) -> dict:
+    from .cli.evidence import _switches_data
+    return {"view": "switches", **_switches_data(days)}
+
+
+def endings(days: int) -> dict:
+    from .cli.evidence import _endings_data
+    return {"view": "endings", **_endings_data(days)}
 
 
 def emit(payload: dict, fmt: str = "json") -> None:

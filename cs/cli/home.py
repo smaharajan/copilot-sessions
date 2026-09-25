@@ -26,6 +26,7 @@ from ._common import (
     _prompt,
     _window_label,
 )
+from .evidence import cmd_endings, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
     _asset_names,
@@ -106,6 +107,12 @@ def _home_items(period: int = 30,
         (ui.menu_icon("delegation"), "Delegation",
          f"you vs the main agent vs sub-agents · {window}",
          cmd_agents, "period"),
+        (ui.menu_icon("subagents"), "Sub-agents",
+         f"which agents ran, on which models, how long · {window}",
+         cmd_subagents, "period"),
+        (ui.menu_icon("switches"), "Model switches",
+         f"model or effort changed mid-run, cost either side · {window}",
+         cmd_switches, "period"),
         (ui.menu_icon("autonomy"), "Autonomy",
          "which sessions ran unattended · YOLO", cmd_yolo, ""),
         (ui.menu_icon("handoff"), "Handoffs",
@@ -114,6 +121,15 @@ def _home_items(period: int = 30,
         (ui.menu_icon("security"), "Security",
          f"credentials found in session text · {window}",
          lambda days=30: cmd_audit(days=days), "period"),
+        (ui.menu_icon("failures"), "Tool failures",
+         f"which tools fail, where, worst sessions · {window}",
+         cmd_failures, "period"),
+        (ui.menu_icon("loops"), "Stuck loops",
+         f"one tool failing again and again, with turns · {window}",
+         lambda days=30: cmd_failures(days, loops=True), "period"),
+        (ui.menu_icon("endings"), "Unclean endings",
+         f"sessions cut off by an error, length or filter · {window}",
+         cmd_endings, "period"),
         # Improve · Standup first so the daily brief is one key from the menu;
         # Practice / Rhythm / Context follow. Working days stays off (see above).
         # The ("Standup", "Improve") anchor in _HOME_GROUP_STARTS must stay
@@ -146,7 +162,7 @@ def _home_items(period: int = 30,
         # is gone. Copilot will still run those, and the shell will still
         # fail, and nothing else you own will tell you before it does.
         (ui.menu_icon("hooks"), "Hooks",
-         "what Copilot runs around a session, and what's missing",
+         "what runs around a session, how often it fails, what's missing",
          cmd_hooks, ""),
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
@@ -798,7 +814,12 @@ def _home_tui(screen, state: dict):
             items = _home_items(state.get("period", 30), active_theme)
             shown = _home_matches(items, query)
             if shown and cursor not in shown:
-                cursor = shown[0]
+                # A row whose name matches beats one whose description does:
+                # typing "sub-agents" means the Sub-agents row, not the
+                # Delegation row above it that mentions sub-agents.
+                cursor = next((index for index in shown
+                               if query.lower() in items[index][1].lower()),
+                              shown[0])
             cursor = min(max(cursor, 0), len(items) - 1)
             # Headings pay for themselves out of the wordmark, not out of the
             # menu. Eighteen options in one undivided column is a list you
@@ -1079,8 +1100,11 @@ def cmd_help() -> None:
                           and which are past the length Copilot reads
     cs mcp [name]         MCP servers wired up — local, remote, and what they
                           may call
-    cs hooks [event]      Commands Copilot runs on the session lifecycle, and
-                          which of them point at a script that is gone
+    cs hooks [event]      Commands Copilot runs on the session lifecycle, how
+                          often each event ran and failed, and which point at
+                          a script that is gone
+    cs subagents [N|all]  Sub-agents run: models, overrides, tools, tokens, time
+    cs switches [N|all]   Model or effort changed mid-run, and the AIU either side
 
   {ui.BOLD}Improve{ui.RST}
     cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
@@ -1099,6 +1123,14 @@ def cmd_help() -> None:
     cs audit [N|all|id]   Credential-shaped text found in sessions
                           {ui.DIM}Default last 30 days; 'all' scans the whole store.
                           Names and prefixes only — never the value itself.{ui.RST}
+    cs failures [N|all]   Tool calls that failed: by tool, by repo, worst sessions
+    cs failures --loops   Stuck loops: one tool failing 3+ times in a row, with
+                          its turns ('cs loops' is the same)
+    cs endings [N|all]    Sessions whose last call ended in an error, the length
+                          limit or a content filter
+                          {ui.DIM}failures, loops, sub-agents, switches and hook runs
+                          read session-state/*/events.jsonl; endings read the
+                          store. Default last 30 days.{ui.RST}
 
   {ui.BOLD}Pins & budget{ui.RST}
     cs pin <ref>          Keep a session handy on the home screen
@@ -1132,7 +1164,8 @@ def cmd_help() -> None:
     a weekly report or a CI check.{ui.RST}
     cs <view> --json      Structured output, for any of:
                           {ui.DIM}recent, all, search, stats, timeline, cost, efficiency,
-                          agents, repos, skills, profiles, standup{ui.RST}
+                          agents, repos, skills, profiles, standup, failures,
+                          loops, subagents, switches, endings{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
     cs completion <shell> Completions for bash, zsh or fish
@@ -1171,9 +1204,9 @@ def cmd_help() -> None:
       type   narrow the menu as you go    Esc    clear what you typed
       /      full-text search             q      quit (when nothing is typed)
       t      open the live-preview theme picker
-      ←/→    the window the counting views use — Stats, Timeline, AI spend,
-             Delegation and Security. Those rows say which window they will
-             use, and Enter opens them with it.
+      ←/→    the window the counting views use — Stats, AI spend, Delegation,
+             Security, Tool failures and the rest. Those rows say which
+             window they will use, and Enter opens them with it.
       click  open, wheel scrolls
 
     'cs recent' and 'cs search' run full-screen in a terminal:

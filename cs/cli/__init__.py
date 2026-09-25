@@ -15,6 +15,7 @@ import os  # noqa: F401
 import re  # noqa: F401
 import shutil  # noqa: F401
 import sqlite3  # noqa: F401
+import statistics  # noqa: F401
 import subprocess  # noqa: F401
 import sys  # noqa: F401
 import textwrap  # noqa: F401
@@ -28,6 +29,7 @@ from .. import (  # noqa: F401
     __version__,
     context,
     db,
+    events,
     export,
     hooks,
     mcp,
@@ -42,6 +44,7 @@ from .. import (  # noqa: F401
 from . import (  # noqa: E402
     _common,
     dispatch,
+    evidence,
     governance,
     home,
     inventory,
@@ -58,6 +61,7 @@ _SUBMODULES = (
     resume,
     reports,
     governance,
+    evidence,
     practice_cmds,
     inventory,
     session,

@@ -676,9 +676,12 @@ starts from, whatever the last one did.
 > [Every view earns its place](#-every-view-earns-its-place).
 
 Skills and profiles are files a session may *reach for*. Hooks are the
-opposite: they fire on the lifecycle whether anyone asks or not, and the
-session store records none of it. So `cs hooks` reads configuration rather
-than history, and says so.
+opposite: they fire on the lifecycle whether anyone asks or not. The commands
+are configuration, read from disk. How they *went* is history, and the store
+records none of it — so the **When they run** table takes `ran`, `failed` and
+`last failure` for each lifecycle event from the event logs of sessions
+active in the last 30 days. An event that ran but has no command here (a
+plugin declared it) is listed too.
 
 ```
   ── Hooks · 29 commands ──────────────────────────────────────────────────────
@@ -689,9 +692,11 @@ than history, and says so.
   missing  1 point at a script that is not on disk
 
   ▌When they run · 13 ─────────────────────────────────────────────────────────
-        3  sessionStart           █████████
-        2  userPromptSubmitted    ██████
-        4  preToolUse             ████████████
+    set  when                                    ran failed  last failure
+    ─────────────────────────────────────────────────────────────────────────
+      3  sessionStart                             96      0  —
+      2  userPromptSubmitted                     410      0  —
+      4  preToolUse                            3,881     12  09-18 14:02
 
   ▌Scripts that are gone · 1 ──────────────────────────────────────────────────
     Copilot will still run these, and the shell will fail.
@@ -921,6 +926,81 @@ session. A checklist long enough to ignore is a checklist that gets ignored.
 
 ---
 
+## 🧾 What the event log recorded
+
+The store keeps prompts, replies and spend. Copilot also writes a second
+record beside it, `session-state/<id>/events.jsonl`, with what the store
+leaves out: every tool call and whether it succeeded, every hook run,
+`allow-all` being switched on, model switches, and each sub-agent's model,
+tool calls, tokens and time. `cs` streams those logs read-only, keeps only
+counts, names and timestamps (never a tool's output), and caches the result in
+`~/.cache/cs` so a second look costs nothing. A session from an older Copilot
+has no log, and these views say so rather than reporting zero.
+
+All of them take a window (`cs failures 7`, `cs failures all`; default 30
+days), answer `--json`, and sit on the home screen with the window on ←/→.
+
+### 💥 `cs failures` — which tools fail, and where
+
+```
+  ── Tool failures · last 30 days ─────────────────────────────────────────
+
+    212 of 18,406 tool calls failed · 1.2%
+    across 96 sessions with an event log
+
+  ▌By tool ────────────────────────────────────────────────────────────────
+     failed    calls   rate               tool
+    ───────────────────────────────────────────────────────────────────────
+         61    4,210   1.4%  ████████████ view
+         48      390  12.3%  █████████▍   web_fetch
+         33    9,870   0.3%  ██████▌      bash
+
+  ▌Worst sessions · 3 ─────────────────────────────────────────────────────
+      #  session  failed  rate  mostly     summary
+    ───────────────────────────────────────────────────────────────────────
+      1  4e5f6a7b     19   22%  web_fetch  Mirror the vendor docs
+```
+
+A table by tool, one by repository, and the sessions with the most failures,
+numbered so `cs show 1` opens the first. `cs show` itself now has a **Tool
+calls** block that places each failure on the turn it happened in.
+
+### 🌀 `cs failures --loops` — stuck loops
+
+A **loop** is three or more failures of one tool in a row, by one agent, with
+no success of that tool between them (`events.LOOP_MIN`). Each row names the
+tool, the length of the run and the turns it spanned, so the evidence is on
+the same line as the verdict. `cs loops` is the same view. Listings mark a
+session the cache already knows got stuck with a `!` in the cell after its
+`#N`.
+
+The log numbers steps *within* a request, not turns within the session, so an
+event is placed on a turn by time: the last turn the store says began at or
+before it. A turn that cannot be placed shows `—`.
+
+### 🏁 `cs endings` — sessions that were cut off
+
+Read from the store alone: each session's last billed call and its
+`finish_reason`. `stop` (answered) and `tool_calls` (stopped by you between
+steps) are clean. `error`, `length` and `content_filter` mean the model or the
+service ended the session, and an empty reason is shown as **unknown**. Every
+row carries the turn it stopped on, so `cs read N --turn T` opens it.
+
+### 🐝 `cs subagents` — which agents ran
+
+One row per agent name: runs, the models it actually ran on, how many runs had
+an explicit model override, tool calls, tokens, and total and median time.
+When an agent profile declares `model:` in its front matter and **none** of
+its runs had an override, it is listed under *Declared model not applied*,
+with the declared model, the run count and the models it really used.
+
+### 🔀 `cs switches` — model or effort changed mid-run
+
+Sessions that changed model or reasoning effort part-way through: when, on
+which turn, from → to, what triggered it (`model_picker`, `agent`, …), and
+what the session spent before the switch (since the previous one) and after
+it (until the next). The first model a session picks is not a switch.
+
 ## 🛡️ Governance
 
 Once an agent has been writing code for a month, three questions arrive that no
@@ -990,10 +1070,13 @@ The verdict is the section a session is filed under, so it is stated once per
 group rather than repeated in a column and again on a line of its own beneath
 every row. Two different claims, kept apart on purpose:
 
-- **YOLO** means the session itself shows approvals were off — you passed
+- **YOLO** means the session itself shows approvals were off. The strongest
+  evidence is **recorded**: Copilot's event log has a
+  `session.permissions_changed` event switching allow-all on, and the row says
+  when. Without one it is **inferred** from what you typed — you passed
   `--allow-all-tools`, or typed `yolo` to turn it on. Only *your* messages
   count: the store is full of the agent explaining what the flag does, which is
-  not the same as using it.
+  not the same as using it. The `source` column says which.
 - **unattended** is inferred, and says so. `initiator` on every model call
   separates prompts you sent from steps the agent took on its own, so *steps
   per prompt* measures directly how far a session ran between check-ins.

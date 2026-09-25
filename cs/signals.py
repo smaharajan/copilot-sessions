@@ -107,12 +107,19 @@ def _verdict(steps: int, turns: int, evidence: str) -> tuple[str, str]:
     return "no", f"{ratio:.1f} agent steps per prompt"
 
 
-def autonomy(conn: sqlite3.Connection) -> list[dict]:
+def autonomy(conn: sqlite3.Connection,
+             recorded: dict[str, str] | None = None) -> list[dict]:
     """Every session that has prompts, most autonomous first.
 
     Sessions with no turns are dropped: a ratio needs something to divide by,
     and an empty session had no chance to run away with anything.
+
+    `recorded` is session id → what Copilot's own event log says about
+    approvals (allow-all switched on, and when). It outranks anything read
+    from prompts, and each row says which it rests on: `source` is
+    "recorded" for the log, "inferred" for a typed flag or a step rate.
     """
+    recorded = recorded or {}
     evidence = _explicit(conn)
     steps = _steps(conn)
     rows = conn.execute(
@@ -125,14 +132,33 @@ def autonomy(conn: sqlite3.Connection) -> list[dict]:
         if not turns:
             continue
         agent_steps = steps.get(session_id, 0)
-        verdict, why = _verdict(agent_steps, turns, evidence.get(session_id, ""))
+        logged = recorded.get(session_id, "")
+        verdict, why = _verdict(agent_steps, turns,
+                                logged or evidence.get(session_id, ""))
         out.append({
             "id": session_id, "active": active, "summary": summary,
             "repo": repo, "cwd": cwd, "turns": turns, "steps": agent_steps,
             "ratio": agent_steps / turns, "verdict": verdict, "why": why,
+            "source": "recorded" if logged else "inferred",
         })
     order = {"yes": 0, "high": 1, "no": 2}
     out.sort(key=lambda r: (order[r["verdict"]], -r["ratio"]))
+    return out
+
+
+def recorded_approvals(permissions: dict[str, list[dict]]) -> dict[str, str]:
+    """Session id → the first time its log shows allow-all switched on.
+
+    `permissions` is each session's `session.permissions_changed` events, as
+    the event digest keeps them. This is a record, not an inference: Copilot
+    wrote down that approvals went off, and when.
+    """
+    out = {}
+    for session_id, changes in permissions.items():
+        on = next((change for change in changes if change.get("allow_all")), None)
+        if on:
+            stamp = (on.get("at") or "")[5:16].replace("T", " ")
+            out[session_id] = f"allow-all {stamp}".strip()
     return out
 
 

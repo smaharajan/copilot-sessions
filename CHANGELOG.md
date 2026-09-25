@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Typing on the home screen lands on the row you named.** A row whose
+  label matches now beats one that only mentions the word in its
+  description, so typing `sub-agents` opens Sub-agents rather than
+  Delegation.
+
 - **`cs audit` defaults to the last 30 days.** An unscoped store-wide scan
   re-read every turn on every call; bare `cs audit` now windows on
   `MAX(created_at, updated_at)` like the other reports, with `cs audit all`
@@ -23,6 +28,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Evidence views from the event log.** `cs failures [N|all]` (tool calls
+  that failed, by tool, by repository and the worst sessions, numbered for
+  `cs show N`); `cs failures --loops` / `cs loops` (three or more consecutive
+  failures of one tool by one agent, with the tool, the run length and the
+  turn range); `cs subagents [N|all]` (runs, models, overrides, tool calls,
+  tokens, total and median time, and agents whose declared `model:` was never
+  applied); `cs switches [N|all]` (model or effort changes mid-run, their
+  source and the spend before and after); and `cs endings [N|all]` (sessions
+  whose last call ended in `error`, `length`, `content_filter` or no recorded
+  reason, with the turn). All take `--json` and have home rows: Tool failures,
+  Stuck loops and Unclean endings under Govern; Sub-agents and Model switches
+  under Measure.
+- **`cs hooks` shows how hooks actually ran.** The lifecycle table gains
+  `ran`, `failed` and `last failure` per event, from the last 30 days of event
+  logs, including events a plugin declared.
+- **`cs yolo` reads recorded evidence.** A `session.permissions_changed`
+  event switching allow-all on is now evidence in its own right, and every
+  row says whether its verdict is `recorded` or `inferred`.
+- **`cs show` places tool failures on turns**, and names any stuck loop.
+- **Listings mark stuck sessions** with a `!` in the spare cell after `#N`,
+  from the digest cache only, so a listing never waits on a log.
 - **`cs` reads Copilot's per-session event logs.** A new `events` module
   streams `session-state/<id>/events.jsonl` — never loading a file whole —
   and reduces each log to a digest of counts: tool calls and failures by
