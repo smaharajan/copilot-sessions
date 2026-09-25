@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`cs audit` defaults to the last 30 days.** An unscoped store-wide scan
+  re-read every turn on every call; bare `cs audit` now windows on
+  `MAX(created_at, updated_at)` like the other reports, with `cs audit all`
+  (or a day count) for the whole store. A session id still scans that
+  session in full. Home Security follows the ←/→ period.
+- **Skill-reference and session-name lookups are cached in-process.**
+  `reference_counts` / `sessions_for_asset` reuse one turn scan (and the
+  skill-load map) until the store file's mtime or size changes;
+  `session_names()` keeps the workspace.yaml map until any watched file's
+  mtime/size set changes — so the home heartbeat and repeated listings do
+  not re-walk the store.
+
+### Added
+
+- **Pins, notes/tags, and a daily AIU budget.** Sticky daily-workflow
+  prefs live in `~/.config/cs/settings.json` beside the theme (never in
+  COPILOT_HOME): `cs pin` / `unpin` / `pins`, `cs note`, `cs tag` /
+  `untag`, and `cs budget [N|clear]`. Listings float pinned sessions to
+  the top and mark them; `p` toggles a pin in the TUI. Home gains a
+  Pinned row under Find, and when a budget is set the header shows
+  `spent / budget AIU` for the last 24 hours (same window as standup),
+  amber from 70% and rose when over.
+- **Improve is back on the home screen, with `cs standup`.** Practice,
+  Rhythm and Context were restored to the landing menu and `cs help` (they
+  never stopped running when typed). `cs standup` / `cs daily` is a
+  deterministic, offline daily brief — activity, notable sessions, handoffs
+  in the window, and a light unattended count when the window is small —
+  defaulting to the last day. `--json` emits the same readings. Working days
+  (`cs timeline`) stays off the menu on purpose.
+
 ### Fixed
 
 - **Search finds every session that matches, not the first forty.** Results
@@ -168,6 +200,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`#N` shortcuts leave Copilot's home alone.** The last-listing map that
+  powers `cs show #3` moved from `$COPILOT_HOME/.cs-last-index` to
+  `~/.config/cs/.cs-last-index`, beside the remembered theme. An existing
+  legacy file is still read when the new one is absent, so shortcuts keep
+  working until the next listing rewrites the map; cs never deletes the old
+  file. Docs that said there was "no write path" now say the accurate thing:
+  the store is opened `mode=ro`, and cs may write its own config-home
+  sidecars (theme settings and this index). `$COPILOT_HOME/.cs-ignore`
+  remains user-authored and read-only to cs.
 - **The landing screen has colour.** It was the one place in `cs` where a
   section heading had no accent: four grey captions over eighteen rows of grey
   label and dull blue description, with a hairline (238) four shades off its

@@ -209,6 +209,7 @@ def _tui_palette(name: str) -> dict[str, tuple[int, int]]:
         "status": ((theme["cursor_fg"], theme["cursor"])
                    if name == "contrast" else (fg, theme["panel"])),
         "warn": (theme["warn"], bg),
+        "danger": (theme["danger"], bg),
         "label": (fg, bg),
     }
 
@@ -224,16 +225,14 @@ def _normalise_theme(name: str | None) -> str:
 
 
 # ── Remembered choices ───────────────────────────────────────────────
-# The theme is the one thing cs lets you choose that has to outlive the
-# process. Everything else on the landing screen is a view you open and
-# close; a palette is picked once, from a gallery, and a gallery whose
-# answer is forgotten at the prompt is one you have to visit every run.
-# That is a single named choice, so it is a one-key file rather than a
-# configuration system.
+# Choices that have to outlive the process live here: the theme, pinned
+# sessions, annotations, and a daily AIU budget. Everything else on the
+# landing screen is a view you open and close. Never write into
+# COPILOT_HOME — that store is opened read-only.
 
 
 def settings_path() -> Path:
-    """Where the remembered theme is kept.
+    """Where remembered choices (theme, pins, budget) are kept.
 
     Never inside COPILOT_HOME: that is Copilot's own store, opened
     read-only, and cs has no business writing next to it.
@@ -268,16 +267,15 @@ def saved_theme() -> str | None:
     return chosen if chosen in THEMES else None
 
 
-def save_theme(name: str) -> bool:
-    """Remember `name` for the next run. False when it could not be written.
+def _save_settings(settings: dict) -> bool:
+    """Write the settings dict atomically. False when it could not be written.
 
     Written to a neighbouring file and renamed over the target, so an
-    interrupted write leaves the previous choice intact rather than a
-    half-written file that reads as no choice at all.
+    interrupted write leaves the previous choices intact rather than a
+    half-written file that reads as no choice at all. Never touches
+    COPILOT_HOME — only the config home beside this file.
     """
     path = settings_path()
-    settings = _load_settings()
-    settings["theme"] = _normalise_theme(name)
     partial = path.with_name(path.name + ".partial")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,6 +290,190 @@ def save_theme(name: str) -> bool:
             pass
         return False
     return True
+
+
+def save_theme(name: str) -> bool:
+    """Remember `name` for the next run. False when it could not be written."""
+    settings = _load_settings()
+    settings["theme"] = _normalise_theme(name)
+    return _save_settings(settings)
+
+
+def pinned_ids() -> list[str]:
+    """Session ids the user has pinned, in pin order. Missing key → []."""
+    pins = _load_settings().get("pins")
+    if not isinstance(pins, list):
+        return []
+    return [sid for sid in pins if isinstance(sid, str) and sid]
+
+
+def is_pinned(session_id: str) -> bool:
+    return session_id in pinned_ids()
+
+
+def pin_session(session_id: str) -> bool:
+    """Remember a session as pinned. Idempotent; False on write failure."""
+    settings = _load_settings()
+    pins = settings.get("pins")
+    if not isinstance(pins, list):
+        pins = []
+    pins = [sid for sid in pins if isinstance(sid, str) and sid]
+    if session_id not in pins:
+        pins.append(session_id)
+    settings["pins"] = pins
+    return _save_settings(settings)
+
+
+def unpin_session(session_id: str) -> bool:
+    """Drop a pin. Idempotent when it was not pinned."""
+    settings = _load_settings()
+    pins = settings.get("pins")
+    if not isinstance(pins, list):
+        pins = []
+    settings["pins"] = [sid for sid in pins if isinstance(sid, str) and sid != session_id]
+    return _save_settings(settings)
+
+
+def toggle_pin(session_id: str) -> bool:
+    """Pin if unpinned, unpin if pinned. Returns the new pinned state."""
+    if is_pinned(session_id):
+        unpin_session(session_id)
+        return False
+    pin_session(session_id)
+    return True
+
+
+def _annotations_map(settings: dict | None = None) -> dict:
+    raw = (settings if settings is not None else _load_settings()).get("annotations")
+    return raw if isinstance(raw, dict) else {}
+
+
+def annotation(session_id: str) -> dict:
+    """Tags and note for a session. Tolerant of missing or malformed keys."""
+    entry = _annotations_map().get(session_id)
+    if not isinstance(entry, dict):
+        return {"tags": [], "note": ""}
+    tags = entry.get("tags")
+    note = entry.get("note")
+    return {
+        "tags": [t for t in tags if isinstance(t, str) and t] if isinstance(tags, list) else [],
+        "note": note if isinstance(note, str) else "",
+    }
+
+
+def set_note(session_id: str, note: str) -> bool:
+    """Set or clear the note on a session (empty string clears the note)."""
+    settings = _load_settings()
+    anns = dict(_annotations_map(settings))
+    entry = dict(anns.get(session_id) if isinstance(anns.get(session_id), dict) else {})
+    tags = entry.get("tags") if isinstance(entry.get("tags"), list) else []
+    tags = [t for t in tags if isinstance(t, str) and t]
+    note = note.strip()
+    if not note and not tags:
+        anns.pop(session_id, None)
+    else:
+        entry = {"tags": tags}
+        if note:
+            entry["note"] = note
+        anns[session_id] = entry
+    if anns:
+        settings["annotations"] = anns
+    else:
+        settings.pop("annotations", None)
+    return _save_settings(settings)
+
+
+def add_tag(session_id: str, tag: str) -> bool:
+    """Attach a tag to a session. Empty tag is ignored."""
+    tag = tag.strip()
+    if not tag:
+        return True
+    settings = _load_settings()
+    anns = dict(_annotations_map(settings))
+    entry = dict(anns.get(session_id) if isinstance(anns.get(session_id), dict) else {})
+    tags = entry.get("tags") if isinstance(entry.get("tags"), list) else []
+    tags = [t for t in tags if isinstance(t, str) and t]
+    if tag not in tags:
+        tags.append(tag)
+    entry["tags"] = tags
+    note = entry.get("note")
+    if isinstance(note, str) and note.strip():
+        entry["note"] = note.strip()
+    else:
+        entry.pop("note", None)
+    anns[session_id] = entry
+    settings["annotations"] = anns
+    return _save_settings(settings)
+
+
+def remove_tag(session_id: str, tag: str) -> bool:
+    """Drop a tag from a session."""
+    settings = _load_settings()
+    anns = dict(_annotations_map(settings))
+    entry = anns.get(session_id)
+    if not isinstance(entry, dict):
+        return True
+    tags = entry.get("tags") if isinstance(entry.get("tags"), list) else []
+    tags = [t for t in tags if isinstance(t, str) and t and t != tag]
+    note = entry.get("note") if isinstance(entry.get("note"), str) else ""
+    note = note.strip()
+    if not tags and not note:
+        anns.pop(session_id, None)
+    else:
+        kept = {"tags": tags}
+        if note:
+            kept["note"] = note
+        anns[session_id] = kept
+    if anns:
+        settings["annotations"] = anns
+    else:
+        settings.pop("annotations", None)
+    return _save_settings(settings)
+
+
+def daily_budget_aiu() -> float | None:
+    """User-facing daily AIU budget, or None when unset / cleared."""
+    budget = _load_settings().get("budget")
+    if not isinstance(budget, dict):
+        return None
+    value = budget.get("daily_aiu")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value > 0 else None
+
+
+def set_daily_budget(aiu: float | None) -> bool:
+    """Set the daily AIU budget. None or <= 0 clears it."""
+    settings = _load_settings()
+    if aiu is None or aiu <= 0:
+        settings.pop("budget", None)
+    else:
+        settings["budget"] = {"daily_aiu": float(aiu)}
+    return _save_settings(settings)
+
+
+def budget_colour(spent_aiu: float, limit_aiu: float) -> str:
+    """ANSI colour for spend-vs-budget: normal, amber (70–100%), rose (over)."""
+    if limit_aiu <= 0:
+        return ""
+    ratio = spent_aiu / limit_aiu
+    if ratio > 1.0:
+        return ROSE
+    if ratio >= 0.7:
+        return AMBER
+    return ""
+
+
+def budget_style_name(spent_aiu: float, limit_aiu: float) -> str:
+    """Curses theme key for the same thresholds as `budget_colour`."""
+    if limit_aiu <= 0:
+        return "credits"
+    ratio = spent_aiu / limit_aiu
+    if ratio > 1.0:
+        return "danger"
+    if ratio >= 0.7:
+        return "warn"
+    return "credits"
 
 
 # CS_THEME stays an explicit override for the run it is set on. Without it,
@@ -339,6 +521,7 @@ def tui_theme(curses, name: str | None = None) -> dict[str, int]:
         "repo": curses.A_DIM,
         "status": curses.A_DIM,
         "warn": curses.A_BOLD,
+        "danger": curses.A_BOLD,
         "label": curses.A_BOLD,
     }
     try:
@@ -368,6 +551,7 @@ def tui_theme(curses, name: str | None = None) -> dict[str, int]:
                 "repo": (curses.COLOR_BLUE, default_bg),
                 "status": (curses.COLOR_YELLOW, default_bg),
                 "warn": (curses.COLOR_YELLOW, default_bg),
+                "danger": (curses.COLOR_RED, default_bg),
                 "label": (curses.COLOR_WHITE, default_bg),
             }
 
@@ -382,6 +566,7 @@ def tui_theme(curses, name: str | None = None) -> dict[str, int]:
         styles["credits"] |= curses.A_BOLD
         styles["status"] |= curses.A_BOLD
         styles["warn"] |= curses.A_BOLD
+        styles["danger"] |= curses.A_BOLD
         styles["label"] |= curses.A_BOLD
         return styles
     except curses.error:
@@ -883,6 +1068,24 @@ _ASCII_GLYPHS = os.environ.get("CS_GLYPHS", "").lower() == "ascii"
 
 YOU_MARK = ">" if _ASCII_GLYPHS else "👤"
 COPILOT_MARK = "*" if _ASCII_GLYPHS else "🤖"
+# Listing row marker for a pinned session — one glyph, ascii falls back to *.
+PIN_MARK = "*" if _ASCII_GLYPHS else "📌"
+
+
+def float_pins(rows: list[tuple]) -> list[tuple]:
+    """Stable-sort so pinned sessions float first; relative order is kept."""
+    pinned = set(pinned_ids())
+    if not pinned:
+        return rows
+    return sorted(rows, key=lambda row: 0 if row[0] in pinned else 1)
+
+
+def pin_cell(session_id: str) -> str:
+    """A fixed-width pin marker (or blanks) for a listing row."""
+    width = cells(PIN_MARK)
+    if is_pinned(session_id):
+        return f"{AMBER}{PIN_MARK}{RST}"
+    return " " * width
 
 # The landing screen's icons, and what each one is when emoji are off. They
 # live here rather than beside the menu rows for two reasons: `CS_GLYPHS=ascii`
@@ -931,14 +1134,13 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     # age, width and block tests iterate this table, so the one piece of
     # decoration on the screen cannot be the thing that draws a blank.
     "copilot": ("🤖", "@"),
-    # The Improve group is commented out of the menu, not deleted. Its icons
-    # stay here so that bringing the rows back is only ever a matter of
-    # uncommenting them — the compass they used was Unicode 11 and would have
-    # walked the same missing-glyph bug straight back in, and the alarm clock
-    # was U+23F0, which walks back the *other* one.
+    # Improve group icons. Kept on the same age / block rules as every other
+    # glyph so restoring or extending a row cannot reintroduce a blank icon.
+    "standup": ("📣", ";"),
     "practice": ("🎯", "\""),
     "rhythm": ("🎵", "'"),
     "context": ("📍", "."),
+    "pin": ("📌", ","),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
 # up) rather than from the older symbol blocks at U+2100–U+2BFF. Both are

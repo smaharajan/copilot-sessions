@@ -47,7 +47,7 @@ VIEWS = (
 # exist, so the two lists are kept apart on purpose.
 DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
-    "agents", "repos", "skills", "profiles", "export",
+    "agents", "repos", "skills", "profiles", "standup", "export",
 )
 
 
@@ -311,6 +311,74 @@ def assets_by_place(places: list[dict]) -> dict:
             for name, count in place["skills"].most_common()
         ],
     }
+
+
+def standup(days: int) -> dict:
+    """Daily brief as data — same readings `cs standup` draws."""
+    from . import signals
+    from .cli._common import _visible
+
+    conn = db.connect()
+    try:
+        rows = db.recent_sessions(conn, days)
+        timeline = db.timeline(conn, days)
+        totals = db.cost_totals(conn, days)
+        handoff_rows = signals.handoffs(conn)
+        window_ids = {row[0] for row in rows}
+        risk_rows = []
+        if 0 < len(window_ids) <= 40:
+            risk_rows = [
+                {
+                    "id": row["id"],
+                    "verdict": row["verdict"],
+                    "summary": redact.one_line(redact.redact(row["summary"] or "")),
+                }
+                for row in signals.autonomy(conn)
+                if row["id"] in window_ids and row["verdict"] in ("yes", "high")
+            ]
+    finally:
+        conn.close()
+
+    visible = _visible(rows, show_all=False)
+    turns = sum(day_turns for _day, _sessions, day_turns, _spend in timeline)
+    spend = totals.get("nano_aiu", 0) if totals else 0
+    moved = []
+    for row in visible:
+        if not (row[2] or "").strip():
+            continue
+        sid, active, summary, repo, _cwd, turns_n, nano = row[:7]
+        moved.append({
+            "id": sid,
+            "last_active": active,
+            "summary": redact.one_line(redact.redact(summary or "")),
+            "repository": repo or None,
+            "turns": turns_n,
+            "nano_aiu": nano,
+        })
+        if len(moved) >= 8:
+            break
+    handoffs = [
+        {
+            "id": row["id"],
+            "role": row["role"],
+            "summary": redact.one_line(redact.redact(row["summary"] or "")),
+        }
+        for row in handoff_rows
+        if row["id"] in window_ids
+    ]
+    out = {
+        "view": "standup",
+        "window_days": days,
+        "sessions": len(visible),
+        "turns": turns,
+        "nano_aiu": spend,
+        "moved": moved,
+        "handoffs": handoffs,
+    }
+    if risk_rows:
+        out["risks"] = {"yolo": risk_rows}
+    return out
+
 
 
 def emit(payload: dict, fmt: str = "json") -> None:

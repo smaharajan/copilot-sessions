@@ -43,7 +43,7 @@ single line:
     GOVERN  ───────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
-     🔐  Security          credentials found in session text
+     🔐  Security          credentials found in session text · last 30 days
     REFERENCE  ────────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here versus used
      🤖  Agents            the same, for the agents you defined
@@ -149,6 +149,7 @@ The same windows work from the shell: `cs cost all`, `cs efficiency 7`,
 | `/` | full-text search | find text; submit an empty search to clear | filter: titles, repos, folders and the full text, as `cs search` reads them |
 | `n` / `N` | — | next / previous matching row, wrapping at the ends | — |
 | `v` `o` `t` | — | — | session page (`v` and `o` both) · transcript (`t`) |
+| `p` | — | — | pin / unpin the highlighted session |
 | `Esc` | clear the filter, then quit | back to the menu | clear filter, then back |
 | `q` | quit, when nothing is typed | back to the menu | back to the menu |
 | Mouse | click, wheel | wheel scrolls 3 lines | click row, click header, wheel |
@@ -789,13 +790,32 @@ here starts a server or writes to a config file.
 
 ## 🎯 Getting better at it
 
-Every other view answers *what happened*. These three answer **how the work is
-being done** — and they are the only views in `cs` that will tell you something
-about yourself rather than about a session.
+Every other view answers *what happened*. These answer **how the work is being
+done** — and they are the only views in `cs` that will tell you something about
+yourself rather than about a session. They sit under **Improve** on the landing
+screen.
 
-> **Unlisted.** All three are off the menu and out of `cs help`, and all three
-> still run when typed. Nothing about them was deleted — see
-> [Every view earns its place](#-every-view-earns-its-place).
+### `cs standup` — today's brief, offline
+
+A deterministic daily summary over the last day (or any window): activity,
+notable sessions, handoffs in the window, and a light unattended count when the
+window is small enough to ask without a full-store scan. No network and no LLM.
+
+```
+  ── Standup · last 24 hours · 3 sessions ────────────────────────────
+
+  ▌Activity
+  sessions  3
+  turns     14
+  spend     4.00 AIU
+
+  ▌What moved
+    sess-alp  Build Three.js portal
+      acme/portal · 2 turns · 4.00 AIU
+```
+
+`cs standup 7` widens the window; `daily` is an alias. `--json` emits the same
+readings without the drawing.
 
 ### `cs coach` — habits, scored, worst first
 
@@ -1014,14 +1034,15 @@ stands alone rather than inventing a parent.
 ### 🔐 Security — `cs audit`
 
 ```bash
-cs audit               # every session holding credential-shaped text
-cs audit a1b2c3d4      # just one
+cs audit               # sessions active in the last 30 days
+cs audit all           # the whole store
+cs audit a1b2c3d4      # just one session, however old
 ```
 
 Masking hides a secret on screen but leaves it in the store, and leaves you
-unaware it is there. `cs audit` runs the same rules over the whole store to
-answer the question masking cannot: **which conversations hold a credential at
-all.**
+unaware it is there. `cs audit` runs the same rules over recent sessions (or
+the whole store with `all`) to answer the question masking cannot: **which
+conversations hold a credential at all.**
 
 It looks in three places, because a session can hold one in three ways:
 
@@ -1221,6 +1242,7 @@ machine, and every view tells you masking is on.
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
 | 🎨 **Theme** | Choose **Theme** on the home screen (or press `t`) for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
+| 📌 **Pins & budget** | `cs pin` / `unpin` / `pins`, `cs note`, `cs tag` / `untag`, and `cs budget [N|clear]`. Settings in `~/.config/cs/settings.json`. Listings float pins to the top (`p` toggles); home shows `spent/budget` for the last 24h when a budget is set (amber ≥70%, rose over). |
 | 🔄 **Live data** | The landing page *and* an open session listing are re-read from the read-only session database every 60 seconds, so a session started in another window arrives without reopening the view; a session already listed keeps its `#N` and a new arrival takes the next free number. Search results are not re-read — re-ranking a result set under the reader is not a refresh. The landing page is rebuilt on the same heartbeat; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
 | 🎓 **Shared skills root** | Skills also load from `~/.agents/skills`, beside the Copilot home rather than inside it; `CS_AGENTS_HOME` points that root somewhere else |
 
@@ -1366,17 +1388,19 @@ every one of them still runs when typed, and every test of them still runs,
 because removing a working view is a decision that is hard to reverse and easy
 to regret.
 
-`cs timeline` and `cs hooks` are back on the menu, and both had to change to
-get there. The three **Improve** views stay unlisted — deliberately, and
-reversibly.
+Most of them earned their way back. `cs timeline` stayed off the menu (Stats and
+AI spend already cover its ground); `cs hooks` and the **Improve** group are on
+it. Improve was restored with `cs standup` as the daily entry point, then
+Practice / Rhythm / Context.
 
 | Command | Where it stands |
 |---------|------------------|
-| `cs timeline` | **On the menu.** It charted sessions per day, an activity count, and every serious measurement framework — DORA, SPACE, DX Core 4 — is explicit that activity is not value. A row is now sessions, **turns and spend together**, which is a ledger rather than a tally: the day with the most sessions is routinely not the day the work or the money went, and that inversion is invisible in either number alone. |
+| `cs timeline` | **Off the menu, still runs.** It charted sessions per day; Stats and AI spend already carry the window's totals and per-day bars, so a third counting view mostly asks the room to hold one more shape. Typed as `cs timeline`. |
 | `cs hooks` | **On the menu.** It lists configuration, not history, and `copilot plugins list --json` enumerates the same declarations first-hand. What that missed is the thing reading the config cannot do: `cs hooks` **resolves every hook command against the disk** and names the ones whose script is gone. Copilot will still run those, and the shell will still fail. |
-| `cs coach` | **Unlisted, still runs.** Habits scored and ranked. |
-| `cs rhythm` | **Unlisted, still runs.** Its shares-off-a-tiny-sample bug was fixed on the way out — below 25 turns it reports counts and says so — so it is correct whenever you do reach for it. |
-| `cs context` | **Unlisted, still runs.** The only view that reads the setup your **next** session starts from rather than what a past one did. |
+| `cs standup` | **On the menu (Improve).** Offline daily brief — activity, what moved, handoffs, light risks. |
+| `cs coach` | **On the menu (Improve).** Habits scored and ranked. |
+| `cs rhythm` | **On the menu (Improve).** When the work happens; below 25 turns it reports counts and says so. |
+| `cs context` | **On the menu (Improve).** The only view that reads the setup your **next** session starts from rather than what a past one did. |
 
 Hiding a group is two edits — the rows in `_home_items` and the group's anchor
 in `_HOME_GROUP_STARTS` — and `cs` **refuses to start** if you do one without

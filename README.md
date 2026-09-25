@@ -55,7 +55,7 @@ needs nothing beyond Python itself.
     GOVERN  ───────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
-     🔐  Security          credentials found in session text
+     🔐  Security          credentials found in session text · last 30 days
     REFERENCE  ────────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here versus used
      🤖  Agents            the same, for the agents you have defined
@@ -90,6 +90,12 @@ under the reader is not a refresh.
 
 Home credits show two decimal places rather than rounded `k` totals, so small
 new charges remain visible. They stay visible first as the window narrows.
+
+**Pins and a daily budget** live in the same settings file. `cs pin <ref>`
+keeps a session on a Pinned home row (and floats it to the top of listings;
+press `p` in a listing to toggle). `cs budget 5` sets a daily AIU limit; the
+home header then shows today's spend against it and turns amber near the
+limit, rose when over.
 
 On legacy ncurses builds, terminals with native SGR mouse reporting (such as
 Ghostty) use xterm-compatible decoding inside `cs`; the original terminal
@@ -152,12 +158,20 @@ first-token latency, reasoning share, per model.
 
 <img src="docs/img/efficiency.svg" alt="cs efficiency — cache hit rate, first-token percentiles, reasoning share and a per-model breakdown" width="820">
 
+### 🎯 Daily brief and practice
+
+`cs standup` (alias `daily`) is an offline daily brief over the last day —
+sessions, turns, spend, what moved, handoffs, and light autonomy risks when
+cheap to ask. `cs coach`, `cs rhythm` and `cs context` sit beside it under
+**Improve** on the landing screen.
+
 ### 🔐 Prove it was safe
 
 Masking hides a secret on screen but leaves it in the store. `cs audit` scans
-turns, checkpoints *and* sensitive file paths to answer the question masking
-cannot — **which conversations hold a credential at all** — and leads with who
-pasted it, because that is what decides whether you rotate or shrug.
+turns, checkpoints *and* sensitive file paths (last 30 days by default; `all`
+for the whole store) to answer the question masking cannot — **which
+conversations hold a credential at all** — and leads with who pasted it,
+because that is what decides whether you rotate or shrug.
 
 <img src="docs/img/audit.svg" alt="cs audit — one session needing action, with severity counts and masked evidence hanging under its row" width="820">
 
@@ -332,7 +346,10 @@ reasoning behind them.
 **Your data never leaves your machine.**
 
 - The store (`~/.copilot/session-store.db`) is opened **read-only** — `mode=ro`
-  on the SQLite URI. There is no write path in the codebase.
+  on the SQLite URI. cs never writes to the store; its own sidecars live
+  outside it (`~/.config/cs/settings.json` for the theme, pins, notes and daily budget,
+  `~/.config/cs/.cs-last-index` for `#N` shortcuts). Users may keep a
+  `$COPILOT_HOME/.cs-ignore` list that cs only reads.
 - **No network code.** Nothing is uploaded, copied or phoned home.
 - Credentials are **masked at the render edge**, so nothing secret-shaped
   reaches your screen, scrollback or a screen-share — files and pipes included.

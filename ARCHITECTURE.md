@@ -19,14 +19,16 @@ decisions behind recent changes see [docs/HANDOVER.md](docs/HANDOVER.md).
 
 ## Shape of the code
 
-Ten modules, one rule each: `db.py` knows SQL and nothing about formatting,
+Ten library modules plus a `cli/` package, one rule each: `db.py` knows SQL and nothing about formatting,
 `signals.py` reads inferences out of the store and nothing about drawing them,
 `practice.py` reads habits across a window of it, `hooks.py`, `mcp.py` and
 `context.py` read configuration off disk and never touch the store,
 `redact.py` owns every credential pattern, `ui.py` knows formatting and nothing about sessions,
 `export.py` owns the machine-readable edge — the same readings without the
 drawing — and
-`cli.py` joins them and owns everything interactive.
+`cli/` joins them and owns everything interactive (split across `dispatch`,
+listing/session/reports/governance/inventory/home/resume helpers, with shared
+pieces in `_common`).
 
 ```mermaid
 flowchart TD
@@ -113,7 +115,7 @@ shape throughout:
    [0]           [1]         [2]     [3]   [4]    [5]      [6]
 ```
 
-Sort columns index into that tuple (`_SORT_COLUMNS` in `cli.py`), which is why
+Sort columns index into that tuple (`_SORT_COLUMNS` in `cli/_common.py`), which is why
 every listing — recent, search, files — sorts, filters and numbers the same
 way for free.
 
@@ -551,7 +553,8 @@ rank; it tries both forms whole, then drops hints by rank. The way out ranks 0
 and never drops, so no width leaves the view without a visible exit.
 
 **Numbers are identity, not position.** `_number_rows()` assigns `#N` once, in
-the listing's natural order, and the map is written to `$COPILOT_HOME/.cs-last-index`
+the listing's natural order, and the map is written to `~/.config/cs/.cs-last-index`
+(beside the theme settings; a legacy file under `$COPILOT_HOME` is still read)
 so `cs read #3` works in a new shell. Sorting re-orders rows but never
 renumbers them, and `follow` re-finds the highlighted *session* after a
 re-sort so the cursor doesn't jump to whatever landed in that slot.
@@ -626,8 +629,8 @@ six scripts, because they share primitives in `ui.py`:
 | `rule(width, title)` | `── Title ─────────` section and document rules |
 | `heading(text, colour)` | `▌Label` — an accent bar rather than shouting |
 | `field(label, value)` | aligned metadata; the column always leaves a gap |
-| `_spend_row/_spend_header` (`cli.py`) | one column shape shared by every spend breakdown |
-| `_fit_columns/_cell` (`cli.py`) | how wide a table's columns may be here, and one padded cell |
+| `_spend_row/_spend_header` (`cli/reports.py`) | one column shape shared by every spend breakdown |
+| `_fit_columns/_cell` (`cli/_common.py`) | how wide a table's columns may be here, and one padded cell |
 | `markdown(text, width)` | headings, bullets, tables, fenced code, inline `code`/**bold** |
 
 `markdown()` is what makes a transcript readable: assistant replies *are*

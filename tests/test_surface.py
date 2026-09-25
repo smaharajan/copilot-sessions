@@ -44,7 +44,7 @@ def _dispatch_commands() -> set[str]:
     written; this one cannot fall behind, and a new command arrives already
     covered by everything below.
     """
-    source = Path(__file__).resolve().parent.parent / "cs" / "cli.py"
+    source = Path(__file__).resolve().parent.parent / "cs" / "cli" / "dispatch.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     dispatch = next(
         node for node in ast.walk(tree)
@@ -79,6 +79,9 @@ ARGUMENTS = {
     "search": ["portal"], "find": ["portal"], "grep": ["portal"],
     "files": ["globe.js"],
     "completion": ["bash"],
+    "pin": ["sess-alpha"], "unpin": ["sess-alpha"],
+    "note": ["sess-alpha", "fixture note"],
+    "tag": ["sess-alpha", "wip"], "untag": ["sess-alpha", "wip"],
 }
 
 # `-h`/`-v` are the same code as their words; running both proves nothing and
@@ -90,6 +93,7 @@ SKIP = {"-h", "--help", "-v", "--version"}
 NEEDS_A_SESSION = {
     "show", "view", "info", "brief", "digest", "summary", "read",
     "transcript", "export", "resume", "r",
+    "pin", "unpin", "note", "tag", "untag",
 }
 
 

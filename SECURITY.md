@@ -24,7 +24,7 @@ determines what is and is not a security concern here.
 
 | | |
 |---|---|
-| Opens `~/.copilot/session-store.db` | `mode=ro` via SQLite URI — there is no write path |
+| Opens `~/.copilot/session-store.db` | `mode=ro` via SQLite URI — the store is never written; cs sidecars live under `~/.config/cs/` |
 | Network access | none — the package makes no outbound connections |
 | Runtime dependencies | none — Python standard library only |
 | Processes it starts | your `$PAGER`, and `copilot --resume` on `cs resume` |

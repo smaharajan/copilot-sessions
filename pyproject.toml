@@ -39,8 +39,8 @@ Source = "https://github.com/smaharajan/copilot-sessions"
 Issues = "https://github.com/smaharajan/copilot-sessions/issues"
 Changelog = "https://github.com/smaharajan/copilot-sessions/blob/main/CHANGELOG.md"
 
-[tool.setuptools]
-packages = ["cs"]
+[tool.setuptools.packages.find]
+include = ["cs*"]
 
 [tool.ruff]
 line-length = 100

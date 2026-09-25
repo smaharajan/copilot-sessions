@@ -194,3 +194,47 @@ class PracticeTest(StoreTest):
         self.assertNotIn("empty-launch-row", snap.sessions)
         self.assertEqual(set(snap.sessions), set(snap.turns_by_session()),
                          "the headline counts sessions the rules never see")
+
+
+class StandupTest(StoreTest):
+    """Offline daily brief — no network, no LLM, fixture store only."""
+
+    def test_standup_exits_cleanly_on_the_fixture_store(self):
+        code, out = self._run("standup")
+        self.assertEqual(code, 0)
+        self.assertIn("Standup", out)
+        self.assertIn("last 24 hours", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_standup_mentions_session_activity_in_the_window(self):
+        code, out = self._run("standup")
+        self.assertEqual(code, 0)
+        # Fixture sessions are dated `now`, so the default 1-day window sees them.
+        self.assertTrue(
+            "Build Three.js portal" in out or "AIU" in out or "sessions" in out,
+            out,
+        )
+        self.assertIn("Build Three.js portal", out)
+
+    def test_standup_json_carries_the_brief(self):
+        import json
+
+        code, out = self._run("standup", "--json")
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertEqual(payload["view"], "standup")
+        self.assertEqual(payload["window_days"], 1)
+        for key in ("sessions", "turns", "nano_aiu", "moved", "handoffs"):
+            self.assertIn(key, payload)
+        self.assertGreaterEqual(payload["sessions"], 1)
+        summaries = [row["summary"] for row in payload["moved"]]
+        self.assertTrue(any("portal" in (s or "").lower() for s in summaries),
+                        summaries)
+
+    def test_daily_is_an_alias_and_all_widens_the_window(self):
+        code, out = self._run("daily")
+        self.assertEqual(code, 0)
+        self.assertIn("Standup", out)
+        code, out = self._run("standup", "all")
+        self.assertEqual(code, 0)
+        self.assertIn("all time", out)

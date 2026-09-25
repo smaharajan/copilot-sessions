@@ -132,22 +132,68 @@ def ignored_prefixes() -> list[str]:
 # the new name must still find it, and listings must show that name.
 
 
+# Process-level cache: listings ask for names often, and each call used to
+# re-parse every workspace.yaml. Invalidate when the set of files or any
+# watched file's mtime/size changes — content edits bump those; a bare
+# directory mtime does not always.
+_SESSION_NAMES_CACHE: dict[str, tuple[str, bool]] | None = None
+_SESSION_NAMES_FINGERPRINT: tuple | None = None
+
+
+def _session_names_fingerprint(root: Path) -> tuple:
+    """Cheap identity of the name files under session-state.
+
+    Walks stats only — no YAML — so a cache hit stays cheap, and a rename or
+    rewrite still misses because mtime_ns or size moved.
+    """
+    try:
+        root_stat = root.stat()
+        entries: list[tuple[str, int, int]] = []
+        for folder in root.iterdir():
+            if not folder.is_dir():
+                continue
+            try:
+                st = (folder / "workspace.yaml").stat()
+            except OSError:
+                continue
+            entries.append((folder.name, st.st_mtime_ns, st.st_size))
+        entries.sort()
+        return (str(root.resolve()), root_stat.st_mtime_ns, tuple(entries))
+    except OSError:
+        return (str(root), 0, ())
+
+
 def session_names() -> dict[str, tuple[str, bool]]:
     """{session id: (name, whether you gave it)} from every workspace.yaml.
 
-    Read from disk on every call — the store is live and so is this.
-    A folder that cannot be read, or
-    a file with no name in it, is simply a session without one.
+    Cached in-process; invalidated when session-state files change.
+    A folder that cannot be read, or a file with no name in it, is simply a
+    session without one.
     """
+    global _SESSION_NAMES_CACHE, _SESSION_NAMES_FINGERPRINT
     names: dict[str, tuple[str, bool]] = {}
     try:
-        folders = list(_session_state().iterdir())
+        root = _session_state()
+        fingerprint = _session_names_fingerprint(root)
     except OSError:
+        return names
+    if (
+        _SESSION_NAMES_CACHE is not None
+        and _SESSION_NAMES_FINGERPRINT == fingerprint
+    ):
+        return _SESSION_NAMES_CACHE
+    try:
+        folders = list(root.iterdir())
+    except OSError:
+        _SESSION_NAMES_CACHE = names
+        _SESSION_NAMES_FINGERPRINT = fingerprint
         return names
     for folder in folders:
         found = session_name(folder.name)
         if found:
             names[folder.name] = found
+    _SESSION_NAMES_CACHE = names
+    _SESSION_NAMES_FINGERPRINT = fingerprint
     return names
 
 
@@ -1007,6 +1053,81 @@ def _asset_hits(text: str):
         yield next(group for group in match.groups() if group).lower()
 
 
+
+# ── Asset-reference scan cache ───────────────────────────────────────
+# `reference_counts` / `sessions_for_asset` used to re-read every turn on
+# every call. The home heartbeat and `cs skills` ask repeatedly in one
+# process; a map keyed by the store file's identity keeps those cheap
+# without changing what counts as a hit.
+
+_TURN_HIT_CACHE: dict[tuple, dict[str, set[str]]] = {}
+_SKILLS_INVOKED_CACHE: dict[tuple, dict[str, set[str]]] = {}
+
+
+def _store_fingerprint(conn: sqlite3.Connection) -> tuple:
+    """Identity of the open store file — path, mtime, size.
+
+    Falls back to a connection-only key when the file cannot be stated (in-
+    memory fixtures, vanished path), so a cache entry still scopes to one
+    connection lifetime rather than leaking across unrelated stores.
+    """
+    path = default_db_path()
+    try:
+        st = path.stat()
+        return (str(path.resolve()), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (str(path), id(conn), 0)
+
+
+def _skills_invoked_map(conn: sqlite3.Connection) -> dict[str, set[str]]:
+    """Cached store-wide skill load markers — see skills_invoked_by_session."""
+    key = _store_fingerprint(conn)
+    cached = _SKILLS_INVOKED_CACHE.get(key)
+    if cached is not None:
+        return cached
+    out: dict[str, set[str]] = {}
+    for session_id, text in conn.execute(
+        """SELECT session_id, COALESCE(user_message, '')
+           FROM turns WHERE user_message LIKE '%<skill-context%'"""
+    ):
+        for name in _SKILL_INVOCATION.findall(text or ""):
+            out.setdefault(session_id, set()).add(name.strip().lower())
+    _SKILLS_INVOKED_CACHE.clear()
+    _SKILLS_INVOKED_CACHE[key] = out
+    return out
+
+
+def _turn_hit_map(
+    conn: sqlite3.Connection, hits
+) -> dict[str, set[str]]:
+    """session_id → names found by `hits` across every turn, cached per store.
+
+    One full scan builds the map; later callers in the same process reuse it
+    until the store file's mtime or size changes.
+    """
+    kind = "asset" if hits is _asset_hits else "mcp" if hits is _mcp_hits else id(hits)
+    key = (*_store_fingerprint(conn), kind)
+    cached = _TURN_HIT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    found: dict[str, set[str]] = {}
+    for session_id, text in conn.execute(
+        """SELECT session_id,
+                  COALESCE(user_message, '') || ' ' || COALESCE(assistant_response, '')
+           FROM turns"""
+    ):
+        matched = {hit for hit in hits(text or "")}
+        if matched:
+            found.setdefault(session_id, set()).update(matched)
+    # Drop stale fingerprints so a long-lived process cannot grow without bound
+    # when the store is rewritten often (each rewrite is a new key).
+    stale = [k for k in _TURN_HIT_CACHE if k[:3] != key[:3]]
+    for k in stale:
+        del _TURN_HIT_CACHE[k]
+    _TURN_HIT_CACHE[key] = found
+    return found
+
+
 def sessions_for_asset(
     conn: sqlite3.Connection, name: str, limit: int = 20, hits=_asset_hits
 ) -> list[tuple]:
@@ -1019,15 +1140,11 @@ def sessions_for_asset(
     wanted = name.lower()
     seen: dict[str, None] = {}
     if hits is _asset_hits:
-        for session_id, loaded in skills_invoked_by_session(conn).items():
+        for session_id, loaded in _skills_invoked_map(conn).items():
             if wanted in loaded:
                 seen[session_id] = None
-    for session_id, text in conn.execute(
-        """SELECT session_id,
-                  COALESCE(user_message, '') || ' ' || COALESCE(assistant_response, '')
-           FROM turns"""
-    ):
-        if session_id not in seen and any(hit == wanted for hit in hits(text)):
+    for session_id, matched in _turn_hit_map(conn, hits).items():
+        if session_id not in seen and wanted in matched:
             seen[session_id] = None
     if not seen:
         return []
@@ -1059,7 +1176,9 @@ def reference_counts(
     `workflow` skill.
 
     `hits` says what a reference looks like: the asset rule by default, and
-    `_mcp_hits` when the names are MCP servers.
+    `_mcp_hits` when the names are MCP servers. The turn scan is cached per
+    store fingerprint so the home heartbeat and repeated inventory calls in
+    one process do not re-read every turn.
     """
     from collections import defaultdict
 
@@ -1067,12 +1186,8 @@ def reference_counts(
         return {}
     known = {name.lower() for name in names}
     seen: dict[str, set[str]] = defaultdict(set)
-    for session_id, text in conn.execute(
-        """SELECT session_id,
-                  COALESCE(user_message, '') || ' ' || COALESCE(assistant_response, '')
-           FROM turns"""
-    ):
-        for hit in hits(text):
+    for session_id, matched in _turn_hit_map(conn, hits).items():
+        for hit in matched:
             if hit in known:
                 seen[hit].add(session_id)
     # A load marker is stronger evidence than anything the text scan can
@@ -1083,7 +1198,7 @@ def reference_counts(
     # "never referenced" — which it was, and which was the worst kind of
     # wrong: confidently, about the one case there is proof for.
     if hits is _asset_hits:
-        for session_id, loaded in skills_invoked_by_session(conn).items():
+        for session_id, loaded in _skills_invoked_map(conn).items():
             for name in loaded & known:
                 seen[name].add(session_id)
     return {name: len(seen.get(name.lower(), ())) for name in names}
@@ -1136,7 +1251,7 @@ def assets_by_session(
         # The recorded half, folded in for the same reason as in
         # :func:`reference_counts`: a load marker is proof, and proof must
         # not lose to a regex that happened not to fire.
-        for session_id, loaded in skills_invoked_by_session(conn).items():
+        for session_id, loaded in _skills_invoked_map(conn).items():
             seen[session_id] |= loaded & known
     return {session_id: len(found) for session_id, found in seen.items()}
 
@@ -1164,7 +1279,7 @@ def assets_used(
         # Cheap and certain, so it goes first — on a store where everything
         # was loaded properly this can satisfy the early exit below without
         # reading a single turn.
-        for loaded in skills_invoked_by_session(conn).values():
+        for loaded in _skills_invoked_map(conn).values():
             found |= loaded & known
     for (text,) in conn.execute(
         f"""SELECT COALESCE(user_message, '') || ' ' || COALESCE(assistant_response, '')
@@ -1303,16 +1418,10 @@ def skills_invoked_by_session(conn: sqlite3.Connection) -> dict[str, set[str]]:
 
     The `LIKE` is doing real work here: the marker is a literal string, so
     SQLite can skip all but a handful of rows rather than handing the whole
-    transcript to Python for a regex it will almost never match.
+    transcript to Python for a regex it will almost never match. Results are
+    cached per store fingerprint — see `_skills_invoked_map`.
     """
-    out: dict[str, set[str]] = {}
-    for session_id, text in conn.execute(
-        """SELECT session_id, COALESCE(user_message, '')
-           FROM turns WHERE user_message LIKE '%<skill-context%'"""
-    ):
-        for name in _SKILL_INVOCATION.findall(text or ""):
-            out.setdefault(session_id, set()).add(name.strip().lower())
-    return out
+    return _skills_invoked_map(conn)
 
 
 def asset_evidence(

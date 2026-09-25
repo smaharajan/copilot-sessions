@@ -1,12 +1,28 @@
 # Handover
 
-**Updated:** 2026-09-21
+**Updated:** 2026-09-25
 **Repository:** `smaharajan/copilot-sessions`
-**Branch:** `feat/themes-live-refresh`
-**Baseline:** `d4347c8 feat: add themes and live home refresh`
-**Current state:** review fixes verified with both native-SGR and legacy-X10
-terminal descriptions and confirmed in the live setup. Commit and push were
-explicitly approved on 2026-09-21.
+**Branch:** `feat/merge-cli-package-and-standup`
+**Baseline:** `529c9da` (`main`)
+**Current state:** the theme and refresh work below shipped in `8f4d154`.
+Since then:
+
+- `ac50173` deliberately changed the refresh interval to **60 seconds**. The
+  maintainer confirmed 60 on 2026-09-25, so every "30 seconds" below is
+  history, not the current contract.
+- This branch splits `cs/cli.py` into the `cs/cli/` package. `cs.cli`
+  re-exports every symbol, so `import cs.cli as cli; cli._foo` and patches
+  of `cs.cli.*` keep working.
+- It adds pins, notes and tags, a daily AIU budget, and `cs standup`.
+- It moves `.cs-last-index` out of `COPILOT_HOME` into the config directory.
+  The legacy location is still read as a fallback.
+
+Verified on this branch:
+
+- `ruff` and all 612 tests pass.
+- `pip install .` ships `cs.cli`.
+- In a real terminal, two unattended refreshes landed 60 seconds apart after
+  a mouse hover, with quarter-credit changes visible at 40 columns.
 
 ## Current task
 

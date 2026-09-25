@@ -538,6 +538,34 @@ class KitColumnTest(StoreTest):
         finally:
             conn.close()
 
+    def test_reference_counts_cache_matches_fresh_scan(self):
+        """Cached asset hits agree with an uncached pass on a small fixture."""
+        from cs import db
+
+        self._mention("run the deploy skill on this")
+        # Clear any prior fingerprint so the first call builds the cache.
+        db._TURN_HIT_CACHE.clear()
+        db._SKILLS_INVOKED_CACHE.clear()
+
+        conn = db.connect()
+        try:
+            first = db.reference_counts(conn, ["deploy", "review"])
+            # Second call must hit the cache and return the same counts.
+            second = db.reference_counts(conn, ["deploy", "review"])
+            self.assertEqual(first, second)
+            self.assertEqual(first["deploy"], 1)
+            self.assertEqual(first["review"], 0)
+            # Force a miss by clearing, then rebuild — still identical.
+            db._TURN_HIT_CACHE.clear()
+            db._SKILLS_INVOKED_CACHE.clear()
+            third = db.reference_counts(conn, ["deploy", "review"])
+            self.assertEqual(first, third)
+            rows = db.sessions_for_asset(conn, "deploy")
+            self.assertEqual([r[0] for r in rows], ["sess-alpha"])
+        finally:
+            conn.close()
+
+
     def test_merely_saying_a_word_is_not_a_reference(self):
         """The scan is deliberately narrow — a bare noun must not count."""
         from cs import db

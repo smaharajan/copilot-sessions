@@ -18,6 +18,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # The one choice cs remembers between runs — the theme — is written under
@@ -272,30 +273,36 @@ def _add_governance_rows(base: Path) -> None:
     Kept out of the shared fixture so the counts every other test asserts on
     stay where they were.
     """
+    # Relative stamps so bare `cs audit` (default 30 days) still sees them
+    # however long after the fixture was written the suite runs.
+    def _ago(days: int, hour: int = 9, minute: int = 0) -> str:
+        when = datetime.now(timezone.utc) - timedelta(days=days)
+        return when.strftime(f"%Y-%m-%dT{hour:02d}:{minute:02d}")
+
     conn = sqlite3.connect(base / "session-store.db")
     conn.executemany(
         "INSERT INTO sessions VALUES (?,?,?,'local','main',?,?,?)",
         [
             (YOLO, "/tmp/y", "acme/portal", "Try it unsupervised",
-             "2026-07-01T09:00", "2026-07-01T09:30"),
+             _ago(9), _ago(9, 9, 30)),
             (YOLO_TWIN, "/tmp/y", "acme/portal", "A near-identical id",
-             "2026-07-01T10:00", "2026-07-01T10:30"),
+             _ago(9, 10), _ago(9, 10, 30)),
             (UNATTENDED, "/tmp/u", "acme/portal", "One prompt, long run",
-             "2026-07-02T09:00", "2026-07-02T11:00"),
+             _ago(8), _ago(8, 11)),
             (CALM, "/tmp/c", "acme/portal", "A supervised session",
-             "2026-07-03T09:00", "2026-07-03T09:20"),
+             _ago(7), _ago(7, 9, 20)),
             (PARENT, "/tmp/h", "acme/portal", "First half of the work",
-             "2026-07-04T09:00", "2026-07-04T12:00"),
+             _ago(6), _ago(6, 12)),
             (CHILD, "/tmp/h", "acme/portal", "Second half of the work",
-             "2026-07-05T09:00", "2026-07-05T12:00"),
+             _ago(5), _ago(5, 12)),
             (LEAK, "/tmp/l", "acme/portal", "Wire up the database",
-             "2026-07-06T09:00", "2026-07-06T09:40"),
+             _ago(4), _ago(4, 9, 40)),
             (WIPED, "/tmp/w", "acme/portal", "Clear out the stale tree",
-             "2026-07-07T09:00", "2026-07-07T09:40"),
+             _ago(3), _ago(3, 9, 40)),
             (OFFERED, "/tmp/o", "acme/portal", "Ask about clearing the tree",
-             "2026-07-08T09:00", "2026-07-08T09:40"),
+             _ago(2), _ago(2, 9, 40)),
             (HARDCODED, "/tmp/hc", "acme/portal", "Write the settings module",
-             "2026-07-09T09:00", "2026-07-09T09:40"),
+             _ago(1), _ago(1, 9, 40)),
         ],
     )
     conn.executemany(

@@ -118,7 +118,91 @@ class GovernanceTest(StoreTest):
     def test_audit_rejects_a_session_that_does_not_exist(self):
         code, out = self._run("audit", "does-not-exist")
         self.assertEqual(code, 1)
-        self.assertEqual(out, "")
+
+    def test_unscoped_audit_defaults_to_thirty_days(self):
+        """Bare cs audit skips sessions older than the default window."""
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+
+        from cs import signals
+
+        ancient = "d0000000-d000-4000-8000-000000000001"
+        recent = "d0000000-d000-4000-8000-000000000002"
+        old = (datetime.now(timezone.utc) - timedelta(days=90)).strftime(
+            "%Y-%m-%dT09:00"
+        )
+        new = (datetime.now(timezone.utc) - timedelta(days=2)).strftime(
+            "%Y-%m-%dT09:00"
+        )
+        conn = sqlite3.connect(Path(self._tmp.name) / "session-store.db")
+        conn.executemany(
+            "INSERT INTO sessions VALUES (?,?,?,'local','main',?,?,?)",
+            [
+                (ancient, "/tmp/old", "acme/portal", "Ancient leak", old, old),
+                (recent, "/tmp/new", "acme/portal", "Fresh leak", new, new),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO turns (session_id, turn_index, user_message, "
+            "assistant_response) VALUES (?,?,?,?)",
+            [
+                (ancient, 0, "DB_PASSWORD=ancientsecret99", "ok"),
+                (recent, 0, "DB_PASSWORD=freshsecret99", "ok"),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        db_conn = __import__("cs.db", fromlist=["db"]).connect()
+        try:
+            windowed = signals.exposures(db_conn, days=30)
+            everything = signals.exposures(db_conn, days=0)
+        finally:
+            db_conn.close()
+        windowed_ids = {row["id"] for row in windowed}
+        all_ids = {row["id"] for row in everything}
+        self.assertIn(recent, windowed_ids)
+        self.assertNotIn(ancient, windowed_ids)
+        self.assertIn(ancient, all_ids)
+        self.assertIn(recent, all_ids)
+
+        code, out = self._run("audit")
+        self.assertEqual(code, 0)
+        self.assertIn("Fresh leak", out)
+        self.assertNotIn("Ancient leak", out)
+        self.assertIn("last 30 days", out)
+
+        _, all_out = self._run("audit", "all")
+        self.assertIn("Ancient leak", all_out)
+        self.assertIn("Fresh leak", all_out)
+        self.assertIn("all time", all_out)
+
+    def test_session_scoped_audit_ignores_the_day_window(self):
+        """cs audit <session> still scans that session however old it is."""
+        import sqlite3
+        from datetime import datetime, timedelta, timezone
+
+        ancient = "d0000000-d000-4000-8000-000000000003"
+        old = (datetime.now(timezone.utc) - timedelta(days=120)).strftime(
+            "%Y-%m-%dT09:00"
+        )
+        conn = sqlite3.connect(Path(self._tmp.name) / "session-store.db")
+        conn.execute(
+            "INSERT INTO sessions VALUES (?,?,?,'local','main',?,?,?)",
+            (ancient, "/tmp/x", "acme/portal", "Very old secret", old, old),
+        )
+        conn.execute(
+            "INSERT INTO turns (session_id, turn_index, user_message, "
+            "assistant_response) VALUES (?,?,?,?)",
+            (ancient, 0, "DB_PASSWORD=scopedsecret99", "ok"),
+        )
+        conn.commit()
+        conn.close()
+
+        code, out = self._run("audit", ancient)
+        self.assertEqual(code, 0)
+        self.assertIn("Very old secret", out)
+        self.assertNotIn("scopedsecret99", out)
 
     def test_no_report_runs_off_the_window(self):
         """Every view, at every width anyone actually uses.
@@ -711,8 +795,10 @@ class GovernanceTest(StoreTest):
         masked = redact.redact(f"token {token} ok")
         self.assertNotIn("ghp_A", cli.ui.trunc(masked, 20))
         # No caller may put the truncation first.
-        source = Path(cli.__file__).read_text()
-        self.assertNotIn("redact.redact(ui.trunc", source)
+        root = Path(cli.__file__).resolve().parent
+        sources = [cli.__file__] if root.suffix == ".py" else sorted(root.glob("*.py"))
+        joined = "\n".join(Path(p).read_text() for p in sources)
+        self.assertNotIn("redact.redact(ui.trunc", joined)
 
     def test_a_value_whose_closing_quote_was_cut_off_is_still_masked(self):
         """Stored text arrives truncated, so the closing quote is often gone.

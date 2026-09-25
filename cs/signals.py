@@ -392,23 +392,52 @@ _SENSITIVE_FILES: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+
+def _session_activity_window(days: int | None) -> tuple[str, tuple]:
+    """SQL fragment limiting rows to sessions active in the last `days`.
+
+    Matches `db.recent_sessions`: filter on MAX(created_at, updated_at).
+    `days` None or <= 0 means every session — no fragment.
+    The alias `s` must be in scope (JOIN sessions s …).
+    """
+    if days is not None and days > 0:
+        return (
+            "MAX(s.created_at, s.updated_at) >= datetime('now', ?)",
+            (f"-{days} days",),
+        )
+    return "", ()
+
+
 def sensitive_files(
-    conn: sqlite3.Connection, session_id: str | None = None
+    conn: sqlite3.Connection, session_id: str | None = None,
+    days: int | None = None,
 ) -> list[dict]:
     """Sessions that touched a file whose job is to hold a credential.
 
     The text scan can only find a secret that was written down in the
     conversation. `session_files` records paths created or edited; it does not
     prove that the file contents were read, so the report says only "touched".
+
+    When `session_id` is None and `days` > 0, only sessions active in that
+    window are scanned — the same window `exposures` uses for unscoped audit.
     """
     if not db.has_files(conn):
         return []
-    tool = db.optional(conn, "session_files", "tool_name")
-    sql = f"SELECT session_id, file_path, {tool} FROM session_files"
-    params: tuple = ()
+    tool = db.optional(conn, "session_files", "tool_name", alias="f")
+    sql = f"SELECT f.session_id, f.file_path, {tool} FROM session_files f"
+    params: list = []
+    where: list[str] = []
     if session_id:
-        sql += " WHERE session_id = ?"
-        params = (session_id,)
+        where.append("f.session_id = ?")
+        params.append(session_id)
+    else:
+        clause, window = _session_activity_window(days)
+        if clause:
+            sql += " JOIN sessions s ON s.id = f.session_id"
+            where.append(clause)
+            params.extend(window)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
 
     per: dict[str, dict] = {}
     for sid, path, tool in conn.execute(sql, params):
@@ -525,7 +554,8 @@ def _wrote_files(conn: sqlite3.Connection, session_ids: list[str]) -> set[str]:
 
 
 def _checkpoint_text(
-    conn: sqlite3.Connection, session_id: str | None
+    conn: sqlite3.Connection, session_id: str | None,
+    days: int | None = None,
 ) -> list[tuple[str, str]]:
     """(session id, prose) for the latest checkpoint of each session.
 
@@ -533,6 +563,8 @@ def _checkpoint_text(
     say things like "set DB_PASSWORD in the config". They are a different
     table from `turns`, so scanning turns alone left them unread. `cs show`
     opens only the latest checkpoint, so the audit scans exactly that record.
+
+    Unscoped calls honour the same activity window as `exposures`.
     """
     if not db._has_table(conn, "checkpoints"):
         return []
@@ -540,19 +572,26 @@ def _checkpoint_text(
     visible = [name for name in ("next_steps", "work_done") if name in columns]
     if not visible or "session_id" not in columns:
         return []
-    sql = f"SELECT session_id, {', '.join(visible)} FROM checkpoints"
+    sql = f"SELECT c.session_id, {', '.join('c.' + n for n in visible)} FROM checkpoints c"
+    where: list[str] = []
+    params: list = []
     if "checkpoint_number" in columns:
-        sql += """ c WHERE checkpoint_number = (
+        where.append("""c.checkpoint_number = (
                     SELECT MAX(newer.checkpoint_number)
                     FROM checkpoints newer
                     WHERE newer.session_id = c.session_id
-                  )"""
-    params: tuple = ()
+                  )""")
     if session_id:
-        sql += " AND c.session_id = ?" if "checkpoint_number" in columns else (
-            " WHERE session_id = ?"
-        )
-        params = (session_id,)
+        where.append("c.session_id = ?")
+        params.append(session_id)
+    else:
+        clause, window = _session_activity_window(days)
+        if clause:
+            sql += " JOIN sessions s ON s.id = c.session_id"
+            where.append(clause)
+            params.extend(window)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     def bullets(text: str) -> list[str]:
         picked = []
         in_code = False
@@ -578,18 +617,31 @@ def _checkpoint_text(
     ]
 
 
-def exposures(conn: sqlite3.Connection, session_id: str | None = None) -> list[dict]:
+def exposures(
+    conn: sqlite3.Connection, session_id: str | None = None,
+    days: int | None = None,
+) -> list[dict]:
     """Sessions holding credential-shaped text, worst first.
 
     A finding names the kind and where it is. It never carries the value:
     an audit that prints the secret has simply leaked it somewhere new.
+
+    When `session_id` is set, that session is scanned in full. When it is
+    None and `days` > 0, only sessions whose MAX(created_at, updated_at)
+    falls in the window are scanned — bare `cs audit` defaults to 30 days.
+    `days` None or <= 0 means the whole store.
     """
     sql = """SELECT t.session_id, t.turn_index, t.user_message, t.assistant_response
              FROM turns t"""
-    params: tuple = ()
+    params: list = []
     if session_id:
         sql += " WHERE t.session_id = ?"
-        params = (session_id,)
+        params.append(session_id)
+    else:
+        clause, window = _session_activity_window(days)
+        if clause:
+            sql += " JOIN sessions s ON s.id = t.session_id WHERE " + clause
+            params.extend(window)
 
     # One row per session and side. A prompt finding is proven to have been
     # pasted by the user; a reply finding is only proven to be assistant
@@ -613,13 +665,15 @@ def exposures(conn: sqlite3.Connection, session_id: str | None = None) -> list[d
                 if line:
                     entry.update(line=line, turn=where)
 
-    for sid, turn_index, prompt, reply in conn.execute(sql + " ORDER BY t.turn_index", params):
+    for sid, turn_index, prompt, reply in conn.execute(
+        sql + " ORDER BY t.turn_index", params
+    ):
         for side, text in (("you", prompt), ("agent", reply)):
             record(sid, side, "turn", turn_index, text)
 
     # Its own side, so a checkpoint finding is never reported as a turn you
     # could open — there is no turn number to open it at.
-    for sid, prose in _checkpoint_text(conn, session_id):
+    for sid, prose in _checkpoint_text(conn, session_id, days=days):
         record(sid, "checkpoint", "checkpoint", 0, prose)
 
     if not per:
@@ -812,20 +866,28 @@ def _command(text: str, at: int, span: int = 160) -> str:
 
 
 def destructive(
-    conn: sqlite3.Connection, session_id: str | None = None
+    conn: sqlite3.Connection, session_id: str | None = None,
+    days: int | None = None,
 ) -> list[dict]:
     """Destructive commands the sessions show, most certain first.
 
     One row per session, kind and basis — the same shape `exposures` uses,
     and for the same reason: `rm -rf` offered eight times in one explanation
     is one thing to look at, not eight.
+
+    Unscoped calls honour the same activity window as `exposures`.
     """
     sql = """SELECT t.session_id, t.turn_index, t.user_message, t.assistant_response
              FROM turns t"""
-    params: tuple = ()
+    params: list = []
     if session_id:
         sql += " WHERE t.session_id = ?"
-        params = (session_id,)
+        params.append(session_id)
+    else:
+        clause, window = _session_activity_window(days)
+        if clause:
+            sql += " JOIN sessions s ON s.id = t.session_id WHERE " + clause
+            params.extend(window)
 
     per: dict[tuple[str, str, str], dict] = {}
     for sid, turn_index, prompt, reply in conn.execute(

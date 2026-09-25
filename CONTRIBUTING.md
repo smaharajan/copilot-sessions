@@ -43,7 +43,7 @@ Ten modules, one job each. Keeping the seams is most of the design:
 | `hooks.py` | hooks configured for the next session | the store |
 | `mcp.py` | MCP servers configured for the next session | the store |
 | `context.py` | instruction files on disk | the store |
-| `cli.py` | commands, dispatch, the interactive UI | — |
+| `cli/` | commands, dispatch, the interactive UI (package) | — |
 
 `db.py` returns plain tuples, never formatted strings. The split between
 `db.py` and `signals.py` is the split between **recorded** and **inferred** —

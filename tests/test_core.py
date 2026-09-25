@@ -284,6 +284,31 @@ class CSTest(StoreTest):
         self.assertEqual(db.session_names(), {})
         self.assertIsNone(db.session_name("sess-alpha"))
 
+    def test_session_names_cache_refreshes_when_a_workspace_changes(self):
+        """Two reads agree; rewriting workspace.yaml invalidates the cache."""
+        import time
+
+        from cs import db
+
+        self._name_session(
+            "sess-alpha", "name: First title\nuser_named: true\n"
+        )
+        first = db.session_names()
+        second = db.session_names()
+        self.assertEqual(first, second)
+        self.assertEqual(first["sess-alpha"][0], "First title")
+
+        # Bump mtime by rewriting; a same-second rewrite still changes size
+        # when the name grows, and macOS gives ns resolution either way.
+        self._name_session(
+            "sess-alpha", "name: Renamed later\nuser_named: true\n"
+        )
+        time.sleep(0.01)
+        refreshed = db.session_names()
+        self.assertEqual(refreshed["sess-alpha"][0], "Renamed later")
+        self.assertNotEqual(first["sess-alpha"][0], refreshed["sess-alpha"][0])
+
+
     def test_workspace_names_stay_inside_session_state(self):
         from cs import db
 
@@ -2942,6 +2967,45 @@ class CSTest(StoreTest):
         code2, out2 = self._run("show", "#1")
         self.assertEqual(code2, 0)
         self.assertIn("Build Three.js portal", out2)
+
+    def test_legacy_index_is_read_until_a_listing_rewrites_it(self):
+        """#N kept working when the map left COPILOT_HOME.
+
+        An existing `$COPILOT_HOME/.cs-last-index` is still consulted when the
+        config-home file is absent. The next `_save_index` writes only under
+        `CS_CONFIG_HOME`, leaves the legacy file alone, and subsequent
+        resolves prefer the new path.
+        """
+        from cs.cli import (
+            _index_file,
+            _legacy_index_file,
+            _resolve_ref,
+            _save_index,
+        )
+
+        legacy = _legacy_index_file()
+        legacy.write_text("1=sess-alpha\n")
+        new = _index_file()
+        if new.exists():
+            new.unlink()
+
+        self.assertEqual(_resolve_ref("#1"), "sess-alpha")
+        self.assertFalse(new.exists())
+
+        _save_index({1: "sess-alpha", 2: "sess-other"})
+        self.assertTrue(new.exists())
+        self.assertEqual(
+            dict(line.split("=", 1) for line in new.read_text().splitlines()),
+            {"1": "sess-alpha", "2": "sess-other"},
+        )
+        # Legacy file is left in place; we simply stop writing there.
+        self.assertTrue(legacy.exists())
+        self.assertEqual(legacy.read_text(), "1=sess-alpha\n")
+
+        # A newer map under config home wins even if legacy still says otherwise.
+        legacy.write_text("1=sess-stale\n")
+        self.assertEqual(_resolve_ref("#1"), "sess-alpha")
+        self.assertEqual(_resolve_ref("#2"), "sess-other")
 
     def test_resume_chdirs_to_session_cwd(self):
         from cs import cli

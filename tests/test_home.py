@@ -18,13 +18,14 @@ class HomeMenuTest(StoreTest):
         for wanted in ("Autonomy", "Handoffs", "Security", "Efficiency",
                        "Hooks", "Theme"):
             self.assertIn(wanted, labels)
-        # The Improve group and Working days are commented out of the menu,
-        # but all four commands still run when typed. A row on the menu and a
-        # command that works are two separate things, and asserting both
-        # halves together is what keeps a hidden view from quietly rotting.
-        for hidden in ("Practice", "Rhythm", "Context", "Working days"):
-            self.assertNotIn(hidden, labels)
-        for command in ("coach", "rhythm", "context", "timeline", "hooks"):
+        # Improve is back on the menu; Working days stays off. Typed commands
+        # still have to work even when a row is hidden — asserting both halves
+        # keeps a restored or retired view from quietly rotting.
+        for wanted in ("Practice", "Rhythm", "Context", "Standup"):
+            self.assertIn(wanted, labels)
+        self.assertNotIn("Working days", labels)
+        for command in ("standup", "coach", "rhythm", "context", "timeline",
+                        "hooks"):
             self.assertEqual(self._run(command)[0], 0, command)
 
     def test_group_headings_follow_their_rows(self):
@@ -720,12 +721,13 @@ class HomeMenuTest(StoreTest):
                              _action, _asks in cli._home_items(period)}
                 self.assertIn(said, described["Efficiency"])
                 self.assertIn(said, described["AI spend"])
+                self.assertIn(said, described["Security"])
                 # And a row that counts nothing says nothing about a window.
                 self.assertNotIn(said, described["MCP servers"])
 
     def test_every_counting_view_takes_all_from_the_shell_too(self):
         """The menu is not the only way in, so `cs cost all` has to work."""
-        for command in ("timeline", "cost", "agents", "stats"):
+        for command in ("timeline", "cost", "agents", "stats", "audit"):
             with self.subTest(command=command):
                 code, out = self._run(command, "all")
                 self.assertEqual(code, 0)
@@ -1246,9 +1248,8 @@ class MenuIconTest(StoreTest):
                 self.assertTrue(icon.strip(), f"{label} has no icon")
 
     def test_no_icon_is_too_new_for_a_terminal_font(self):
-        """Including the rows that are commented off the menu — their icons
-        are kept in the table so that restoring a row cannot walk this bug
-        back in with it."""
+        """Every glyph in the table, including ones not currently on a row —
+        so adding a menu entry cannot walk a missing-glyph bug back in."""
         from cs import ui
 
         for name, (emoji, _) in ui._MENU_GLYPHS.items():
