@@ -11,6 +11,8 @@ from __future__ import annotations
 
 # Intentionally re-exported onto ``cs.cli`` for callers/tests that patch or
 # read ``cli.shutil``, ``cli.db``, etc. — used by lifted function globals.
+import hashlib  # noqa: F401
+import json  # noqa: F401
 import os  # noqa: F401
 import re  # noqa: F401
 import shutil  # noqa: F401
@@ -50,6 +52,7 @@ from . import (  # noqa: E402
     home,
     inventory,
     listing,
+    ops,
     practice_cmds,
     reports,
     resume,
@@ -71,6 +74,7 @@ _SUBMODULES = (
     workflow,
     listing,
     analysis,
+    ops,
     home,
     dispatch,
 )

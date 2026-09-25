@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Operations and trust.** `cs watch` (Watch live, in Today) is a live pane
+  for the session running now — burn rate, budget left, last tool and last
+  failure — re-read every 5 seconds from the store and the tail of the
+  session's event log, with the home screen's timer discipline. `cs doctor`
+  (Reference) checks Python, the store and its schema, the event logs, the
+  config and cache directories, the terminal, the mouse ABI and the glyph
+  mode, each with a fix, and takes `--json`. The home status line says
+  `schema changed · cs doctor` when the store's schema version is unknown or
+  an expected table or column is missing. `cs rollup [N|all] --json` (Team
+  rollup, in Measure) is counts and rates only, with repositories as salted
+  hashes.
 - **Analysis views.** `cs diff <a> <b>` compares two sessions side by side
   (stacked below 64 columns), and `d` then `d` in a listing does the same;
   `cs replay <ref>` steps through a session turn by turn with ←/→, each page

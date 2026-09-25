@@ -450,6 +450,26 @@ def save_search(name: str, term: str) -> bool:
     return _save_settings(settings)
 
 
+def rollup_salt() -> str:
+    """The salt `cs rollup` hashes repository names with, made once and kept.
+
+    Random and local: the same repository hashes the same way every time you
+    run a rollup, so two weeks can be compared, but nobody holding only the
+    rollup can recover the name. If the settings cannot be written, a fresh
+    salt is used for this run only.
+    """
+    import secrets
+
+    settings = _load_settings()
+    salt = settings.get("rollup_salt")
+    if isinstance(salt, str) and len(salt) >= 16:
+        return salt
+    salt = secrets.token_hex(16)
+    settings["rollup_salt"] = salt
+    _save_settings(settings)
+    return salt
+
+
 # The steps ←/→ walk on the home screen's Budget row. 0 is "no limit".
 BUDGET_STEPS = (0, 5, 10, 20, 25, 50, 75, 100, 150, 200, 300, 500, 1000)
 
@@ -1204,6 +1224,10 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "anomalies": ("📈", "y"),
     "health": ("🏥", "i"),
     "patterns": ("🔣", "p"),
+    # Operations and trust.
+    "watch": ("📡", "u"),
+    "doctor": ("🔧", "f"),
+    "rollup": ("📤", "m"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
 # up) rather than from the older symbol blocks at U+2100–U+2BFF. Both are

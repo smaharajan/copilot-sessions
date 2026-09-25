@@ -2346,3 +2346,76 @@ def session_spend(conn: sqlite3.Connection, days: int) -> list[tuple[str, str, i
             ORDER BY {day}""",
         (f"-{days} days",) if days > 0 else (),
     ).fetchall()
+
+
+# ── The schema cs was built against ──────────────────────────────────
+# Copilot owns this schema and changes it between releases. `ESSENTIALS`
+# above is what makes a file a store at all; this is the fuller picture —
+# every table and column cs reads, as recorded from the store at
+# `schema_version` 8. A store that differs is not wrong, but the views that
+# lean on what changed may say less, and `cs doctor` names exactly what.
+
+KNOWN_SCHEMA_VERSIONS = (8,)
+
+EXPECTED_SCHEMA: dict[str, tuple[str, ...]] = {
+    "sessions": ("id", "cwd", "repository", "branch", "summary",
+                 "created_at", "updated_at"),
+    "turns": ("session_id", "turn_index", "user_message", "assistant_response",
+              "timestamp"),
+    "assistant_usage_events": (
+        "session_id", "turn_index", "agent_id", "model", "input_tokens",
+        "output_tokens", "cache_read_tokens", "cache_write_tokens",
+        "reasoning_tokens", "total_nano_aiu", "request_multiplier",
+        "duration_ms", "time_to_first_token_ms", "initiator",
+        "reasoning_effort", "finish_reason", "created_at"),
+    "checkpoints": ("session_id", "checkpoint_number", "overview", "work_done",
+                    "technical_details", "important_files", "next_steps",
+                    "created_at"),
+    "session_files": ("session_id", "file_path", "tool_name", "turn_index"),
+    "session_refs": ("session_id", "ref_type", "ref_value", "created_at"),
+    "search_index": ("content", "session_id", "source_type"),
+}
+
+
+def schema_version(conn: sqlite3.Connection) -> int | None:
+    """The store's own `schema_version`, or None when it keeps none."""
+    if not _has_table(conn, "schema_version"):
+        return None
+    try:
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row and isinstance(row[0], int) else None
+
+
+def schema_drift(conn: sqlite3.Connection) -> dict:
+    """How this store differs from `EXPECTED_SCHEMA`. Never raises.
+
+    `drifted` is True for a store that declares a schema version cs has not
+    seen, or that has lost a table or column cs expects. A store with no
+    `schema_version` at all is an older Copilot: its gaps are listed but it
+    is not called drifted, because every view already degrades for it.
+    """
+    out: dict = {"version": None, "known_version": False, "missing_tables": [],
+                 "missing_columns": {}, "drifted": False}
+    try:
+        version = schema_version(conn)
+        out["version"] = version
+        out["known_version"] = version in KNOWN_SCHEMA_VERSIONS
+        for table, columns in EXPECTED_SCHEMA.items():
+            if not _has_table(conn, table):
+                out["missing_tables"].append(table)
+                continue
+            present = {row[1] for row in conn.execute(
+                f"PRAGMA table_info('{table}')")}
+            gone = [column for column in columns if column not in present]
+            if gone:
+                out["missing_columns"][table] = gone
+    except sqlite3.Error as error:
+        out["error"] = str(error)
+        out["drifted"] = True
+        return out
+    out["drifted"] = version is not None and (
+        not out["known_version"] or bool(out["missing_tables"])
+        or bool(out["missing_columns"]))
+    return out

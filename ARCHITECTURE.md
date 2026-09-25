@@ -960,6 +960,13 @@ Feature by feature, an absence costs exactly this much:
 | No colour (`TERM=dumb`, piped) | ANSI is suppressed at import time in `ui.py` |
 | No usable terminal | `_interactive_listing` falls back to the plain listing |
 
+**Schema drift.** `db.EXPECTED_SCHEMA` and `KNOWN_SCHEMA_VERSIONS` record what
+cs was built against; `db.schema_drift()` compares, and never raises. Home
+reads it on start and on each refresh (a few `PRAGMA table_info` calls, no
+log reads) and shows `schema changed · cs doctor`; `cs doctor` lists the
+difference. A store without `schema_version` is treated as an older Copilot,
+not as drift.
+
 ---
 
 ## Testing approach

@@ -42,26 +42,56 @@ needs nothing beyond Python itself.
   420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 96 sub-agents run · 2 mcp
     activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆ 120 days
   ───────────────────────────────────────────────────────────────────────────
-    FIND  ─────────────────────────────────────────────────────────────────
-  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
-     📚  All sessions      including the quiet and automated ones
+    TODAY  ──────────────────────────────────────────────────────────────
+  ▌  👉  Next up           open handoffs, cut-off endings, stuck loops, wip, pins
+     📣  Standup           today's brief: what moved, handoffs, risks · last 30 days
+     🌙  End of day        commits, PRs, handoffs, spend and failures since midnight
+     📆  Weekly review     7 days against the 7 before: spend, failures, habits
+     💳  Budget            no daily limit · ←/→ sets one
+     📡  Watch live        the session running now: burn rate, budget, last tool
+    FIND  ───────────────────────────────────────────────────────────────
+     🕒  Recent sessions   browse, read and resume · last 7 days
+     📌  Pinned            sessions you marked to keep handy
+     📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-    MEASURE  ──────────────────────────────────────────────────────────────
+     🔭  Similar work      like this, the sessions that shipped something first
+     💬  My asks           what you opened each session asking for · last 30 days
+     🔖  Saved searches    pick one and run it live
+     📜  File history      every session, agent and turn that touched a file
+     🎬  Replay            step through a session turn by turn with ←/→
+    MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
      📊  Stats             commits, PRs, files and what they cost · last 30 days
      💰  AI spend          credits by model, repository and day · last 30 days
      🔋  Efficiency        cache, rate multiplier, latency, reasoning · last 30 days
      👥  Delegation        you vs the main agent vs sub-agents · last 30 days
-    GOVERN  ───────────────────────────────────────────────────────────────
+     🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
+     🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
+     📈  Spend anomalies   days and sessions over 2× their usual, and why · last 30 days
+     📐  Compare sessions  two sessions side by side: cost, tools, output
+     📤  Team rollup       counts and rates to share, repos hashed · last 30 days
+    GOVERN  ─────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text · last 30 days
-    REFERENCE  ────────────────────────────────────────────────────────────
-     🎓  Skills            what Copilot can load here versus used
-     🤖  Agents            the same, for the agents you have defined
+     💥  Tool failures     which tools fail, where, worst sessions · last 30 days
+     🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
+     🏁  Unclean endings   sessions cut off by an error, length or filter · last 30 days
+    IMPROVE  ────────────────────────────────────────────────────────────
+     🎯  Practice          habits the record shows, worst first · last 30 days
+     🎵  Rhythm            when the work actually happens · last 30 days
+     📍  Context           what this repo hands the agent before you type
+     🏥  Repo health       this repo: spend, failures, busiest files, loose ends
+     🔣  Prompt patterns   how you open a session vs how it turns out · last 30 days
+     🚮  Clean-up          stale pins, quiet wip, handoffs nobody took · suggests only
+    REFERENCE  ──────────────────────────────────────────────────────────
+     🎓  Skills            what Copilot can load here, what was used, when last
+     🤖  Agents            the same for your agents, and whether their model held
      📋  Instructions      what every session here is told before you type
-     🔔  Hooks             what Copilot runs around a session, and what's missing
+     🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
+     🔧  Doctor            can cs see the store, logs, config and terminal?
+     🎨  Theme             Dark · choose from 20 palettes
      💡  Help              every command and every key
    ↑↓ move · ↵ open · type to find · / search text · q quit
 ```
@@ -201,6 +231,19 @@ card for the repository you are in, and **`cs patterns`** lines up how you
 open a session against how it turns out, with sample sizes and the reminder
 that it is correlation, not causation. `cs skills` and `cs profiles` gain
 *invoked*, *last used* and — for agents — whether the declared model held.
+
+### 🩺 Running it with confidence
+
+**`cs watch`** (Watch live) is a small live pane for the session running now —
+burn rate over the last ten minutes, budget left today, the last tool it
+called and the last one that failed — re-read every five seconds from the
+store and the tail of the session's event log. **`cs doctor`** checks what cs
+depends on — Python, the store and its schema, the event logs, the config and
+cache directories, the terminal, the mouse protocol and the glyph mode — and
+prints pass, warn or fail with a fix for each. If Copilot changes its schema
+under cs, the home screen's status line says `schema changed · cs doctor`.
+**`cs rollup [N|all] --json`** is a team-shareable summary: counts and rates
+only, with repositories replaced by salted hashes.
 
 ### 🧾 What actually happened in a session
 
@@ -405,6 +448,9 @@ reasoning behind them.
   digest is cached in `~/.cache/cs/events-digest.json` (honours
   `XDG_CACHE_HOME`); tool output, prompts and replies are never cached.
 - **No network code.** Nothing is uploaded, copied or phoned home.
+- `cs rollup` is built to be shared: counts and rates only — no prompts,
+  replies, ids, paths, names or models — with each repository replaced by a
+  salted SHA-256 hash whose salt stays in your settings file.
 - Credentials are **masked at the render edge**, so nothing secret-shaped
   reaches your screen, scrollback or a screen-share — files and pipes included.
 - Stored text is treated as **untrusted input**: escape sequences that would

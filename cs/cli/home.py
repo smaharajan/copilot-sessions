@@ -45,6 +45,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_recent, cmd_search
+from .ops import cmd_doctor, cmd_rollup, cmd_watch, schema_notice
 from .practice_cmds import cmd_coach, cmd_rhythm, cmd_standup
 from .reports import (
     cmd_cost,
@@ -107,6 +108,9 @@ def _home_items(period: int = 30,
          (f"daily limit {limit:g} AIU · ←/→ changes it" if limit
           else "no daily limit · ←/→ sets one"),
          cmd_budget_view, "budget"),
+        (ui.menu_icon("watch"), "Watch live",
+         "the session running now: burn rate, budget, last tool",
+         cmd_watch, ""),
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
          lambda: cmd_recent(7), ""),
@@ -169,6 +173,9 @@ def _home_items(period: int = 30,
         (ui.menu_icon("compare"), "Compare sessions",
          "two sessions side by side: cost, tools, output",
          lambda pair: cmd_diff(*pair), "pair"),
+        (ui.menu_icon("rollup"), "Team rollup",
+         f"counts and rates to share, repos hashed · {window}",
+         cmd_rollup, "period"),
         (ui.menu_icon("autonomy"), "Autonomy",
          "which sessions ran unattended · YOLO", cmd_yolo, ""),
         (ui.menu_icon("handoff"), "Handoffs",
@@ -228,6 +235,9 @@ def _home_items(period: int = 30,
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
          cmd_mcp, ""),
+        (ui.menu_icon("doctor"), "Doctor",
+         "can cs see the store, logs, config and terminal?",
+         cmd_doctor, ""),
         (ui.menu_icon("theme"), "Theme",
          f"{ui.theme_label(theme)} · choose from {len(ui.THEMES)} palettes",
          ui.next_theme, "theme"),
@@ -352,7 +362,7 @@ def _home_step(shown: list[int], cursor: int, delta: int) -> int:
 def _home_status(query: str, matched: int, total: int, width: int,
                  period: int = 30, theme: str = "dark",
                  refresh_error: bool = False, refreshed: str = "",
-                 theme_error: bool = False) -> str:
+                 theme_error: bool = False, schema: bool = False) -> str:
     """The one hint line. It says what you can do, or what you have typed.
 
     One line rather than two: a key list above the menu and a second one
@@ -380,6 +390,17 @@ def _home_status(query: str, matched: int, total: int, width: int,
     note = " · not saved" if theme_error else ""
     live = (f"updated {refreshed}" if refreshed
             else f"refresh {_REFRESH_SECONDS}s")
+    if schema:
+        # Copilot's schema moved under cs. Said on the line you always see,
+        # briefly, and pointing at the one command that says what changed —
+        # the refresh time still has to survive, so it goes second.
+        for line in (
+            f" schema changed · cs doctor · {live} · ↑↓ · ↵ open · q quit ",
+            f" schema changed · cs doctor · {live} · q ",
+            f" ! schema · {live} · q ",
+        ):
+            if ui.cells(line) <= width:
+                return line
     for line in (
         f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme}{note} · "
         f"{live} · type to find · / search · q quit ",
@@ -488,6 +509,8 @@ def _refresh_home(state: dict) -> bool:
         return False
     state["refreshed"] = time.strftime("%H:%M:%S")
     state.pop("refresh_error", None)
+    # A handful of PRAGMAs: cheap enough for the heartbeat, and it reads no log.
+    state["schema_drift"] = schema_notice()
     return True
 
 
@@ -1005,7 +1028,8 @@ def _home_tui(screen, state: dict):
                                  state.get("period", 30), active_theme,
                                  state.get("refresh_error", False),
                                  state.get("refreshed", ""),
-                                 state.get("theme_error", False)),
+                                 state.get("theme_error", False),
+                                 state.get("schema_drift", False)),
                     width, theme["status"])
             screen.refresh()
 
@@ -1136,6 +1160,7 @@ def cmd_home() -> None:
         "activity": activity,
         "theme": ui.theme_name(),
         "refreshed": time.strftime("%H:%M:%S"),
+        "schema_drift": schema_notice(),
     }
     _HOME_ACTIVE = True
     try:
@@ -1212,6 +1237,9 @@ def cmd_help() -> None:
                           and which are past the length Copilot reads
     cs mcp [name]         MCP servers wired up — local, remote, and what they
                           may call
+    cs doctor             Can cs see the store, its schema, the event logs, the
+                          config and cache dirs and the terminal? Each check
+                          says pass, warn or fail, with the fix
     cs hooks [event]      Commands Copilot runs on the session lifecycle, how
                           often each event ran and failed, and which point at
                           a script that is gone
@@ -1221,6 +1249,8 @@ def cmd_help() -> None:
                           turns that drove them (model, effort, cache)
     cs diff <a> <b>       Two sessions side by side: cost, turns, models, cache,
                           tools, files, commits and PRs, duration
+    cs rollup [N|all]     Counts and rates to share with a team — no text, ids,
+                          paths or names; repositories are salted hashes
 
   {ui.BOLD}Improve{ui.RST}
     cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
@@ -1265,6 +1295,8 @@ def cmd_help() -> None:
     cs untag <ref> <tag>  Remove a tag
     cs budget [N|clear]   Daily AIU budget — show, set, or clear
     cs budget --check     One line, exit 1 when over budget — for hooks/scripts
+    cs watch              Live pane for the session running now: burn rate,
+                          budget left, last tool, last failure (every 5s; q)
                           {ui.DIM}Stored in ~/.config/cs/settings.json · home header
                           colours amber at 70% and rose when over.{ui.RST}
 
@@ -1302,7 +1334,7 @@ def cmd_help() -> None:
                           agents, repos, skills, profiles, standup, failures,
                           loops, subagents, switches, endings, next, eod,
                           weekly, similar, asks, saved, cleanup, budget,
-                          diff, anomalies, health, patterns,
+                          diff, anomalies, health, patterns, doctor, rollup,
                           files --history{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)

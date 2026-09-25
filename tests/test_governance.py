@@ -237,6 +237,13 @@ class GovernanceTest(StoreTest):
             "handoffs": cli._render_handoffs,
             "audit": lambda: cli._render_audit(None),
         }
+        def _print_watch(cli):
+            state: dict = {}
+            cli._watch_read(state)
+            width = shutil.get_terminal_size().columns
+            for text, _role in cli._watch_lines(state, width):
+                print(text)
+
         # Views built for this width contract from the start are held to it
         # from 40 columns; the older ones above still start at 52.
         from support import _alpha_events, _write_events
@@ -263,6 +270,8 @@ class GovernanceTest(StoreTest):
             "anomalies": lambda: cli._render_anomalies(cli._anomalies_data(3650)),
             "health": lambda: cli._render_health(cli._health_data("portal")),
             "patterns": lambda: cli._render_patterns(cli._patterns_data(3650)),
+            "doctor": lambda: cli._render_doctor(cli._doctor_data()),
+            "watch": lambda: _print_watch(cli),
         }
         views.update(narrow)
         for name, render in views.items():

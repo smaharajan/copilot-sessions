@@ -45,6 +45,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_files, cmd_recent, cmd_search
+from .ops import cmd_doctor, cmd_rollup, cmd_watch
 from .practice_cmds import cmd_coach, cmd_rhythm, cmd_standup
 from .reports import (
     cmd_cost,
@@ -89,6 +90,7 @@ _COMPLETION_COMMANDS = (
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "similar", "asks", "saved", "cleanup",
     "diff", "replay", "anomalies", "health", "patterns",
+    "watch", "doctor", "rollup",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
 )
@@ -532,6 +534,22 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(build(30 if days is None else days), fmt)
         return 0
 
+    if cmd == "doctor":
+        if rest:
+            print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
+            return 1
+        export.emit(export.doctor(), fmt)
+        return 0
+
+    if cmd == "rollup":
+        days, _sort, _desc, _word, _flags, error = _report_options(
+            rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        export.emit(export.rollup(30 if days is None else days), fmt)
+        return 0
+
     if cmd == "health":
         repo, rest, error = _repo_option(rest)
         if error or rest:
@@ -970,6 +988,22 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_patterns(30 if days is None else days)
+    elif cmd == "watch":
+        if rest:
+            print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
+            return 1
+        cmd_watch()
+    elif cmd == "doctor":
+        if rest:
+            print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
+            return 1
+        cmd_doctor()
+    elif cmd == "rollup":
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_rollup(30 if days is None else days)
     elif cmd in ("cleanup", "clean-up", "tidy"):
         days, _, _, _, _, error = _report_options(rest, None, days=True)
         if error:

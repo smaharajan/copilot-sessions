@@ -30,7 +30,7 @@ Run both before opening a PR.
 
 ## Where code goes
 
-Eleven modules, one job each. Keeping the seams is most of the design:
+Eleven modules, one job each (the `cli/` package holds the views). Keeping the seams is most of the design:
 
 | Module | Owns | Must not know about |
 |---|---|---|
@@ -106,6 +106,7 @@ responsible for. Put a test next to the behaviour it describes:
 | `test_practice_rules.py` | Every `cs coach` rule, fired and silenced — one fixture each | 18 |
 | `test_practice.py` | Inferences drawn across a window of sessions (the unlisted Improve views) | 15 |
 | `test_surface.py` | Every command, run — against a full store, an empty one, and one from an older Copilot | 14 |
+| `test_ops.py` | Watch (tick, tail, timer discipline), doctor, the schema drift guard, and the rollup's no-fixture-text proof | 17 |
 | `test_analysis.py` | Compare, replay and its stepping, spend anomalies and their evidence, repo health, prompt patterns, agent-config columns, and the listing keys that open them | 17 |
 | `test_today.py` | Next up, end of day, weekly review, similar work, my asks and copying one, saved searches, file history, the budget check and row, clean-up | 22 |
 | `test_evidence.py` | Tool failures, stuck loops, sub-agents, model switches, unclean endings, hook runs and recorded autonomy — each with its evidence and masked | 19 |

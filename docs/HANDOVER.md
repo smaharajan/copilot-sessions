@@ -16,7 +16,7 @@ home screen (`cs` / `cs home`), in five phases:
 | 2 | Evidence views: tool failures, stuck loops, hook health, autonomy evidence, sub-agents, model switches, unclean endings | **done** |
 | 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | **done** |
 | 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | **done** |
-| 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | next |
+| 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | **done** |
 
 The standing rules are in `AGENTS.md` and `CONTRIBUTING.md`: the store is
 opened `mode=ro`, nothing is written under `COPILOT_HOME`, stored text is
@@ -265,9 +265,107 @@ maintainer decision.
   opens the comparison; the 60 s refresh advanced after a hover and after a
   view.
 
+## Phase 5 — operations and trust
+
+All in `cs/cli/ops.py`, plus `db.EXPECTED_SCHEMA` / `db.schema_drift`.
+
+| Command | Home row | Notes |
+|---|---|---|
+| `cs watch` | Watch live → Today (last row) | `WATCH_SECONDS = 5`; tail from the last offset, first look reads the last 256 KB, at most 4 MB a tick |
+| `cs doctor [--json]` | Doctor → Reference | nine checks, pass/warn/fail with a fix; writes nothing (`os.access` only) |
+| schema drift guard | home status line; Doctor | `KNOWN_SCHEMA_VERSIONS = (8,)`; no `schema_version` = older store, not drift |
+| `cs rollup [N\|all] --json` | Team rollup → Measure (period) | counts and rates; repos as `sha256(salt\0name)[:12]`; salt in settings |
+
+Decisions worth knowing:
+
+- Watch picks the most recently active session each tick, so a new session
+  started elsewhere takes over the pane. The burn rate is spend billed in
+  the last `BURN_MINUTES = 10`.
+- The watch loop re-arms `timeout` before every `getch` (at most 1 s) and
+  re-reads only on its 5-second deadline, which is kept, not reset, by
+  keypresses — the same discipline as home. Tested with a screen that
+  records every `timeout` call.
+- Doctor's store check does not try a write to prove read-only: the store
+  is opened through `db.connect()` with `mode=ro`, and that is reported.
+- The drift check runs on home start and on each refresh: a few `PRAGMA
+  table_info` calls on a fresh read-only connection, measured at 0.07 s
+  including import. It reads no event log.
+- The rollup leaves out model names as well as text, ids, paths and user
+  names. `tests/test_ops.py` collects every text value in the fixture store
+  (ids, titles, repositories, directories, prompts, replies, paths, ref
+  values, models) and asserts none appears in `rollup`, `rollup all
+  --json` or the paged form. Schema enumerations such as finish reasons are
+  vocabulary and are left out of that check.
+
+### Measured (reference store, warm, read-only)
+
+| Run | Time |
+|---|---|
+| `cs doctor` | 0.24 s |
+| `cs rollup --json` | 0.23 s |
+| `cs watch`, piped snapshot | 0.42 s |
+| watch tick, first / next | 0.20 / 0.03 s |
+| home start data, cold process | 1.64 s |
+
+## Final state
+
+All 27 items are shipped and selectable from the home screen:
+
+| Group | Rows |
+|---|---|
+| Today | Next up · Standup · End of day · Weekly review · Budget · Watch live |
+| Find | Recent sessions · Pinned · All sessions · Search · Similar work · My asks · Saved searches · File history · Replay |
+| Measure | Repositories · Stats · AI spend · Efficiency · Delegation · Sub-agents · Model switches · Spend anomalies · Compare sessions · Team rollup |
+| Govern | Autonomy · Handoffs · Security · Tool failures · Stuck loops · Unclean endings |
+| Improve | Practice · Rhythm · Context · Repo health · Prompt patterns · Clean-up |
+| Reference | Skills · Agents · Instructions · Hooks · MCP servers · Doctor · Theme · Help |
+
+Working days stays commented out. CLI-only mechanics are reachable through
+their rows: the budget check through Budget, schema drift through Doctor and
+the status line, extensions (`hooks`, `yolo`, `show`, `files --history`,
+`skills`, `profiles`) through their existing rows.
+
+Final verification:
+
+- `ruff check cs tests` clean; `python -m unittest discover -s tests` — 703
+  tests, OK on Python 3.12 and 3.10 locally; CI green on 3.10 and 3.13 plus
+  the secrets scan for every pushed phase.
+- tmux, `TERM=xterm-ghostty`, at 100x40 and 40x24: all 44 non-theme rows
+  found by typing and opened (term, ref and pair rows with typed input), and
+  Esc returned home from each; arrows reach Help; the theme gallery opens
+  and cancels; ←/→ on Budget changes the limit; Watch live advanced its own
+  timestamp every 5 s and `q` returned; home `updated HH:MM:SS` advanced 60
+  s after a mouse hover and 60 s after returning from a view.
+- The drift notice showed at 40 and 100 columns with the refresh time kept,
+  on a scratch copy of the store with `schema_version` 99.
+- Read-only proof: a hash listing of the synthetic `COPILOT_HOME` (store and
+  `session-state` log) was byte-identical after every phase's checks, and
+  `test_surface` asserts the same for the whole tree after every command,
+  with and without `--json`.
+
+## Deferred, with reasons
+
+- **Five views over the 1-second warm target** on the reference store:
+  `asks` 1.29 s, `patterns` 1.31 s, `health` 2.11 s, `skills` 1.83 s,
+  `profiles` 1.71 s. `skills` was 1.81 s before this work (its reference
+  scan), and `health` includes that scan. The rest is masking opening
+  prompts. Going faster needs a cross-process cache of masked text or of
+  reference scans, which the "counts and ids only" cache rule forbids.
+  Needs a maintainer decision.
+- **The listing's stuck-loop marker reads the digest cache only**, so it
+  appears once any events-backed view has read those logs. Reading logs from
+  a listing would put a cold scan on its heartbeat.
+- **The rollup page is not in the width test.** It is a JSON document; the
+  reader and `less` wrap it. Its readings are covered by `--json` tests.
+- **Release.** No version bump, tag or GitHub release was made: the
+  maintainer will review and release. `CHANGELOG.md` keeps everything under
+  Unreleased.
+
 ## What's next
 
-Phase 5: watch, doctor, the schema drift guard, and team rollup.
+Maintainer review, then a release: bump the version in `pyproject.toml` and
+`cs/__init__.py`, move Unreleased in `CHANGELOG.md` under the new version, and
+tag.
 
 ## Earlier history
 

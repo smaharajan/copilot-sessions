@@ -41,6 +41,7 @@ VIEWS = (
     "standup", "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "similar", "asks", "saved", "file-history",
     "cleanup", "budget", "diff", "anomalies", "health", "patterns",
+    "doctor", "rollup",
 )
 
 # What someone actually types to reach each of those. The names above are what
@@ -53,7 +54,7 @@ DATA_COMMANDS = (
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "similar", "asks", "saved", "cleanup", "budget",
-    "diff", "anomalies", "health", "patterns",
+    "diff", "anomalies", "health", "patterns", "doctor", "rollup",
 )
 
 
@@ -499,6 +500,19 @@ def health(repo: str = ".") -> dict:
 def patterns(days: int) -> dict:
     from .cli.analysis import _patterns_data
     return {"view": "patterns", **_patterns_data(days)}
+
+
+# ── Operations ───────────────────────────────────────────────────────
+
+def doctor() -> dict:
+    from .cli.ops import _doctor_data
+    return {"view": "doctor", **_doctor_data()}
+
+
+def rollup(days: int) -> dict:
+    """Counts and rates only — see `cli.ops._rollup_data` for what is left out."""
+    from .cli.ops import _rollup_data
+    return {"view": "rollup", **_rollup_data(days)}
 
 
 def emit(payload: dict, fmt: str = "json") -> None:

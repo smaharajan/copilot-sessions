@@ -30,24 +30,56 @@ single line:
   420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 96 sub-agents run · 2 mcp
     activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆▅▃▅▅▂▁▅▆▄▆▆  ▄▆▆▇▄ ▁▅▂▆█▆  ▆ 120 days
   ───────────────────────────────────────────────────────────────────────────
-    FIND  ─────────────────────────────────────────────────────────────────
-  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
-     📚  All sessions      including the quiet and automated ones
+    TODAY  ──────────────────────────────────────────────────────────────
+  ▌  👉  Next up           open handoffs, cut-off endings, stuck loops, wip, pins
+     📣  Standup           today's brief: what moved, handoffs, risks · last 30 days
+     🌙  End of day        commits, PRs, handoffs, spend and failures since midnight
+     📆  Weekly review     7 days against the 7 before: spend, failures, habits
+     💳  Budget            no daily limit · ←/→ sets one
+     📡  Watch live        the session running now: burn rate, budget, last tool
+    FIND  ───────────────────────────────────────────────────────────────
+     🕒  Recent sessions   browse, read and resume · last 7 days
+     📌  Pinned            sessions you marked to keep handy
+     📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-    MEASURE  ──────────────────────────────────────────────────────────────
+     🔭  Similar work      like this, the sessions that shipped something first
+     💬  My asks           what you opened each session asking for · last 30 days
+     🔖  Saved searches    pick one and run it live
+     📜  File history      every session, agent and turn that touched a file
+     🎬  Replay            step through a session turn by turn with ←/→
+    MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
      📊  Stats             commits, PRs, files and what they cost · last 30 days
      💰  AI spend          credits by model, repository and day · last 30 days
      🔋  Efficiency        cache, rate multiplier, latency, reasoning · last 30 days
      👥  Delegation        you vs the main agent vs sub-agents · last 30 days
-    GOVERN  ───────────────────────────────────────────────────────────────
+     🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
+     🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
+     📈  Spend anomalies   days and sessions over 2× their usual, and why · last 30 days
+     📐  Compare sessions  two sessions side by side: cost, tools, output
+     📤  Team rollup       counts and rates to share, repos hashed · last 30 days
+    GOVERN  ─────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text · last 30 days
-    REFERENCE  ────────────────────────────────────────────────────────────
-     🎓  Skills            what Copilot can load here versus used
-     🤖  Agents            the same, for the agents you defined
+     💥  Tool failures     which tools fail, where, worst sessions · last 30 days
+     🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
+     🏁  Unclean endings   sessions cut off by an error, length or filter · last 30 days
+    IMPROVE  ────────────────────────────────────────────────────────────
+     🎯  Practice          habits the record shows, worst first · last 30 days
+     🎵  Rhythm            when the work actually happens · last 30 days
+     📍  Context           what this repo hands the agent before you type
+     🏥  Repo health       this repo: spend, failures, busiest files, loose ends
+     🔣  Prompt patterns   how you open a session vs how it turns out · last 30 days
+     🚮  Clean-up          stale pins, quiet wip, handoffs nobody took · suggests only
+    REFERENCE  ──────────────────────────────────────────────────────────
+     🎓  Skills            what Copilot can load here, what was used, when last
+     🤖  Agents            the same for your agents, and whether their model held
+     📋  Instructions      what every session here is told before you type
+     🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
+     🔧  Doctor            can cs see the store, logs, config and terminal?
+     🎨  Theme             Dark · choose from 20 palettes
      💡  Help              every command and every key
    ↑↓ move · ↵ open · type to find · / search text · q quit
 ```
@@ -262,6 +294,16 @@ As a Copilot hook, in a file under your Copilot home's `hooks/` directory:
 The hook prints the line into the session's hook output and exits 1 once the
 day is over budget. What Copilot does with a failing hook depends on the
 event; `cs hooks` will then count its runs and failures.
+
+### 📡 `cs watch` — the session running now
+
+A compact pane for the most recently active session: its turn count, the
+burn rate (AIU per minute over the last ten minutes), what it has spent,
+how much of today's budget is left, the last tool it called and the last one
+that failed. It re-reads every 5 seconds — the store, and the tail of the
+session's `events.jsonl` from where the last read stopped, never the whole
+file — and uses the home screen's timer discipline, so it keeps updating
+with no key pressed. `q` or Esc returns. Piped, it prints one snapshot.
 
 ## 🔎 Reading a session
 
@@ -1495,6 +1537,61 @@ Set `CS_REDACT=0` when you genuinely need the raw value back — it is your own
 machine, and every view tells you masking is on.
 
 ---
+
+## 🩺 Doctor, schema changes and the team rollup
+
+### 🔧 `cs doctor`
+
+```
+  ── Doctor · 8 ok · 1 warn · 0 fail ──────────────────────────────────────
+
+  ok   python
+       3.12.7
+  ok   store
+       opened read-only (mode=ro) · 420 sessions
+  warn schema
+       schema_version 9 is newer than cs knows (8)
+       → views that need what is missing will say less; update cs, or
+       report the change
+  ok   session-state
+       418 event logs
+  ok   cache dir
+       writable
+  ok   mouse
+       legacy ncurses mouse ABI · compatibility wrapper on
+```
+
+Checks Python, the store (opened read-only), its schema, the event logs, the
+config and cache directories (checked, never written), `TERM` and colours,
+the ncurses mouse ABI and whether the compatibility path for terminals that
+declare native SGR mouse input is on, and the glyph mode. `--json` for a
+script. It writes nothing.
+
+### Schema changes
+
+`db.EXPECTED_SCHEMA` records every table and column cs reads, as of
+`schema_version` 8. When a store declares a version cs has not seen, or has
+lost a table or column cs expects, the home status line says
+`schema changed · cs doctor` (the refresh time stays on the line) and
+`cs doctor` lists what differs. A store with no `schema_version` at all is an
+older Copilot; the views already degrade for it, so it is not flagged on
+home. Nothing about this can stop cs starting.
+
+### 📤 `cs rollup` — something safe to share
+
+```bash
+cs rollup 30 --json > rollup.json
+```
+
+Sessions, turns, spend, model calls, cache hit rate, tool calls and failures,
+stuck loops, sub-agent runs, unclean endings by reason, sessions that
+shipped, commits and PRs, spend per day, and a row per repository — with the
+repository replaced by the first 12 hex characters of
+`sha256(salt + name)`. The salt is made once and kept in your settings, so
+the same repository hashes the same way week to week, and nobody holding only
+the rollup can recover the name. There is no text in it: no prompts,
+replies, titles, ids, paths, user names or model names. The home row shows
+the same document in the reader.
 
 ## ⚙️ Configuration
 
