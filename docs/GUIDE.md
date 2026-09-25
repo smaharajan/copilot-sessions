@@ -282,15 +282,17 @@ The hook prints the line into the session's hook output and exits 1 once the
 day is over budget. What Copilot does with a failing hook depends on the
 event; `cs hooks` will then count its runs and failures.
 
-### 📡 `cs watch` — the session running now
+### The session running now
 
-A compact pane for the most recently active session: its turn count, the
-burn rate (AIU per minute over the last ten minutes), what it has spent,
-how much of today's budget is left, the last tool it called and the last one
-that failed. It re-reads every 5 seconds — the store, and the tail of the
-session's `events.jsonl` from where the last read stopped, never the whole
-file — and uses the home screen's timer discipline, so it keeps updating
-with no key pressed. `q` or Esc returns. Piped, it prints one snapshot.
+There is no `cs watch`. The home screen draws the session that was active in
+the last fifteen minutes under the counts: title, burn rate over ten
+minutes, budget left today, the last tool and the last failure, and a
+sparkline of that burn. Below 100 columns it is one line; at 100 and wider
+it is a small panel. It ticks about every five seconds from one indexed
+query and a bounded tail of that session's event log, and it does not move
+the 60-second refresh. A quiet store shows nothing. `cs today` puts the same
+reading at the top of one page, with what to pick up, since midnight, and
+this week.
 
 ## 🔎 Reading a session
 
@@ -488,21 +490,13 @@ cs search three.js              # punctuation FTS5 rejects — retried for you
        turn …each `assistant` message carries a `usage` block…
 ```
 
-### 🔭 `cs similar` — like this, and it shipped
+### 🔭 `cs similar <N|id>` — sessions that share this one
 
-The same query as `cs search` (phrases, `AND` / `OR` / `NEAR`), re-ranked so
-the sessions that recorded a commit or a PR come first, each showing its
-outcome — `2 commits · 1 PR`, or `no commit or PR`. Within each half the
-search's own ranking is kept.
-
-### 💬 `cs asks` — what you opened each session asking for
-
-One line per opening request: turn 0 of each session, plus the first request
-after a handoff was picked up. Each shows the turn, the session's spend and
-its outcome. `--repo .` keeps sessions from the directory you are in, and
-`--repo <name>` matches a repository or path. In a terminal it is a listing:
-press `c` to copy the whole ask, masked, with `pbcopy`, `wl-copy` or `xclip` —
-whichever exists; without one it is printed for you to copy.
+Starts from a session, not from a search. It keeps at most ten others that
+share its repository, its files, or the distinctive words of its opening
+ask, and each row says which of those overlaps put it there. A word that
+shows up in a third of the store is not distinctive. Terms are taken from
+the masked ask.
 
 ### 🔖 Saved searches
 
@@ -510,13 +504,6 @@ whichever exists; without one it is printed for you to copy.
 it; `cs saved` lists what you have kept and `cs saved weekly-infra` runs it
 again, live. They are stored under `saved_searches` in
 `~/.config/cs/settings.json`. The home row opens a picker.
-
-### 📜 `cs files <path> --history` — every touch of a file
-
-For each file matching the path: which session touched it, on which turn,
-with which tool, whether the main agent or a sub-agent made the edit (read
-from that session's event log, on demand), and the request that turn was
-answering, masked.
 
 ### 📁 `cs files` — from a file back to the work
 
@@ -662,38 +649,6 @@ that ended on a length limit or a filter is spend that bought nothing.
 Every block is independent, and a store that does not record a column simply
 does not get that block — an absent reading is left absent rather than shown
 as zero.
-
-### 🔬 `cs diff` — two sessions side by side
-
-```
-  ── Compare sessions ─────────────────────────────────────────────────────
-
-    A 1a2b3c4d  Port the importer to the new API
-    B 5e6f7a8b  Port the exporter to the new API
-
-                  A                               B
-    ──────────────────────────────────────────────────────────────────────
-    cost          18.40 AIU                       6.10 AIU
-    turns         22                              9
-    models        claude-opus-4.8                 gpt-5.5
-    cache hit     41%                             78%
-    tool calls    310 · 19 failed                 96 · 2 failed
-    shipped       1 commit · 1 PR                 2 commits · 1 PR
-    duration      2.4h                            48m
-```
-
-Values that differ are highlighted. Below 64 columns the two sessions stack,
-one block each. From a listing, `d` marks the session under the cursor (the
-status line says so) and `d` on another opens the comparison; `d` on the
-marked one clears it.
-
-### 🎬 `cs replay` — a session, a turn at a time
-
-A full-screen page per turn: the credits that turn spent as a bar against the
-dearest turn, the tools it called with failures marked `✗`, the files it
-touched, and then the turn exactly as `cs read` sets it — masked. ←/→ steps
-between turns; the scroll, find and Esc keys are the reader's. Piped, every
-turn is printed in order. `e` on a listing row opens it.
 
 ### 📈 `cs anomalies` — spend that stood out
 

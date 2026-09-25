@@ -182,58 +182,49 @@ first-token latency, reasoning share, per model.
 
 `cs standup` (alias `daily`) is an offline daily brief over the last day —
 sessions, turns, spend, what moved, handoffs, and light autonomy risks when
-cheap to ask. `cs coach`, `cs rhythm` and `cs context` sit beside it under
-**Improve** on the landing screen.
+cheap to ask. `cs coach` and `cs rhythm` stay commands; **Context**, **Repo
+health**, **Prompt patterns** and **Clean-up** are the Improve rows.
 
 ### ☀️ Today, and finding the work again
 
-The home screen now opens on a **Today** group. **`cs next`** ranks what to pick
-up — open handoffs nobody took, sessions whose last call ended in an error,
-stuck loops, sessions tagged `wip`, and pins — each with the reason it is there
-and a ready `cs resume N`. **`cs eod`** is the day since midnight (sessions,
-commits and PRs, handoffs written, spend against your budget, tool failures)
-and **`cs weekly`** is the last seven days against the seven before (spend
-trend, dearest sessions, failures that repeat across sessions, your top three
-habits); both take `--md` for paste-ready Markdown, masked. The **Budget** row
-shows the daily limit and ←/→ changes it; `cs budget --check` prints one line
-and exits 1 when over, for hooks and scripts.
+The home screen opens on one **Today** row. **`cs today`** is that page: the
+session running now, the top sessions to pick up (each with its reason and
+`cs resume N`), what happened since midnight, and this week against the week
+before. Empty sections are left off the page. **`cs next`**, **`cs eod`** and
+**`cs weekly`** (both of the last two take `--md`) are still the separate
+commands. `cs budget --check` prints one line and exits 1 when over, for
+hooks and scripts; the home header shows the same limit.
 
-Finding past work: **`cs similar <words>`** is a search that ranks sessions
-which shipped a commit or PR first; **`cs asks`** lists what you opened each
-session asking for, one line each, with outcome and cost (`c` copies one in
-the listing); **`cs search --save <name> <words>`** and **`cs saved`** keep the
-searches you run every week; **`cs files <path> --history`** shows every
-session, agent and turn that touched a file. **`cs cleanup`** lists stale pins,
-quiet `wip` tags and abandoned handoffs, with the command that would tidy each
-— it never removes anything itself.
+Finding past work: **`cs similar <N|id>`** returns at most ten sessions that
+share that session's files, repository or the distinctive words of its
+opening ask, and says which overlap it was. **`cs search --save`** and
+**`cs saved`** keep the searches you run every week. **`cs files <path>`**
+lists sessions that touched a file. **`cs cleanup`** lists stale pins, quiet
+`wip` tags and abandoned handoffs, and ends with the commands that would tidy
+them — it never removes anything itself.
 
 ### 🔬 Looking closer
 
-**`cs diff <a> <b>`** puts two sessions side by side — cost, turns, models,
-cache hit rate, tool calls and failures, files, commits and PRs, duration — and
-stacks them on a narrow window; in a listing `d` marks one and `d` on another
-compares. **`cs replay <ref>`** steps through a session a turn at a time with
-←/→, showing each turn's tools (and failures), files and credits above the
-conversation (`e` in a listing). **`cs anomalies`** flags days and sessions
-that cost more than twice the median of the fortnight before, with the turns
-that drove them — model, effort and cache hit rate. **`cs health`** is one
-card for the repository you are in, and **`cs patterns`** lines up how you
-open a session against how it turns out, with sample sizes and the reminder
-that it is correlation, not causation. `cs skills` and `cs profiles` gain
-*invoked*, *last used* and — for agents — whether the declared model held.
+**`cs anomalies`** flags days and sessions that cost more than twice the
+median of the fortnight before, shows the shape of the window, and gives one
+card per spike with the turns that drove it. **`cs health`** is a short
+verdict for the repository you are in, with the few commands worth running.
+**`cs patterns`** is one comparison of how you open a session against how it
+turns out; a habit with fewer than five sessions on either side is hidden.
+`cs skills` and `cs profiles` gain *invoked*, *last used* and — for agents —
+whether the declared model held. **`cs switches`** groups each model or
+effort change under its session and shows the spend either side.
 
 ### 🩺 Running it with confidence
 
-**`cs watch`** (Watch live) is a small live pane for the session running now —
-burn rate over the last ten minutes, budget left today, the last tool it
-called and the last one that failed — re-read every five seconds from the
-store and the tail of the session's event log. **`cs doctor`** checks what cs
-depends on — Python, the store and its schema, the event logs, the config and
-cache directories, the terminal, the mouse protocol and the glyph mode — and
-prints pass, warn or fail with a fix for each. If Copilot changes its schema
-under cs, the home screen's status line says `schema changed · cs doctor`.
-**`cs rollup [N|all] --json`** is a team-shareable summary: counts and rates
-only, with repositories replaced by salted hashes.
+The session running now is on the home screen, not a separate command.
+**`cs doctor`** checks what cs depends on — Python, the store and its schema,
+the event logs, the config and cache directories, the terminal, the mouse
+protocol and the glyph mode — and prints pass, warn or fail with a fix for
+each. If Copilot changes its schema under cs, the home screen's status line
+says `schema changed · cs doctor`. **`cs rollup`** is a readable report of
+counts and rates, with repositories replaced by salted hashes; **`cs rollup
+--json`** is that same reading for a pipe.
 
 ### 🧾 What actually happened in a session
 
