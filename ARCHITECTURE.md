@@ -169,6 +169,20 @@ erDiagram
     }
 ```
 
+Beside the store, Copilot keeps an event log per session at
+`session-state/<id>/events.jsonl` — one JSON object per line, `type` first.
+It records what the store does not: every tool call and whether it
+succeeded, hook runs, `allow-all` being switched on, model switches, and
+sub-agent runs with their model and token counts. `events.py` is the only
+reader. It streams a log a line at a time, skips types it was not asked for
+on a byte comparison before parsing, and reduces what is left to a digest of
+counts, names and timestamps — tool results are read for their `success`
+flag and dropped. Digests are cached in `$XDG_CACHE_HOME/cs` keyed by
+`(path, mtime_ns, size)`, written atomically, and computed in memory when the
+cache cannot be written. The log numbers steps *within* a request, not turns
+within the session, so an event is joined to a store turn on time
+(`events.turn_of`), never on its `turnId`.
+
 Two details that shape the code:
 
 - **Spend is per event, not per session.** Every listing needs a session's

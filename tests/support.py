@@ -29,6 +29,11 @@ from pathlib import Path
 _CONFIG_HOME = tempfile.mkdtemp(prefix="cs-settings-")
 os.environ["CS_CONFIG_HOME"] = _CONFIG_HOME
 atexit.register(shutil.rmtree, _CONFIG_HOME, True)
+# The event-log digest cache goes under XDG_CACHE_HOME. Pointed at scratch for
+# the same reason: the suite must never read or write a developer's cache.
+_CACHE_HOME = tempfile.mkdtemp(prefix="cs-cache-")
+os.environ["XDG_CACHE_HOME"] = _CACHE_HOME
+atexit.register(shutil.rmtree, _CACHE_HOME, True)
 
 
 class _Tty(io.StringIO):
@@ -216,13 +221,19 @@ class StoreTest(unittest.TestCase):
         # One settings file per test, so a test that applies a theme cannot
         # decide what the next one starts in.
         os.environ["CS_CONFIG_HOME"] = str(base / ".config")
+        os.environ["XDG_CACHE_HOME"] = str(base / ".cache")
         os.environ["TERM"] = "dumb"  # disable colour
+        from cs import events
+        events.reset_cache()
 
     def tearDown(self):
+        from cs import events
+        events.reset_cache()
         self._tmp.cleanup()
         os.environ.pop("COPILOT_HOME", None)
         os.environ.pop("CS_AGENTS_HOME", None)
         os.environ["CS_CONFIG_HOME"] = _CONFIG_HOME
+        os.environ["XDG_CACHE_HOME"] = _CACHE_HOME
 
     def _run(self, *args: str) -> tuple[int, str]:
         from cs.cli import main
@@ -398,3 +409,94 @@ def _add_practice_rows(base: Path) -> None:
     ])
     conn.commit()
     conn.close()
+
+
+# A credential-shaped value that must never leave a tool result. Built by
+# concatenation so the literal never appears whole in the source.
+EVENT_SECRET = "ghp_" + "Z" * 36  # gitleaks:allow
+
+
+def _event(kind: str, at: str, data: dict, agent: str | None = None) -> dict:
+    event = {"type": kind, "data": data, "id": f"e-{at}-{kind}",
+             "timestamp": f"{at}.000Z", "parentId": None}
+    if agent:
+        event["agentId"] = agent
+    return event
+
+
+def _write_events(base: Path, session_id: str, events: list) -> Path:
+    """Write a synthetic `session-state/<id>/events.jsonl`.
+
+    Items are dicts (written as Copilot writes them, `type` first) or raw
+    strings, which are written verbatim — that is how a malformed line gets
+    into a fixture.
+    """
+    import json
+
+    folder = base / "session-state" / session_id
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "events.jsonl"
+    with open(path, "w", encoding="utf-8") as handle:
+        for item in events:
+            line = item if isinstance(item, str) else json.dumps(
+                item, separators=(",", ":"))
+            handle.write(line + "\n")
+    return path
+
+
+def _tool(call: str, name: str, at: str, ok: bool, agent: str | None = None,
+          result: str = "ok") -> list[dict]:
+    """One tool call: its start and its completion."""
+    return [
+        _event("tool.execution_start", at,
+               {"toolCallId": call, "toolName": name, "turnId": "0"}, agent),
+        _event("tool.execution_complete", at,
+               {"toolCallId": call, "success": ok, "turnId": "0",
+                "model": "gpt-5.5",
+                "result": {"content": result, "detailedContent": result},
+                "toolTelemetry": {"properties": {}}}, agent),
+    ]
+
+
+def _alpha_events() -> list:
+    """sess-alpha's log: a stuck loop, a flaky hook, allow-all, a switch.
+
+    Stamps are pinned to the fixture's own turns, whose timestamps are 'x'
+    and 'y' — so they join no turn, which the views must survive.
+    """
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    t = [f"{day}T00:00:{second:02d}" for second in range(60)]
+    return [
+        _event("user.message", t[0], {"content": "make a portal"}),
+        _event("session.permissions_changed", t[1],
+               {"previousAllowAllPermissions": False,
+                "allowAllPermissions": True,
+                "previousAllowAllPermissionMode": "off",
+                "allowAllPermissionMode": "on"}),
+        *_tool("c1", "view", t[2], True),
+        # Three bash failures in a row: a loop. The result carries a secret.
+        *_tool("c2", "bash", t[3], False, result=f"token {EVENT_SECRET}"),
+        *_tool("c3", "bash", t[4], False, result="exit 1"),
+        *_tool("c4", "bash", t[5], False, result="exit 1"),
+        *_tool("c5", "bash", t[6], True),
+        _event("hook.end", t[7], {"hookType": "preToolUse", "success": True}),
+        _event("hook.end", t[8], {"hookType": "preToolUse", "success": False,
+                                  "error": {"message": EVENT_SECRET}}),
+        _event("session.model_change", t[9],
+               {"previousModel": "gpt-5.5", "newModel": "claude-opus-4.8",
+                "previousReasoningEffort": "medium", "reasoningEffort": "high",
+                "source": "model_picker"}),
+        _event("user.message", t[10], {"content": "add charts"}),
+        _event("subagent.started", t[11],
+               {"toolCallId": "s1", "agentName": "explore", "model": "gpt-5.5"}),
+        *_tool("c6", "edit", t[12], False, agent="agent-1"),
+        _event("subagent.completed", t[13],
+               {"toolCallId": "s1", "agentName": "explore",
+                "agentDisplayName": "Explore", "model": "gpt-5.5",
+                "firstDispatchedModel": "gpt-5.5",
+                "explicitModelOverride": None,
+                "modelSelectionSource": "default",
+                "totalToolCalls": 4, "totalTokens": 12000,
+                "durationMs": 9000}),
+        _event("skill.invoked", t[14], {"name": "docs", "content": "SKILL BODY"}),
+    ]

@@ -1159,6 +1159,8 @@ def cmd_help() -> None:
       arrives on its own. A #N always keeps its session: a new arrival takes
       the next free number rather than shifting the ones you already read.
     · CS_GLYPHS=ascii swaps every emoji for a plain marker.
+    · Per-session event logs are read, never written, and reduced to counts
+      cached in ~/.cache/cs/events-digest.json (XDG_CACHE_HOME moves it).
     · Empty & automated sessions hidden by default; 'cs all' shows them.
     · Hide extra summaries by prefix in $COPILOT_HOME/.cs-ignore.
     · Credentials are masked in every view; CS_REDACT=0 shows raw text.{ui.RST}

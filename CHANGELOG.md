@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cs` reads Copilot's per-session event logs.** A new `events` module
+  streams `session-state/<id>/events.jsonl` — never loading a file whole —
+  and reduces each log to a digest of counts: tool calls and failures by
+  tool, hook runs and failures by type, permission and model changes,
+  sub-agent runs, and the longest run of consecutive failures of one tool.
+  Digests are cached in `~/.cache/cs/events-digest.json` (honours
+  `XDG_CACHE_HOME`), keyed by each log's size and mtime, and hold no text
+  from a tool result, prompt or reply. This is the foundation for the
+  evidence views that follow; on its own it changes no view.
 - **Pins, notes/tags, and a daily AIU budget.** Sticky daily-workflow
   prefs live in `~/.config/cs/settings.json` beside the theme (never in
   COPILOT_HOME): `cs pin` / `unpin` / `pins`, `cs note`, `cs tag` /

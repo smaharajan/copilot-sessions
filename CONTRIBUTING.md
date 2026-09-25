@@ -30,13 +30,14 @@ Run both before opening a PR.
 
 ## Where code goes
 
-Ten modules, one job each. Keeping the seams is most of the design:
+Eleven modules, one job each. Keeping the seams is most of the design:
 
 | Module | Owns | Must not know about |
 |---|---|---|
 | `db.py` | SQL, one function per question | formatting |
 | `signals.py` | inferences about one session (autonomy, handoffs, exposure) | drawing |
 | `practice.py` | inferences about habits across a window | drawing |
+| `events.py` | `session-state/*/events.jsonl`, streamed into cached counts — never its text | drawing |
 | `redact.py` | every credential pattern | sessions |
 | `ui.py` | colour, boxes, tables, text fitting | sessions |
 | `export.py` | `--json` / `--csv` — the readings without the drawing | layout |
@@ -105,6 +106,7 @@ responsible for. Put a test next to the behaviour it describes:
 | `test_practice_rules.py` | Every `cs coach` rule, fired and silenced — one fixture each | 18 |
 | `test_practice.py` | Inferences drawn across a window of sessions (the unlisted Improve views) | 15 |
 | `test_surface.py` | Every command, run — against a full store, an empty one, and one from an older Copilot | 14 |
+| `test_events.py` | The event log: malformed lines, the digest cache and its misses, and that no result text reaches the cache | 14 |
 | `test_security.py` | Hostile stored text — terminal control sequences that must never reach the screen | 2 |
 
 Three of those are structural rather than behavioural, and are the ones to

@@ -350,6 +350,10 @@ reasoning behind them.
   outside it (`~/.config/cs/settings.json` for the theme, pins, notes and daily budget,
   `~/.config/cs/.cs-last-index` for `#N` shortcuts). Users may keep a
   `$COPILOT_HOME/.cs-ignore` list that cs only reads.
+- Copilot's per-session event logs (`session-state/<id>/events.jsonl`) are
+  streamed read-only and reduced to **counts, names and timestamps**. That
+  digest is cached in `~/.cache/cs/events-digest.json` (honours
+  `XDG_CACHE_HOME`); tool output, prompts and replies are never cached.
 - **No network code.** Nothing is uploaded, copied or phoned home.
 - Credentials are **masked at the render edge**, so nothing secret-shaped
   reaches your screen, scrollback or a screen-share — files and pipes included.
