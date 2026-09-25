@@ -351,7 +351,8 @@ Final verification:
   scan), and `health` includes that scan. The rest is masking opening
   prompts. Going faster needs a cross-process cache of masked text or of
   reference scans, which the "counts and ids only" cache rule forbids.
-  Needs a maintainer decision.
+  The maintainer accepted these times as they are (2026-09-25); the cache
+  stays counts-only.
 - **The listing's stuck-loop marker reads the digest cache only**, so it
   appears once any events-backed view has read those logs. Reading logs from
   a listing would put a cold scan on its heartbeat.
