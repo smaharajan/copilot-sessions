@@ -7,6 +7,79 @@
 
 ## Current task
 
+Slim the home screen, replace the weak views, and make the first frame fast.
+Baseline for this round: `77da3f3`. The five phases below are the previous
+round; they shipped, and this round took several of them back off the menu.
+
+| Piece | State |
+|---|---|
+| Removals: watch, asks, file history, replay, compare, listing `c`/`d`/`e`, reader step mode | **done** |
+| Practice, Rhythm, Doctor, and the old Today rows off the menu; CLI commands kept where noted | **done** |
+| One Today page and a live strip on the home screen | **done** |
+| Switches, anomalies, rollup, health, patterns, clean-up redrawn | **done** |
+| Similar work starts from a session and shows the overlap | **done** |
+| Home paints before the skill/agent turn scan; counts cached | **done** |
+
+### Replay and compare
+
+The data was not the hang. The last round measured `_replay_data` and
+`_diff_data` at about 0.3 s on the largest log. What stalled a person was
+the home row: a bare `session (#N or id):` prompt, then `sys.exit` inside
+the action when the ref did not resolve (caught, then a pause that reads as
+a stuck screen), and a reader step mode whose ←/→ fought the home timer.
+`cs read` already shows the session. Both commands, the listing keys, and
+the step mode are gone.
+
+### Similar work
+
+The old view was `db.search` with shipped sessions first. On a real store a
+common word returned well over a hundred sessions, which is search with a
+different sort. It now starts from a chosen session and keeps at most ten
+others that share its repository, its files, or the distinctive words of
+its opening ask. Each row prints that overlap. Terms are taken from the
+masked ask, so a credential cannot become a term.
+
+### Speed
+
+The previous home snapshot was about 1.6 s, almost all of it the skill and
+agent reference scan. The first frame now reads the cheap facts (sessions,
+turns, AIU, repos, mcp) and, on a cache miss, fills the used-counts on a
+background thread. The cache is `$XDG_CACHE_HOME/cs/asset-counts.json`,
+keyed by the store fingerprint, and holds names and counts only. No session
+text. The 60-second refresh deadline is unchanged; the live strip uses the
+minimum of its own 5-second deadline and that refresh, and the `getch`
+timeout stays at most one second so the existing heartbeat tests still hold.
+
+Measured read-only on the reference store, 2026-09-25, with config and
+cache pointed at scratch directories:
+
+| Run | Time |
+|---|---|
+| Home facts, cold, before the skill scan | 0.04 s |
+| Home facts, after the scan has been cached | 0.07 s |
+| The skill/agent scan itself, cold | 1.56 s (off the first frame) |
+| `cs today`, warm event cache | 0.80 s |
+| `cs switches`, warm | 0.33 s |
+| `cs skills`, warm | 0.24 s |
+| `cs health`, warm | 0.52 s |
+| `cs patterns`, warm | 1.15 s |
+
+`cs patterns` is still just over a second. It masks every opening ask in
+the window, and a cache of that text is not allowed. The previous round
+measured it at 1.31 s and left it.
+
+The first frame is under the 0.4 s target. Fully populated, once the cache
+exists, is under the 1 s target. A cold scan still takes longer than a
+second and runs after the menu is on screen.
+
+### Home
+
+Today is the first row and has no heading. The live strip sits under the
+facts line: one line below 100 columns, a three-line panel at 100 and
+wider, and nothing when no session was active in the last 15 minutes.
+
+## Earlier current task
+
 Add a set of day-to-day capabilities, every one of them reachable from the
 home screen (`cs` / `cs home`), in five phases:
 
@@ -307,9 +380,10 @@ Decisions worth knowing:
 | watch tick, first / next | 0.20 / 0.03 s |
 | home start data, cold process | 1.64 s |
 
-## Final state
+## Final state of the previous round
 
-All 27 items are shipped and selectable from the home screen:
+Superseded by the current task above. All 27 items were shipped and
+selectable from the home screen:
 
 | Group | Rows |
 |---|---|
@@ -364,9 +438,9 @@ Final verification:
 
 ## What's next
 
-Maintainer review, then a release: bump the version in `pyproject.toml` and
-`cs/__init__.py`, move Unreleased in `CHANGELOG.md` under the new version, and
-tag.
+Maintainer review of this slimming round, then a release: bump the version
+in `pyproject.toml` and `cs/__init__.py`, move Unreleased in `CHANGELOG.md`
+under the new version, and tag. No version bump was made here.
 
 ## Earlier history
 

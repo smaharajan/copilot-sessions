@@ -258,20 +258,18 @@ class GovernanceTest(StoreTest):
             "next": lambda: cli._render_next(cli._next_data(3650)),
             "eod": lambda: cli._render_eod(cli._eod_data()),
             "weekly": lambda: cli._render_weekly(cli._weekly_data()),
-            "asks": lambda: cli._render_asks(cli._asks_data(3650)),
+            "today": lambda: cli._render_today(cli._today_data()),
             "cleanup": lambda: cli._render_cleanup(cli._cleanup_data(1)),
-            "file history": lambda: cli._render_file_history(
-                cli._file_history_data("portal")),
             "saved": lambda: cli._render_saved({"a-long-saved-name": "three.js "
                                                 "portal charts globe live data"}),
-            "diff": lambda: cli._render_diff(cli._diff_data("sess-alpha",
-                                                            "sess-empty")),
-            "replay": lambda: print(cli._replay_page(cli._replay_data("sess-alpha"), 0)),
+            "similar": lambda: cli._render_similar(
+                cli._similar_data("sess-alpha")),
             "anomalies": lambda: cli._render_anomalies(cli._anomalies_data(3650)),
             "health": lambda: cli._render_health(cli._health_data("portal")),
             "patterns": lambda: cli._render_patterns(cli._patterns_data(3650)),
             "doctor": lambda: cli._render_doctor(cli._doctor_data()),
-            "watch": lambda: _print_watch(cli),
+            "rollup": lambda: cli._render_rollup(cli._rollup_data(30)),
+            "live": lambda: _print_watch(cli),
         }
         views.update(narrow)
         for name, render in views.items():

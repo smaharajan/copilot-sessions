@@ -15,17 +15,17 @@ class HomeMenuTest(StoreTest):
         from cs import cli
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
-        for wanted in ("Autonomy", "Handoffs", "Security", "Efficiency",
-                       "Hooks", "Theme"):
+        for wanted in ("Today", "Autonomy", "Handoffs", "Security",
+                       "Efficiency", "Hooks", "Theme", "Context"):
             self.assertIn(wanted, labels)
-        # Improve is back on the menu; Working days stays off. Typed commands
-        # still have to work even when a row is hidden — asserting both halves
-        # keeps a restored or retired view from quietly rotting.
-        for wanted in ("Practice", "Rhythm", "Context", "Standup"):
-            self.assertIn(wanted, labels)
-        self.assertNotIn("Working days", labels)
+        # Practice, Rhythm, Standup and Working days are commands, not rows.
+        # Asserting both halves keeps a restored view from quietly rotting
+        # and a retired command from disappearing.
+        for wanted in ("Practice", "Rhythm", "Standup", "Working days",
+                       "Watch live", "Doctor"):
+            self.assertNotIn(wanted, labels)
         for command in ("standup", "coach", "rhythm", "context", "timeline",
-                        "hooks"):
+                        "hooks", "doctor", "next"):
             self.assertEqual(self._run(command)[0], 0, command)
 
     def test_group_headings_follow_their_rows(self):
@@ -163,10 +163,10 @@ class HomeMenuTest(StoreTest):
                     [value for kind, value in layout if kind == "item"],
                     list(range(count)))
                 heads = [value for kind, value in layout if kind == "head"]
-                self.assertEqual(len(heads),
-                                 len(cli._HOME_GROUPS) if grouped else 0)
-        self.assertEqual(cli._home_layout(range(count), True)[0][0], "head",
-                         "the first group has no heading")
+                # Today is a single row and draws no heading of its own.
+                expected = (len(cli._HOME_GROUPS) - 1) if grouped else 0
+                self.assertEqual(len(heads), expected)
+        self.assertEqual(cli._home_layout(range(count), True)[0][0], "item")
 
     def test_the_menu_is_grouped_at_every_size_worth_grouping(self):
         """Nineteen options in one column is the thing being fixed.
@@ -188,7 +188,7 @@ class HomeMenuTest(StoreTest):
             with self.subTest(height=height):
                 layout, _art = cli._home_plan(100, height, shown, True)
                 heads = [row for row in layout if row[0] == "head"]
-                self.assertEqual(len(heads), groups,
+                self.assertEqual(len(heads), groups - 1,
                                  "the menu lost its sections")
                 # And every option is still in the layout, so scrolling
                 # reaches it — a heading may cost a scroll, never a row.

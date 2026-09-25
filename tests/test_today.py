@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -22,7 +23,6 @@ from support import (
     StoreTest,
     _add_governance_rows,
     _alpha_events,
-    _event,
     _tool,
     _write_events,
 )
@@ -181,73 +181,26 @@ class TodayTest(StoreTest):
 
     # ── Similar work ─────────────────────────────────────────────────
 
-    def test_similar_puts_the_sessions_that_shipped_first(self):
+    def test_similar_starts_from_a_session_and_shows_the_overlap(self):
         later = datetime.now(timezone.utc) + timedelta(minutes=5)
         self._session("sess-newer", "Another portal attempt",
-                      later.strftime("%Y-%m-%dT%H:%M:%S.000Z"))
-        code, out = self._run("search", "portal")
-        self.assertLess(out.index("Another portal attempt"),
-                        out.index("Build Three.js portal"))
-        data = self._json("similar", "portal")
-        self.assertEqual(data["sessions"][0]["id"], "sess-alpha")
-        self.assertEqual(data["sessions"][0]["outcome"], "1 commit · 1 PR")
-        code, out = self._run("similar", "portal")
-        self.assertLess(out.index("Build Three.js portal"),
-                        out.index("Another portal attempt"))
-        self.assertIn("1 commit · 1 PR", out)
-
-    # ── My asks ──────────────────────────────────────────────────────
-
-    def test_asks_lists_openers_and_the_turn_after_a_handoff(self):
-        self._session("sess-pickup", "Carry on", _ago(0.5),
-                      ["good morning", "read the handoff from the previous session",
-                       f"and use token {SECRET}"])
-        data = self._json("asks")
-        mine = [a for a in data["asks"] if a["id"] == "sess-pickup"]
-        self.assertEqual([(a["turn"], a["kind"]) for a in mine],
-                         [(0, "opening"), (1, "after handoff")])
-        alpha = next(a for a in data["asks"] if a["id"] == "sess-alpha")
-        self.assertEqual((alpha["ask"], alpha["outcome"]),
-                         ("make a portal", "1 commit · 1 PR"))
-
-    def test_asks_are_masked_and_filterable_by_repo(self):
-        self._session("sess-secret", "Paste", _ago(0.5), [f"use {SECRET} now"],
-                      repo="acme/other")
-        for args in (("asks",), ("asks", "--json")):
-            code, out = self._run(*args)
-            self.assertEqual(code, 0)
-            self.assertNotIn(SECRET, out)
-        only = self._json("asks", "--repo", "other")
-        self.assertEqual({a["id"] for a in only["asks"]}, {"sess-secret"})
-
-    def test_c_copies_the_ask_in_the_listing(self):
-        from cs import cli
-
-        rows = [("sess-alpha", "2026-09-01T12:00", "make a portal", "r/a", "/tmp", 1, 0)]
-        screen = Screen([ord("c")])
-        self.assertEqual(cli._listing_tui(screen, rows, "My asks",
-                                          copy={"sess-alpha": "make a portal"}),
-                         ("copy", "sess-alpha"))
-        # Without anything to copy, 'c' is a letter and opens the filter.
-        screen = Screen([ord("c"), 10, ord("q")])
-        self.assertIsNone(cli._listing_tui(screen, rows, "Sessions"))
-        self.assertIn("filter 'c'", screen.frames[-1][(0, 0)])
-
-    def test_copy_uses_a_clipboard_tool_only_if_there_is_one(self):
-        from cs import cli
-
-        with mock.patch("shutil.which", return_value=None), \
-                redirect_stdout(io.StringIO()) as out:
-            cli._copy_ask("the whole ask")
-        self.assertIn("the whole ask", out.getvalue())
-        with mock.patch("shutil.which",
-                        side_effect=lambda tool: tool if tool == "xclip" else None), \
-                mock.patch("subprocess.run") as run, \
-                redirect_stdout(io.StringIO()) as out:
-            cli._copy_ask("the whole ask")
-        self.assertEqual(run.call_args.args[0], ["xclip", "-selection", "clipboard"])
-        self.assertEqual(run.call_args.kwargs["input"], "the whole ask")
-        self.assertNotIn("the whole ask", out.getvalue())
+                      later.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                      ["rebuild the portal charts"])
+        self._session("sess-other", "Unrelated notes",
+                      later.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                      ["write a grocery list"], repo="elsewhere/notes")
+        data = self._json("similar", "sess-alpha")
+        ids = [session["id"] for session in data["sessions"]]
+        self.assertNotIn("sess-alpha", ids)
+        self.assertIn("sess-newer", ids)
+        self.assertLessEqual(len(ids), 10)
+        newer = next(session for session in data["sessions"]
+                     if session["id"] == "sess-newer")
+        self.assertIn("same repository", newer["evidence"])
+        code, out = self._run("similar", "sess-alpha")
+        self.assertEqual(code, 0)
+        self.assertIn("same repository", out)
+        self.assertNotIn(SECRET, out)
 
     # ── Saved searches ───────────────────────────────────────────────
 
@@ -295,31 +248,6 @@ class TodayTest(StoreTest):
             self.assertTrue(cli.cmd_saved_menu())
         search.assert_called_once_with("portal")
 
-    # ── File history ─────────────────────────────────────────────────
-
-    def test_file_history_names_session_agent_turn_and_ask(self):
-        self.conn.execute("UPDATE session_files SET turn_index = 1 WHERE "
-                          "file_path LIKE '%globe.js'")
-        self.conn.execute("UPDATE turns SET timestamp = ? WHERE session_id = "
-                          "'sess-alpha' AND turn_index = 1", (_ago(0.01),))
-        self.conn.execute("UPDATE turns SET timestamp = ? WHERE session_id = "
-                          "'sess-alpha' AND turn_index = 0", (_ago(0.02),))
-        self.conn.commit()
-        _write_events(self.base, "sess-alpha", [
-            _event("tool.execution_start", _ago(0.005)[:19],
-                   {"toolCallId": "e1", "toolName": "edit",
-                    "arguments": {"path": "/tmp/a/portal/globe.js"}},
-                   agent="agent-1"),
-        ])
-        data = self._json("files", "globe.js", "--history")
-        touch = data["files"][0]["touches"][0]
-        self.assertEqual((touch["id"], touch["turn"], touch["tool"], touch["agent"],
-                          touch["turn_summary"]),
-                         ("sess-alpha", 1, "edit", "sub-agent", "add charts"))
-        code, out = self._run("files", "globe.js", "--history")
-        self.assertIn("sub-agent", out)
-        self.assertIn("add charts", out)
-
     # ── Budget ───────────────────────────────────────────────────────
 
     def test_budget_check_exits_one_only_when_over(self):
@@ -339,20 +267,16 @@ class TodayTest(StoreTest):
         self.assertIn("over by 1.00", out)
         self.assertTrue(self._json("budget")["over"])
 
-    def test_arrows_on_the_budget_row_step_the_limit(self):
+    def test_arrows_step_the_window_and_budget_stays_a_command(self):
         import curses
 
         from cs import cli, ui
 
-        labels = [item[1] for item in cli._home_items()]
-        at = labels.index("Budget")
-        screen = Screen([curses.KEY_DOWN] * at + [curses.KEY_RIGHT, curses.KEY_RIGHT,
-                                                  curses.KEY_LEFT, ord("q")])
+        self.assertNotIn("Budget", [item[1] for item in cli._home_items()])
+        screen = Screen([curses.KEY_RIGHT, ord("q")])
         state = {"period": 30, "revealed": True}
         cli._home_tui(screen, state)
-        self.assertEqual(ui.daily_budget_aiu(), 5)
-        self.assertEqual(state["period"], 30, "the window must not move")
-        self.assertIn("daily limit 5 AIU", cli._home_items()[at][2])
+        self.assertEqual(state["period"], 90)
         ui.set_daily_budget(42)
         self.assertEqual(ui.step_budget(1), 50)
         self.assertEqual(ui.step_budget(-1), 25)
@@ -394,13 +318,14 @@ class TodayHomeTest(StoreTest):
         by_group: dict[str, list[str]] = {}
         for index, label in enumerate(labels):
             by_group.setdefault(cli._home_group(index), []).append(label)
-        self.assertEqual(by_group["Today"][:5], ["Next up", "Standup", "End of day",
-                                                "Weekly review", "Budget"])
-        for label in ("Similar work", "My asks", "Saved searches", "File history"):
+        self.assertEqual(by_group["Today"], ["Today"])
+        for label in ("Similar work", "Saved searches"):
             self.assertIn(label, by_group["Find"])
-        self.assertEqual(by_group["Improve"][0], "Practice")
+        self.assertNotIn("My asks", labels)
+        self.assertNotIn("File history", labels)
+        self.assertEqual(by_group["Improve"][0], "Context")
         self.assertIn("Clean-up", by_group["Improve"])
-        self.assertEqual(labels[0], "Next up")
+        self.assertEqual(labels[0], "Today")
 
     def test_every_new_row_opens(self):
         from cs import cli
@@ -409,19 +334,26 @@ class TodayHomeTest(StoreTest):
         with mock.patch.object(cli, "_page", return_value=True) as page, \
                 mock.patch.object(cli, "_interactive_listing", return_value=True), \
                 redirect_stdout(io.StringIO()):
-            for label, given in (("Next up", None), ("End of day", None),
-                                 ("Weekly review", None), ("Budget", None),
-                                 ("Similar work", "portal"), ("My asks", 7),
-                                 ("File history", "globe"), ("Clean-up", None),
-                                 ("Saved searches", None)):
+            for label, given in (("Today", None), ("Clean-up", None),
+                                 ("Saved searches", None),
+                                 ("Similar work", "sess-alpha")):
                 with self.subTest(row=label):
                     action = items[label][3]
                     result = action(given) if given is not None else action()
                     self.assertIsNotNone(result)
-        self.assertGreater(page.call_count, 5)
+        self.assertGreaterEqual(page.call_count, 2)
 
-    def test_a_term_row_says_what_it_asks_for(self):
+    def test_today_page_fits_a_short_window(self):
+        import shutil
+
         from cs import cli
 
-        self.assertEqual(cli._TERM_PROMPTS["File history"], " file: ")
-        self.assertEqual(cli._TERM_PROMPTS["Similar work"], " similar to: ")
+        for columns in (40, 100):
+            size = os.terminal_size((columns, 24))
+            with mock.patch.object(shutil, "get_terminal_size", return_value=size):
+                text = cli._capture(lambda: cli._render_today(cli._today_data()))
+            plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", text)
+            lines = [line for line in plain.splitlines() if line.strip()]
+            self.assertLessEqual(len(lines), 22, plain)
+            for line in plain.splitlines():
+                self.assertLessEqual(cli.ui.cells(line), columns, line)

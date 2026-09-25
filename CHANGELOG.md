@@ -7,9 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **The home screen no longer lists a row per question.** Practice, Rhythm
+  and Doctor leave the menu (`cs coach`, `cs rhythm` and `cs doctor` stay).
+  Next up, Standup, End of day, Weekly review and Budget leave the menu
+  (`cs next`, `cs standup`, `cs eod`, `cs weekly` and `cs budget` stay) and
+  are replaced by one **Today** page.
+- **`cs watch`, `cs asks`, `cs files --history`, `cs replay` and `cs diff`.**
+  The live reading moved onto the home screen. My asks and file history did
+  not earn a row. Replay and compare hung on a bare session prompt and
+  duplicated `cs read`; the listing keys `d` and `e`, the reader's step mode,
+  and the copy key `c` go with them.
+
 ### Changed
 
-- **Improve now starts at Practice.** Standup moved to the new Today group.
+- **Today is one page.** It shows the session running now, the top sessions
+  to pick up (each with its reason and `cs resume`), what happened since
+  midnight, and this week against last week. Empty sections are omitted.
+- **The home screen shows the session running now.** Title, burn rate,
+  budget left, last tool, last failure and a ten-minute sparkline. One line
+  below 100 columns, a small panel at 100 and wider. It ticks about every
+  five seconds and does not move the 60-second refresh. A quiet store shows
+  nothing.
+- **Model switches, spend anomalies, team rollup, repo health, prompt
+  patterns and clean-up are reports rather than tables.** Switches are
+  grouped by session with the spend either side. Anomalies lead with the
+  shape of the window and one card per spike. Rollup is a headline, a
+  sparkline and hashed repositories; `--json` is unchanged. Health is a
+  short verdict and the commands worth running. Patterns is one comparison,
+  hiding habits with fewer than five sessions on a side. Clean-up ends in
+  one copyable block of commands.
+- **Similar work starts from a session.** `cs similar <N|id>` returns at
+  most ten sessions that share its repository, files or the distinctive
+  words of its opening ask, and each row says which overlap that was.
+- **The first home frame does not wait for the skill scan.** Asset reference
+  counts are cached under `$XDG_CACHE_HOME/cs/asset-counts.json` (names and
+  counts only). A cold cache paints the cheap facts and fills the rest on
+  a background thread.
 - **Narrow listings wrap their sort footnote** instead of running a
   sixty-character run of column names off a 40-column window.
 

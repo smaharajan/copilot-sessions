@@ -39,8 +39,8 @@ VIEWS = (
     "sessions", "search", "stats", "cost", "efficiency",
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
     "standup", "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "similar", "asks", "saved", "file-history",
-    "cleanup", "budget", "diff", "anomalies", "health", "patterns",
+    "next", "eod", "weekly", "today", "similar", "saved",
+    "cleanup", "budget", "anomalies", "health", "patterns",
     "doctor", "rollup",
 )
 
@@ -53,8 +53,8 @@ DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "similar", "asks", "saved", "cleanup", "budget",
-    "diff", "anomalies", "health", "patterns", "doctor", "rollup",
+    "next", "eod", "weekly", "today", "similar", "saved", "cleanup", "budget",
+    "anomalies", "health", "patterns", "doctor", "rollup",
 )
 
 
@@ -442,14 +442,14 @@ def weekly() -> dict:
     return {"view": "weekly", **_weekly_data()}
 
 
-def similar(term: str) -> dict:
+def today() -> dict:
+    from .cli.today import _today_data
+    return {"view": "today", **_today_data()}
+
+
+def similar(ref: str) -> dict:
     from .cli.today import _similar_data
-    return {"view": "similar", **_similar_data(term)}
-
-
-def asks(days: int, repo: str | None = None) -> dict:
-    from .cli.today import _asks_data
-    return {"view": "asks", **_asks_data(days, repo)}
+    return {"view": "similar", **_similar_data(ref)}
 
 
 def saved() -> dict:
@@ -458,11 +458,6 @@ def saved() -> dict:
         {"name": redact.one_line(redact.redact(name)),
          "term": redact.one_line(redact.redact(term))}
         for name, term in ui.saved_searches().items()]}
-
-
-def file_history(pattern: str) -> dict:
-    from .cli.today import _file_history_data
-    return {"view": "file-history", **_file_history_data(pattern)}
 
 
 def cleanup(days: int = 14) -> dict:
@@ -481,11 +476,6 @@ def budget() -> dict:
 
 
 # ── Analysis ─────────────────────────────────────────────────────────
-
-def diff(first: str, second: str) -> dict:
-    from .cli.analysis import _diff_data
-    return {"view": "diff", **_diff_data(first, second)}
-
 
 def anomalies(days: int) -> dict:
     from .cli.analysis import _anomalies_data

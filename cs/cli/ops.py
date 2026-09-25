@@ -1,11 +1,9 @@
-"""Operations and trust: a live pane for the session running now, a doctor
+"""Operations and trust: the live reading the home screen draws, a doctor
 that says whether cs can see what it needs, and a rollup safe to share.
 
-`watch` follows the same timer discipline as the home screen: the timeout
-is re-armed immediately before every read, so nothing an input handler did
-can leave it blocking, and the store is re-read on a fixed cadence rather
-than on every key. The session's event log is tailed from where the last
-read stopped — never re-read from the top.
+The live reading follows the home screen's timer discipline. The session's
+event log is tailed from where the last read stopped — never re-read from
+the top, and never digested on the heartbeat.
 
 `rollup` is counts and rates only. Repository names are replaced by a salted
 hash whose salt never leaves your settings file; there are no ids, no paths,
@@ -22,6 +20,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import (
@@ -31,20 +30,19 @@ from .. import (
 )
 from ._common import (
     _CURSES_MOUSE_COMPAT,
-    _addstr,
     _capture,
-    _curses_wrapper,
     _note,
     _page,
     _visible,
-    _window_label,
 )
 from .evidence import _UNCLEAN, _clean
 
-# How often the watch pane re-reads the store and the log tail.
+# How often the home screen re-reads the live strip.
 WATCH_SECONDS = 5
 # The burn rate is spend over this many recent minutes.
 BURN_MINUTES = 10
+# A session quiet for longer than this is not "running now".
+LIVE_MINUTES = 15
 # The most of a log one tick will read: a session writing faster than this
 # is caught up over the next ticks rather than in one long stall.
 _TAIL_BYTES = 4 * 1024 * 1024
@@ -119,22 +117,47 @@ class _Tail:
                 self.last_failure = (tool, stamp)
 
 
+def _running(stamp: str) -> bool:
+    """Whether a session stamp is recent enough to call the session live."""
+    text = (stamp or "").replace(" ", "T")[:16]
+    try:
+        when = datetime.fromisoformat(text).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    age = (datetime.now(timezone.utc) - when).total_seconds()
+    return age <= LIVE_MINUTES * 60
+
+
 def _watch_read(state: dict) -> None:
-    """One tick: the latest session, its spend and burn, and the log tail."""
+    """One tick: the session running now, its burn, and the log tail.
+
+    A quiet store is an empty reading, not an error. The tail is bounded:
+    the first look starts 256 KB from the end, and a tick reads at most 4 MB.
+    """
     conn = db.connect(fatal=False)
     try:
-        latest = db.recent_sessions(conn, 1) or db.recent_sessions(conn, 0)
-        if not latest:
+        latest = db.recent_sessions(conn, 1)
+        if not latest or not _running(latest[0][1]):
             state["session"] = None
             return
         row = latest[0]
         sid = row[0]
+        now = datetime.now(timezone.utc)
         since = time.strftime("%Y-%m-%dT%H:%M:%S",
                               time.gmtime(time.time() - BURN_MINUTES * 60))
         burn = 0
+        bins = [0] * BURN_MINUTES
         for when, nano in db.usage_stamps(conn, [sid])[sid]:
-            if when >= since:
-                burn += nano
+            if when < since:
+                continue
+            burn += nano
+            try:
+                at = datetime.fromisoformat(when[:19]).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            minute = int((now - at).total_seconds() // 60)
+            if 0 <= minute < BURN_MINUTES:
+                bins[BURN_MINUTES - 1 - minute] += nano
         today = (db.cost_totals(conn, 1) or {}).get("nano_aiu", 0)
     finally:
         conn.close()
@@ -147,6 +170,7 @@ def _watch_read(state: dict) -> None:
         "id": sid, "summary": _clean(row[2]), "repo": _clean(row[3]),
         "turns": row[5], "nano_aiu": row[6] or 0,
         "burn_per_minute": burn / 1e9 / BURN_MINUTES,
+        "burn": bins,
         "today_nano_aiu": today, "budget": limit,
         "left": None if limit is None else limit - today / 1e9,
         "last_tool": tail.last_tool, "last_tool_at": tail.last_tool_at,
@@ -155,104 +179,51 @@ def _watch_read(state: dict) -> None:
     }
 
 
-def _watch_lines(state: dict, width: int) -> list[tuple[str, str]]:
-    """(text, theme role) per row of the pane — drawn and printed alike."""
-    session = state.get("session")
-    if not session:
-        return [("◆  Watch · no session recorded yet", "title")]
-    rows = [(f"◆  Watch · {session['summary'] or session['id'][:8]}", "title"), ("", "")]
-
-    def field(label: str, value: str, role: str = "summary") -> None:
-        rows.append((f"  {label:<10}{value}", role))
-
-    field("session", f"{session['id'][:8]}"
-          + (f" · {session['repo']}" if session["repo"] else ""), "repo")
-    field("turns", f"{session['turns']:,}")
-    field("burn", f"{session['burn_per_minute']:,.2f} AIU/min · last "
-                  f"{BURN_MINUTES} min", "credits")
-    field("spent", f"{session['nano_aiu'] / 1e9:,.2f} AIU this session", "credits")
+def _budget_text(session: dict) -> str:
     if session["budget"] is None:
-        field("budget", "no daily limit set", "help")
+        return "no daily limit"
+    left = session["left"]
+    if left >= 0:
+        return f"{max(left, 0):,.2f} of {session['budget']:g} AIU left today"
+    return f"over by {-left:,.2f} AIU today"
+
+
+def _live_lines(state: dict, width: int) -> list[tuple[str, str]]:
+    """The home strip. Nothing — not an error — when no session is running.
+
+    One line below 100 columns. At 100 and wider, a small panel: the title,
+    the burn against the budget, and a sparkline of the last ten minutes.
+    """
+    session = state.get("session")
+    if not session or width < 8:
+        return []
+    burn = f"{session['burn_per_minute']:,.2f} AIU/min"
+    budget = _budget_text(session)
+    title = session["summary"] or session["id"][:8]
+    tool = session["last_tool"] or "no tool yet"
+    fail = (f" · fail {session['last_failure'][0]}"
+            if session["last_failure"] else "")
+    spark = ui.sparkline(session.get("burn") or []).rstrip()
+    if width >= 100:
+        rows = [
+            (f"  ● live  {title}", "active"),
+            (f"    burn {burn} · {budget}", "credits"),
+            (f"    {spark}  {tool}{fail}".rstrip() if spark else f"    {tool}{fail}",
+             "summary"),
+        ]
+    elif width >= 72:
+        rows = [(f"● {title} · {burn} · {budget}", "active")]
     else:
-        left = session["left"]
-        field("budget", f"{max(left, 0):,.2f} of {session['budget']:g} AIU left today"
-              if left >= 0 else f"over by {-left:,.2f} AIU today",
-              "danger" if left < 0 else "warn" if left < session["budget"] * 0.3
-              else "active")
-    if session["last_tool"]:
-        field("last tool", f"{session['last_tool']} · {session['last_tool_at']}")
-    else:
-        field("last tool", "none in the log's tail", "help")
-    if session["last_failure"]:
-        tool, at = session["last_failure"]
-        field("last fail", f"{tool} · {at}", "danger")
-    else:
-        field("last fail", "none seen", "help")
-    if session["calls"]:
-        field("seen", f"{session['calls']:,} tool calls · {session['failures']} failed")
+        left = ""
+        if session["budget"] is not None and session["left"] is not None:
+            left = f" · {max(session['left'], 0):,.0f} left"
+        rows = [(f"● {title} · {session['burn_per_minute']:,.2f}/min{left}", "active")]
     return [(ui.trunc(text, width), role) for text, role in rows]
 
 
-def _watch_tui(screen, state: dict) -> None:
-    """The live pane. q, Esc: back. Re-reads every WATCH_SECONDS."""
-    import curses
-
-    screen.keypad(True)
-    theme = ui.tui_theme(curses)
-    try:
-        curses.curs_set(0)
-        screen.bkgd(" ", theme["background"])
-    except curses.error:
-        pass
-    next_read = time.monotonic()
-    while True:
-        if time.monotonic() >= next_read:
-            try:
-                _watch_read(state)
-                state["updated"] = time.strftime("%H:%M:%S")
-                state.pop("error", None)
-            except (OSError, sqlite3.Error):
-                state["error"] = True
-            next_read += WATCH_SECONDS
-            if next_read <= time.monotonic():
-                next_read = time.monotonic() + WATCH_SECONDS
-        screen.erase()
-        height, width = screen.getmaxyx()
-        for row, (text, role) in enumerate(_watch_lines(state, width)[:height - 1]):
-            _addstr(screen, row, 0, text, width, theme.get(role, theme["summary"]))
-        status = (" read failed · retrying" if state.get("error") else
-                  f" updated {state.get('updated', '')} · every {WATCH_SECONDS}s · q back ")
-        _addstr(screen, height - 1, 0, ui.trunc(status, width), width, theme["status"])
-        screen.refresh()
-        # Re-armed before every read, like home: nothing can leave it blocking.
-        try:
-            screen.timeout(max(1, min(1000, round((next_read - time.monotonic())
-                                                   * 1000))))
-        except (AttributeError, curses.error):
-            pass
-        try:
-            key = screen.getch()
-        except KeyboardInterrupt:
-            return
-        if key in (ord("q"), ord("Q"), 27):
-            return
-
-
-def cmd_watch() -> bool:
-    """A live pane for the session running now. q returns."""
-    state: dict = {}
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        import curses
-
-        try:
-            _curses_wrapper(_watch_tui, state)
-            return True
-        except curses.error:
-            pass
-    _watch_read(state)
-    for text, _role in _watch_lines(state, min(shutil.get_terminal_size().columns, 96)):
-        print(text)
-    return False
+def _watch_lines(state: dict, width: int) -> list[tuple[str, str]]:
+    """The live strip, under the name the width test and the tail tests use."""
+    return _live_lines(state, width)
 
 
 # ── Doctor ───────────────────────────────────────────────────────────
@@ -475,10 +446,56 @@ def _rollup_data(days: int) -> dict:
 
 
 def cmd_rollup(days: int = 30) -> bool:
-    """The shareable rollup, as the JSON it is — paged when it is long."""
-    from .. import export
+    """The shareable rollup as a report. `--json` is the export, unchanged."""
+    return _page(_capture(lambda: _render_rollup(_rollup_data(days))))
 
-    text = json.dumps(export._stamped({"view": "rollup", **_rollup_data(days)}),
-                      indent=2, default=str)
-    return _page(f"\n  {ui.DIM}Team rollup · {_window_label(days)} · counts and "
-                 f"rates only — share with 'cs rollup --json'{ui.RST}\n\n{text}\n")
+
+def _render_rollup(data: dict) -> None:
+    """A report of the rollup: headline, spend shape, repos, endings, privacy."""
+    width = min(shutil.get_terminal_size().columns, 96)
+    inner = max(width - 4, 20)
+    print()
+    print(ui.rule(inner, "Team rollup"))
+    print()
+    rate = data["tool_failure_rate"]
+    rate_text = "no tool calls" if rate is None else f"{rate:.1%} tool failures"
+    session_word = "session" if data["sessions"] == 1 else "sessions"
+    bits = [f"{data['sessions']:,} {session_word}",
+            f"{data['nano_aiu'] / 1e9:,.0f} AIU", rate_text]
+    if data["stuck_loops"]:
+        bits.append(f"{data['stuck_loops']} stuck loops")
+    print(f"  {ui.BOLD}{ui._fit(' · '.join(bits), inner)}{ui.RST}")
+    series = [day["nano_aiu"] for day in data["days"]]
+    spark = ui.sparkline(series).rstrip()
+    if spark:
+        label = "spend "
+        room = max(4, inner - len(label) - 2)
+        print(f"  {ui.MUTED}{label}{ui.RST}{ui.VIOLET}{spark[-room:]}{ui.RST}")
+    print()
+    repos = data["repos"]
+    if repos:
+        peak = max(repo["nano_aiu"] for repo in repos) or 1
+        print(ui.heading(f"Repositories · {len(repos)}", ui.VIOLET, inner))
+        shown = repos[:8]
+        for repo in shown:
+            calls = repo["tool_calls"]
+            fail = repo["tool_failures"] / calls if calls else 0
+            plain = (f"{repo['repo']}  {repo['sessions']}  "
+                     f"{repo['nano_aiu'] / 1e9:,.1f} AIU  {fail:.0%}")
+            bar_room = inner - 4 - ui.cells(plain) - 1
+            if bar_room >= 6:
+                print(f"    {plain} {ui.bar(repo['nano_aiu'], peak, bar_room)}")
+            else:
+                print(f"    {ui._fit(plain, inner - 4)}")
+        extra = len(repos) - len(shown)
+        if extra:
+            _note(f"+{extra} more", inner, indent=4)
+        print()
+    endings = data["unclean_endings"]
+    if endings:
+        print(ui.heading("Unclean endings", ui.AMBER, inner))
+        _note(" · ".join(f"{count} {reason.replace('_', ' ')}"
+                         for reason, count in endings.items()), inner, indent=4)
+        print()
+    _note(data["privacy"], inner)
+    print()

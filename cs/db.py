@@ -1184,23 +1184,19 @@ def reference_counts(
 
     if not names:
         return {}
+    # The asset scan is the slow one, and it is the same answer for every
+    # caller until the store file changes. MCP names stay on the live path:
+    # they are few, and they are not what the cache was built for.
+    if hits is _asset_hits:
+        stored = _asset_cache_load(conn) or _all_asset_counts(conn)
+        counts = stored["counts"]
+        return {name: int(counts.get(name.lower(), 0)) for name in names}
     known = {name.lower() for name in names}
     seen: dict[str, set[str]] = defaultdict(set)
     for session_id, matched in _turn_hit_map(conn, hits).items():
         for hit in matched:
             if hit in known:
                 seen[hit].add(session_id)
-    # A load marker is stronger evidence than anything the text scan can
-    # find, and it does not always come with a mention the scan would catch:
-    # the CLI writes `<skill-context name="x">` and the skill's body, which
-    # need never contain the qualified forms above. Folding the two together
-    # is what stops a skill that demonstrably ran from being filed under
-    # "never referenced" — which it was, and which was the worst kind of
-    # wrong: confidently, about the one case there is proof for.
-    if hits is _asset_hits:
-        for session_id, loaded in _skills_invoked_map(conn).items():
-            for name in loaded & known:
-                seen[name].add(session_id)
     return {name: len(seen.get(name.lower(), ())) for name in names}
 
 
@@ -1290,6 +1286,115 @@ def assets_used(
         if len(found) == len(known):
             break  # nothing left to find
     return len(found)
+
+
+# Cross-process cache of asset reference counts. The home screen and the
+# inventory views otherwise re-scan every turn on every cold start. The file
+# holds names and counts only — never a prompt, a reply, or a path from a turn.
+_ASSET_CACHE_VERSION = 1
+
+
+def asset_cache_path() -> Path:
+    """Beside the event-log digest, under XDG_CACHE_HOME, never the store."""
+    home = os.environ.get("XDG_CACHE_HOME")
+    base = Path(home) if home else Path.home() / ".cache"
+    return base / "cs" / "asset-counts.json"
+
+
+def _fingerprint_key(conn: sqlite3.Connection) -> list | None:
+    """A fingerprint stable across processes. None for a store we cannot stat."""
+    fp = _store_fingerprint(conn)
+    if len(fp) != 3 or not isinstance(fp[1], int) or fp[2] == 0:
+        return None
+    return [str(fp[0]), fp[1], fp[2]]
+
+
+def _asset_cache_load(conn: sqlite3.Connection) -> dict | None:
+    key = _fingerprint_key(conn)
+    if key is None:
+        return None
+    try:
+        with open(asset_cache_path(), encoding="utf-8") as handle:
+            stored = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(stored, dict)
+            or stored.get("version") != _ASSET_CACHE_VERSION
+            or stored.get("fingerprint") != key
+            or not isinstance(stored.get("counts"), dict)
+            or not isinstance(stored.get("subagents"), int)):
+        return None
+    return stored
+
+
+def _asset_cache_store(conn: sqlite3.Connection, counts: dict[str, int],
+                       subagents: int) -> None:
+    key = _fingerprint_key(conn)
+    if key is None:
+        return
+    path = asset_cache_path()
+    partial = path.with_name(f"{path.name}.{os.getpid()}.partial")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(partial, "w", encoding="utf-8") as handle:
+            json.dump({
+                "version": _ASSET_CACHE_VERSION,
+                "fingerprint": key,
+                "counts": {name: int(n) for name, n in counts.items()},
+                "subagents": int(subagents),
+            }, handle, separators=(",", ":"))
+        os.replace(partial, path)
+    except OSError:
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+
+
+def _all_asset_counts(conn: sqlite3.Connection) -> dict:
+    """Every referenced asset name → sessions, plus the sub-agent run total.
+
+    Built from the in-process turn map. Session ids are counted and dropped;
+    only the names and the counts are written out.
+    """
+    seen: dict[str, set[str]] = {}
+    for session_id, matched in _turn_hit_map(conn, _asset_hits).items():
+        for hit in matched:
+            seen.setdefault(hit, set()).add(session_id)
+    for session_id, loaded in _skills_invoked_map(conn).items():
+        for name in loaded:
+            seen.setdefault(name, set()).add(session_id)
+    counts = {name: len(sessions) for name, sessions in seen.items()}
+    subagents = sum(subagents_by_session(conn).values())
+    _asset_cache_store(conn, counts, subagents)
+    return {"counts": counts, "subagents": subagents}
+
+
+def asset_usage(conn: sqlite3.Connection, skill_names: list[str],
+                agent_names: list[str], *, compute: bool = True) -> dict | None:
+    """How many installed skills and agents were used, and sub-agent runs.
+
+    `compute=False` returns None on a cache miss so a caller can paint before
+    the turn scan. A hit is counts and names only.
+    """
+    stored = _asset_cache_load(conn)
+    if stored is None:
+        if not compute:
+            return None
+        stored = _all_asset_counts(conn)
+    counts = stored["counts"]
+
+    def used(names: list[str]) -> int:
+        return sum(1 for name in names if counts.get(name.lower(), 0))
+
+    return {
+        "skills_used": used(skill_names),
+        "skills": len(skill_names),
+        "agents_used": used(agent_names),
+        "agents": len(agent_names),
+        "subagents": int(stored["subagents"]),
+        "counts": counts,
+    }
 
 
 def subagents_by_session(conn: sqlite3.Connection) -> dict[str, int]:

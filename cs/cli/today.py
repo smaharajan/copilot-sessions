@@ -10,8 +10,9 @@ data. Every reason a session is put in front of you is printed with it.
 from __future__ import annotations
 
 import os
+import re
 import shutil
-import subprocess
+import sqlite3
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -20,7 +21,6 @@ from .. import (
     db,
     events,
     practice,
-    redact,
     signals,
     ui,
 )
@@ -32,16 +32,13 @@ from ._common import (
     _disable_mouse,
     _enable_mouse,
     _hint,
-    _hit_text,
     _mouse_event,
     _note,
     _page,
+    _resolve_ref,
     _save_index,
-    _short_path,
     _user_text,
     _visible,
-    _when,
-    _window_label,
     _with_assets,
 )
 from .evidence import (
@@ -55,7 +52,8 @@ from .evidence import (
     _table,
     _turn_range,
 )
-from .listing import _interactive_listing, _render_listing, cmd_search
+from .listing import _interactive_listing, cmd_search
+from .ops import _watch_read
 
 # How much each reason to go back to a session weighs in Next up. An open
 # handoff is work someone is waiting on; a pin is only a bookmark.
@@ -444,57 +442,248 @@ def _render_weekly(data: dict) -> None:
     print()
 
 
+# ── Today ────────────────────────────────────────────────────────────
+
+def _today_data() -> dict:
+    """Now, what to pick up, since midnight, and this week — one reading.
+
+    Empty sections are left out. The three windows are the readings the
+    separate commands already compute.
+    """
+    state: dict = {}
+    try:
+        _watch_read(state)
+    except (OSError, sqlite3.Error):
+        state = {}
+    session = state.get("session")
+    reading: dict = {}
+    if session:
+        reading["now"] = {
+            "id": session["id"],
+            "summary": session["summary"],
+            "turns": session["turns"],
+            "nano_aiu": session["nano_aiu"],
+            "burn_per_minute": round(session["burn_per_minute"], 4),
+            "today_nano_aiu": session["today_nano_aiu"],
+            "budget_aiu": session["budget"],
+            "left_aiu": None if session["left"] is None else round(session["left"], 4),
+            "last_tool": session["last_tool"] or None,
+            "last_failure": (
+                {"tool": session["last_failure"][0], "at": session["last_failure"][1]}
+                if session["last_failure"] else None),
+        }
+    pickup = _next_data()["sessions"][:5]
+    if pickup:
+        reading["pick_up"] = pickup
+    day = _eod_data()
+    since: dict = {}
+    if day["sessions"]:
+        since["sessions"] = len(day["sessions"])
+    if day["commits"]:
+        since["commits"] = len(day["commits"])
+    if day["prs"]:
+        since["prs"] = len(day["prs"])
+    if day["handoffs"]:
+        since["handoffs"] = len(day["handoffs"])
+    if day["tool_failures"]:
+        since["tool_failures"] = day["tool_failures"]
+    if day["stuck_loops"]:
+        since["stuck_loops"] = day["stuck_loops"]
+    if day["nano_aiu"]:
+        since["nano_aiu"] = day["nano_aiu"]
+        if day["budget_aiu"] is not None:
+            since["budget_aiu"] = day["budget_aiu"]
+    if since:
+        reading["since_midnight"] = since
+    week = _weekly_data()
+    if week["sessions"] or week["nano_aiu"] or week["by_day"]:
+        reading["this_week"] = {
+            "sessions": week["sessions"],
+            "nano_aiu": week["nano_aiu"],
+            "previous_nano_aiu": week["previous_nano_aiu"],
+            "change": week["change"],
+            "by_day": week["by_day"],
+        }
+    return reading
+
+
+def cmd_today() -> bool:
+    """Where you are: now, what to pick up, the day so far and the week."""
+    return _page(_capture(lambda: _render_today(_today_data())))
+
+
+def _render_today(data: dict) -> None:
+    """One screenful. Sections with nothing to say are not drawn."""
+    width = min(shutil.get_terminal_size().columns, 100)
+    inner = max(width - 4, 16)
+    print()
+    print(ui.rule(inner, "Today"))
+    if not data:
+        _note("Nothing recorded yet, and nothing waiting.", inner)
+        print()
+        return
+    if "now" in data:
+        now = data["now"]
+        title = now["summary"] or now["id"][:8]
+        print(ui.heading("Now", ui.MINT, inner))
+        print(f"    {ui.BOLD}{ui._fit(title, inner - 4)}{ui.RST}")
+        bits = [f"{now['burn_per_minute']:,.2f} AIU/min",
+                _spend_line(now["today_nano_aiu"], now["budget_aiu"]) + " today"]
+        if now.get("last_tool"):
+            bits.append(now["last_tool"])
+        _note(" · ".join(bits), inner, indent=4)
+    pickup = data.get("pick_up") or []
+    if pickup:
+        show = pickup[:3]
+        print(ui.heading(f"Pick up · {len(show)}", ui.SKY, inner))
+        for index, session in enumerate(show, 1):
+            why = session["reasons"][0]["why"] if session["reasons"] else ""
+            print(f"    {ui.SKY}{index}{ui.RST}  "
+                  f"{ui._fit(session['summary'] or '(untitled)', inner - 8)}")
+            if why:
+                _note(why, inner, indent=7)
+            print(f"       {ui.MUTED}cs resume {index}{ui.RST}")
+    since = data.get("since_midnight")
+    if since:
+        bits = []
+        if "sessions" in since:
+            bits.append(_plural(since["sessions"], "session"))
+        if "commits" in since or "prs" in since:
+            bits.append(f"{_plural(since.get('commits', 0), 'commit')} · "
+                        f"{_plural(since.get('prs', 0), 'PR')}")
+        if "handoffs" in since:
+            bits.append(_plural(since["handoffs"], "handoff"))
+        if "tool_failures" in since:
+            bits.append(_plural(since["tool_failures"], "tool failure"))
+        print(ui.heading("Since midnight", ui.VIOLET, inner))
+        _note(" · ".join(bits), inner, indent=4)
+    week = data.get("this_week")
+    if week and (week["sessions"] or week["nano_aiu"] or week["by_day"]):
+        print(ui.heading("This week", ui.ACCENT, inner))
+        change = week["change"]
+        trend = ("no earlier week to compare" if change is None else
+                 f"{'up' if change > 0 else 'down'} {abs(change):.0%}")
+        spend = f"{week['nano_aiu'] / 1e9:,.2f} AIU · {trend}"
+        spark = ui.sparkline([day["nano_aiu"] for day in week["by_day"]]).rstrip()
+        if spark and inner >= 28:
+            room = max(6, min(len(spark), inner - 6 - len(spend)))
+            print(f"    {ui.VIOLET}{spark[-room:]}{ui.RST}  "
+                  f"{ui._fit(spend, inner - room - 6)}")
+        else:
+            _note(spend, inner, indent=4)
+    print()
+
+
 # ── Similar work ─────────────────────────────────────────────────────
 
-def _similar_rows(term: str) -> tuple[list[tuple], dict[str, dict]]:
-    """The search's rows, re-ranked shipped-first, and each one's reading."""
+_SIMILAR_STOP = frozenset(
+    "a an the and or to of for in on with from this that your you we our it is "
+    "are was were be as at by if then else not into over about just like make "
+    "using use can will would should could please also than them they their "
+    "its have has had but not for all any out get got let".split()
+)
+
+
+def _opening_terms(text: str) -> set[str]:
+    """Distinctive words of an ask, after masking. Secrets do not become terms."""
+    cleaned = _user_text(text).lower()
+    return {word for word in re.findall(r"[a-z][a-z0-9_-]{3,}", cleaned)
+            if word not in _SIMILAR_STOP and "redact" not in word}
+
+
+def _similar_data(ref: str) -> dict:
+    """Up to ten sessions that share files, repository or opening terms.
+
+    The evidence on each row is the overlap that put it here. A session that
+    shares none of those is not similar, however many times the words appear
+    in a search.
+    """
+    source = _resolve_ref(ref)
     conn = db.connect()
     try:
-        rows, hits = db.search(conn, term)
-        refs = db.refs_by_session(conn, [row[0] for row in rows])
+        rows = {row[0]: row for row in db.recent_sessions(conn, 0)}
+        mine = rows.get(source)
+        if mine is None:
+            return {"session": source, "count": 0, "sessions": []}
+        files = [path for path, _tool in db.session_files(conn, source)]
+        prompts = db.opening_prompts(conn, list(rows), first_only=True)
+        shared: dict[str, set[str]] = defaultdict(set)
+        if files and db.has_files(conn):
+            for chunk in db._chunks(files):
+                marks = ",".join("?" * len(chunk))
+                for sid, path in conn.execute(
+                        f"SELECT session_id, file_path FROM session_files "
+                        f"WHERE file_path IN ({marks})", chunk):
+                    if sid != source and isinstance(path, str):
+                        shared[sid].add(path)
     finally:
         conn.close()
-
-    def shipped(row: tuple) -> bool:
-        found = refs.get(row[0]) or {}
-        return bool(found.get("commit") or found.get("pr"))
-
-    # sorted() is stable, so the search's own ranking survives within each half.
-    ranked = sorted(rows, key=lambda row: 0 if shipped(row) else 1)
-    readings = {}
-    for row in ranked:
-        made = refs.get(row[0]) or {"commit": 0, "pr": 0}
-        item = {**_session_fields(row), "commits": made["commit"],
-                "prs": made["pr"], "outcome": _outcome(made)}
-        if row[0] in hits:
-            item["match"] = _hit_text(*hits[row[0]])
-        readings[row[0]] = item
-    return ranked, readings
-
-
-def _similar_data(term: str) -> dict:
-    _rows, readings = _similar_rows(term)
-    return {"term": term, "count": len(readings), "sessions": list(readings.values())}
-
-
-def cmd_similar(term: str) -> bool:
-    """Sessions like this one, the ones that shipped something first."""
-    ranked, readings = _similar_rows(term)
-    ordered = _with_assets(ranked)
-    hits = {sid: ("outcome", r["outcome"] + (f" · {r['match']}" if r.get("match")
-                                             else ""))
-            for sid, r in readings.items()}
-    title = (f"Similar work · '{term}' · {_plural(len(ordered), 'session')} · "
-             f"shipped first")
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        return _interactive_listing(ordered, title, show_all=True,
-                                    default_sort="relevance", hits=hits, term=term)
-    _render_listing(ordered, title, show_all=True, default_sort="relevance",
-                    hits=hits, term=term)
-    return False
+    openings = {sid: _opening_terms(pairs[0][1]) if pairs else set()
+                for sid, pairs in prompts.items()}
+    frequency: Counter = Counter()
+    for terms in openings.values():
+        frequency.update(terms)
+    ceiling = max(3, len(rows) // 3)
+    distinctive = {term for term in openings.get(source, set())
+                   if frequency[term] <= ceiling}
+    repo = mine[3] or ""
+    scored = []
+    for sid, row in rows.items():
+        if sid == source:
+            continue
+        reasons = []
+        score = 0
+        if repo and row[3] == repo:
+            score += 4
+            reasons.append("same repository")
+        overlap = shared.get(sid) or set()
+        if overlap:
+            score += min(9, 3 * len(overlap))
+            reasons.append(_plural(len(overlap), "shared file"))
+        words = sorted(distinctive & openings.get(sid, set()))
+        if words:
+            score += min(6, len(words))
+            reasons.append("opening: " + ", ".join(words[:4]))
+        if score <= 0:
+            continue
+        scored.append({**_session_fields(row), "score": score,
+                       "evidence": " · ".join(reasons)})
+    scored.sort(key=lambda item: (-item["score"], item["last_active"]), reverse=False)
+    scored.sort(key=lambda item: -item["score"])
+    top = scored[:10]
+    return {"session": source, "count": len(top), "sessions": top}
 
 
-# ── My asks ──────────────────────────────────────────────────────────
+def cmd_similar(ref: str) -> bool:
+    """Sessions that share a chosen session's files, repository or opening ask."""
+    return _page(_capture(lambda: _render_similar(_similar_data(ref))))
+
+
+def _render_similar(data: dict) -> None:
+    width = min(shutil.get_terminal_size().columns, 96)
+    inner = width - 4
+    print()
+    print(ui.rule(inner, "Similar work"))
+    print()
+    sessions = data["sessions"]
+    if not sessions:
+        _note("Nothing else shares that session's repository, files or the "
+              "distinctive words of its opening ask.", inner)
+        print()
+        return
+    _headline(f"{_plural(len(sessions), 'session')} like "
+              f"{data['session'][:8]}, closest first", inner)
+    print()
+    index = {}
+    for number, session in enumerate(sessions, 1):
+        index[number] = session["id"]
+        print(f"  {ui.SKY}{number:>3}{ui.RST}  {ui.BOLD}"
+              f"{ui._fit(session['summary'] or '(untitled)', inner - 8)}{ui.RST}")
+        _note(session["evidence"], inner, indent=7)
+        print(f"       {ui.MUTED}cs resume {number}{ui.RST}")
+    _save_index(index)
+    print()
+
 
 def _repo_match(row: tuple, repo: str) -> bool:
     """Whether a session belongs to `repo` — '.' is the directory you are in."""
@@ -507,132 +696,6 @@ def _repo_match(row: tuple, repo: str) -> bool:
     wanted = repo.lower()
     return wanted in name.lower() or wanted in cwd.lower()
 
-
-def _asks_data(days: int, repo: str | None = None) -> dict:
-    conn = db.connect()
-    try:
-        rows = _visible(db.recent_sessions(conn, days), False)
-        if repo:
-            rows = [row for row in rows if _repo_match(row, repo)]
-        ids = [row[0] for row in rows]
-        took_up = {h["id"] for h in signals.handoffs(conn)
-                   if h["role"] in ("received", "both")}
-        # Every prompt only where a handoff was picked up; the opener alone
-        # everywhere else.
-        prompts = db.opening_prompts(conn, [i for i in ids if i not in took_up],
-                                     first_only=True)
-        prompts.update(db.opening_prompts(conn, [i for i in ids if i in took_up]))
-        refs = db.refs_by_session(conn, ids)
-    finally:
-        conn.close()
-    asks = []
-    for row in rows:
-        mine = [(index, _user_text(text)) for index, text in prompts[row[0]]]
-        mine = [(index, text) for index, text in mine if text.strip()]
-        if not mine:
-            continue
-        chosen = [(mine[0][0], "opening", mine[0][1])]
-        if row[0] in took_up:
-            picked = next(((i, t) for i, t in mine[1:]
-                           if signals._ASK_READ.search(t)), None)
-            if picked:
-                chosen.append((picked[0], "after handoff", picked[1]))
-        for index, kind, text in chosen:
-            # `_user_text` has already masked it (in `_plain`); masking a
-            # long prompt twice was most of this view's time.
-            asks.append({**_session_fields(row), "turn": index, "kind": kind,
-                         "ask": redact.one_line(text[:300]),
-                         "ask_full": text.strip(),
-                         "outcome": _outcome(refs.get(row[0]))})
-    return {"window_days": days, "repo": repo, "count": len(asks), "asks": asks}
-
-
-def _clipboard(text: str) -> str | None:
-    """Put text on the clipboard with whichever tool this machine has."""
-    for tool, extra in (("pbcopy", []), ("wl-copy", []),
-                        ("xclip", ["-selection", "clipboard"])):
-        if shutil.which(tool):
-            try:
-                subprocess.run([tool, *extra], input=text, text=True,
-                               check=False, timeout=5)
-            except (OSError, subprocess.SubprocessError):
-                return None
-            return tool
-    return None
-
-
-def _copy_ask(text: str) -> None:
-    """Copy a masked ask, or print it when there is no clipboard tool."""
-    tool = _clipboard(text)
-    print()
-    if tool:
-        print(f"  {ui.MINT}copied the ask ({len(text):,} characters) with "
-              f"{tool}{ui.RST}")
-    else:
-        print(f"  {ui.MUTED}no clipboard tool found (pbcopy, wl-copy or xclip) — "
-              f"here it is:{ui.RST}")
-        print()
-        for line in text.splitlines() or [""]:
-            print(f"    {line}")
-    print()
-
-
-def cmd_asks(days: int = 30, repo: str | None = None) -> bool:
-    """What you opened each session by asking for — one line each."""
-    data = _asks_data(days, repo)
-    if data["asks"] and sys.stdin.isatty() and sys.stdout.isatty():
-        conn = db.connect()
-        try:
-            rows = {row[0]: row for row in db.recent_sessions(conn, days)}
-        finally:
-            conn.close()
-        first: dict[str, dict] = {}
-        extra: Counter = Counter()
-        full: dict[str, list[str]] = defaultdict(list)
-        for ask in data["asks"]:
-            full[ask["id"]].append(ask["ask_full"])
-            if ask["id"] in first:
-                extra[ask["id"]] += 1
-            else:
-                first[ask["id"]] = ask
-        listed = []
-        for sid, ask in first.items():
-            row = rows.get(sid)
-            if row:
-                listed.append((row[0], row[1], ask["ask"], *row[3:]))
-        hits = {sid: ("ask", f"turn {ask['turn']} · {ask['outcome']}"
-                      + (f" · +{extra[sid]} after handoff" if extra[sid] else ""))
-                for sid, ask in first.items()}
-        copies = {sid: "\n\n".join(texts) for sid, texts in full.items()}
-        title = (f"My asks · {_window_label(days)} · "
-                 f"{_plural(len(listed), 'session')} · c copies an ask")
-        return _interactive_listing(_with_assets(listed), title, show_all=True,
-                                    hits=hits, copy=copies)
-    return _page(_capture(lambda: _render_asks(data)))
-
-
-def _render_asks(data: dict) -> None:
-    inner = _frame("My asks", data["window_days"])
-    asks = data["asks"]
-    if not asks:
-        where = f" in '{data['repo']}'" if data["repo"] else ""
-        _note(f"No opening request recorded{where} in this window.", inner)
-        print()
-        return
-    _headline(f"{_plural(len(asks), 'ask')}", inner)
-    print()
-    _table([("turn", "turn", ">"), ("aiu", "AIU", ">"), ("outcome", "outcome", "<"),
-            ("ask", "ask", "<")],
-           [{"turn": (str(a["turn"]), ui.MUTED),
-             "aiu": (ui.fmt_aiu(a["nano_aiu"]), ui.VIOLET),
-             "outcome": (a["outcome"] if a["outcome"] != "no commit or PR" else "—",
-                         ui.MINT if a["outcome"] != "no commit or PR" else ui.MUTED),
-             "ask": (("↪ " if a["kind"] == "after handoff" else "") + a["ask"], "")}
-            for a in asks],
-           inner, {"turn": 4}, [("outcome", 16), ("aiu", 7)], flex="ask", least=16)
-    _hint("cs asks --json has each ask in full, masked · in a terminal, c "
-          "copies one", inner)
-    print()
 
 
 # ── Saved searches ───────────────────────────────────────────────────
@@ -756,109 +819,6 @@ def _pick(screen, title: str, options: list[str]) -> int | None:
             _disable_mouse()
 
 
-# ── File history ─────────────────────────────────────────────────────
-
-_EDITING_TOOLS = ("edit", "create", "apply_patch", "write", "str_replace",
-                  "str_replace_editor", "insert", "multi_edit")
-
-
-def _agents_for(session_id: str, paths: set[str],
-                turn_times: list[tuple[int, str]]) -> dict[tuple[str, int | None], str]:
-    """Which agent touched each path, by turn: (path, turn) → main | sub-agent.
-
-    Read from the session's event log on demand — never cached, because the
-    arguments it compares against are text. Only the path is compared, and
-    only the verdict is kept.
-    """
-    found: dict[tuple[str, int | None], str] = {}
-    for event in events.iter_events(session_id, ["tool.execution_start"]):
-        data = event["data"]
-        if data.get("toolName") not in _EDITING_TOOLS:
-            continue
-        arguments = data.get("arguments")
-        if not isinstance(arguments, dict):
-            continue
-        target = next((arguments[key] for key in ("path", "filePath", "file_path")
-                       if isinstance(arguments.get(key), str)), "")
-        if target not in paths:
-            continue
-        stamp = event.get("timestamp")
-        turn = events.turn_of(stamp[:19] if isinstance(stamp, str) else "",
-                              turn_times)
-        who = "sub-agent" if event.get("agentId") else "main"
-        found.setdefault((target, turn), who)
-        found.setdefault((target, None), who)
-    return found
-
-
-def _file_history_data(pattern: str) -> dict:
-    conn = db.connect()
-    try:
-        touches = db.file_touches(conn, pattern)
-        ids = list(dict.fromkeys(sid for _p, sid, *_rest in touches))
-        times = db.turn_times(conn, ids)
-        prompts = {(sid, turn): db.turn_prompt(conn, sid, turn)
-                   for _p, sid, _tool, turn, _a in touches if turn is not None}
-    finally:
-        conn.close()
-    paths_by_session: dict[str, set[str]] = defaultdict(set)
-    for path, sid, *_rest in touches:
-        paths_by_session[sid].add(path)
-    agents = {sid: _agents_for(sid, paths, times[sid])
-              for sid, paths in list(paths_by_session.items())[:_TOP * 2]}
-    files: dict[str, list[dict]] = defaultdict(list)
-    for path, sid, tool, turn, active in touches:
-        who = agents.get(sid, {})
-        agent = who.get((path, turn)) or who.get((path, None)) or "—"
-        files[path].append({
-            "id": sid, "last_active": active, "turn": turn, "tool": _clean(tool),
-            "agent": agent,
-            "turn_summary": _clean(_user_text(prompts.get((sid, turn), ""))),
-        })
-    return {"pattern": pattern, "files": [
-        {"path": _clean(_short_path(path, "")), "touches": rows}
-        for path, rows in files.items()]}
-
-
-def cmd_file_history(pattern: str) -> bool:
-    """Every recorded touch of a file: session, agent, turn and what was asked."""
-    return _page(_capture(lambda: _render_file_history(_file_history_data(pattern))))
-
-
-def _render_file_history(data: dict) -> None:
-    width = min(shutil.get_terminal_size().columns, 96)
-    inner = width - 4
-    print()
-    print(ui.rule(inner, f"File history · '{_clean(data['pattern'])}'"))
-    print()
-    if not data["files"]:
-        _note("No session recorded touching a file like that.", inner)
-        print()
-        return
-    numbers: dict[str, int] = {}
-    for file in data["files"]:
-        print(ui.heading(ui._fit(file["path"], inner - 4), ui.MINT, inner))
-        for touch in file["touches"]:
-            numbers.setdefault(touch["id"], len(numbers) + 1)
-        _table([("n", "#", ">"), ("when", "when", "<"), ("turn", "turn", ">"),
-                ("tool", "tool", "<"), ("agent", "by", "<"),
-                ("summary", "asked", "<")],
-               [{"n": (str(numbers[t["id"]]), ui.SKY),
-                 "when": (_when(t["last_active"]), ui.MUTED),
-                 "turn": ("—" if t["turn"] is None else str(t["turn"]), ""),
-                 "tool": (t["tool"] or "touched", ui.CODE),
-                 "agent": (t["agent"], ui.VIOLET if t["agent"] == "sub-agent"
-                           else ui.MUTED),
-                 "summary": (t["turn_summary"] or "—", "")}
-                for t in file["touches"]],
-               inner, {"n": 3}, [("when", 11), ("tool", 8), ("agent", 9),
-                                 ("turn", 4)])
-    _save_index({n: sid for sid, n in numbers.items()})
-    _hint("cs read N --turn T — the turn itself · by: who made the edit, from "
-          "the session's event log", inner)
-    print()
-
-
 # ── Clean-up ─────────────────────────────────────────────────────────
 
 _CLEANUP_PINS = 14
@@ -933,8 +893,9 @@ def _render_cleanup(data: dict) -> None:
         print()
         return
     _note("Suggestions only. cs never unpins, untags or deletes anything on its "
-          "own; each line ends in the command that would.", inner)
+          "own. The commands are together at the end, to copy.", inner)
     print()
+    commands = []
     for title, items, colour in groups:
         if not items:
             continue
@@ -942,5 +903,10 @@ def _render_cleanup(data: dict) -> None:
         for item in items:
             print(f"    {ui._fit(item['summary'] or item['id'][:8], inner - 4)}")
             print(f"      {ui.MUTED}{ui._fit(item['why'], inner - 6)}{ui.RST}")
-            print(f"      {ui.CODE}{item['command']}{ui.RST}")
+            commands.append(item["command"])
+        print()
+    if commands:
+        print(ui.heading("Commands", ui.CODE, inner))
+        for command in commands:
+            print(f"    {ui.CODE}{ui._fit(command, inner - 4)}{ui.RST}")
         print()

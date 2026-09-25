@@ -37,7 +37,6 @@ from ._common import (
     _save_index,
     _thousands,
     _visible,
-    _when,
     _window_label,
 )
 
@@ -482,6 +481,40 @@ def cmd_switches(days: int = 30) -> bool:
     return _page(_capture(lambda: _render_switches(days)))
 
 
+def _switch_line(switch: dict) -> str:
+    """One switch, as a sentence rather than a row of columns."""
+    turn = "turn —" if switch["turn"] is None else f"turn {switch['turn']}"
+    if switch["from"] != switch["to"]:
+        move = f"{switch['from']} → {switch['to']}"
+    else:
+        move = switch["to"]
+    if switch["effort_from"] != switch["effort_to"]:
+        move += (f" (effort {switch['effort_from'] or '—'} → "
+                 f"{switch['effort_to'] or '—'})")
+    source = switch["source"]
+    by = f" · by {source}" if source and source != "unrecorded" else ""
+    return f"{turn} · {move}{by}"
+
+
+def _paired_spend(before: int, after: int, inner: int) -> str:
+    """Spend either side of a switch, as two short bars and the ratio."""
+    peak = max(before, after, 1)
+    width = 4 if inner < 56 else 8
+    bars = (f"{ui.bar(before, peak, width, colour=ui.VIOLET)} "
+            f"{ui.bar(after, peak, width, colour=ui.MINT)}")
+    if before:
+        ratio = after / before
+        delta = f"{ratio:.1f}× after"
+    elif after:
+        delta = "spend started after"
+    else:
+        delta = "no spend either side"
+    text = f"{ui.fmt_aiu(before)} → {ui.fmt_aiu(after)}  {delta}"
+    if inner >= 72:
+        return f"{bars}  {text}"
+    return text
+
+
 def _render_switches(days: int) -> None:
     data = _switches_data(days)
     inner = _frame("Model switches", days)
@@ -490,35 +523,48 @@ def _render_switches(days: int) -> None:
               "window.", inner)
         print()
         return
-    _headline(f"{_plural(data['switches'], 'switch', 'switches')} in "
-              f"{_plural(len(data['sessions']), 'session')}", inner)
-    _note("AIU before is what the session spent since the previous switch; "
-          "after is what it spent until the next one.", inner, indent=4)
+    before = after = 0
+    sources: list[str] = []
+    for session in data["sessions"]:
+        for switch in session["switches"]:
+            before += switch["nano_aiu_before"]
+            after += switch["nano_aiu_after"]
+            if switch["source"] and switch["source"] != "unrecorded":
+                sources.append(switch["source"])
+    if before:
+        rose = after / before
+        change = f"spend per switch rose {rose:.1f}× after switching" if rose >= 1 \
+            else f"spend per switch fell to {rose:.1f}× after switching"
+    elif after:
+        change = "the spend landed after the switch"
+    else:
+        change = "no spend recorded on either side"
+    origin = ""
+    if sources:
+        top = Counter(sources).most_common(1)[0][0]
+        origin = f" · most from {top}"
+    _headline(
+        f"{_plural(data['switches'], 'switch', 'switches')} in "
+        f"{_plural(len(data['sessions']), 'session')}{origin} · {change}",
+        inner)
     print()
     _number(data["sessions"])
-    rows = []
-    for session in data["sessions"][:_TOP * 2]:
-        for index, switch in enumerate(session["switches"]):
-            effort = ""
-            if switch["effort_from"] != switch["effort_to"]:
-                effort = f" ({switch['effort_from'] or '—'}→{switch['effort_to'] or '—'})"
-            move = (f"{switch['from']} → {switch['to']}"
-                    if switch["from"] != switch["to"] else switch["to"])
-            rows.append({
-                "n": (str(session["n"]) if not index else "", ui.SKY),
-                "when": (_when(switch["at"]), ui.MUTED),
-                "turn": ("—" if switch["turn"] is None else str(switch["turn"]), ""),
-                "before": (ui.fmt_aiu(switch["nano_aiu_before"]), ui.VIOLET),
-                "after": (ui.fmt_aiu(switch["nano_aiu_after"]), ui.VIOLET),
-                "source": (switch["source"], ui.MUTED),
-                "move": (move + effort, ui.CODE),
-            })
-    _table(
-        [("n", "#", ">"), ("when", "when", "<"), ("turn", "turn", ">"),
-         ("before", "before", ">"), ("after", "after", ">"),
-         ("source", "source", "<"), ("move", "from → to", "<")],
-        rows, inner, {"n": 3, "before": 7, "after": 7},
-        [("when", 11), ("turn", 4), ("source", 12)], flex="move", least=30)
+    for session in data["sessions"][:_TOP]:
+        title = session["summary"] or "(untitled)"
+        print(f"  {ui.SKY}{session['n']:>3}{ui.RST}  "
+              f"{ui.BOLD}{ui._fit(title, inner - 8)}{ui.RST}")
+        for switch in session["switches"][:6]:
+            _note(_switch_line(switch), inner, indent=6)
+            spent = _paired_spend(switch["nano_aiu_before"],
+                                  switch["nano_aiu_after"], inner)
+            if inner < 72:
+                print("      " + ui._fit(spent, max(8, inner - 6)))
+            else:
+                print("      " + spent)
+        extra = len(session["switches"]) - 6
+        if extra > 0:
+            _note(f"+{extra} more in this session", inner, indent=6)
+        print()
     _hint("cs show N — the session · cs efficiency — cost by model", inner)
     print()
 

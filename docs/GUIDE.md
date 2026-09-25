@@ -30,23 +30,14 @@ single line:
   420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 96 sub-agents run · 2 mcp
     activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆▅▃▅▅▂▁▅▆▄▆▆  ▄▆▆▇▄ ▁▅▂▆█▆  ▆ 120 days
   ───────────────────────────────────────────────────────────────────────────
-    TODAY  ──────────────────────────────────────────────────────────────
-  ▌  👉  Next up           open handoffs, cut-off endings, stuck loops, wip, pins
-     📣  Standup           today's brief: what moved, handoffs, risks · last 30 days
-     🌙  End of day        commits, PRs, handoffs, spend and failures since midnight
-     📆  Weekly review     7 days against the 7 before: spend, failures, habits
-     💳  Budget            no daily limit · ←/→ sets one
-     📡  Watch live        the session running now: burn rate, budget, last tool
+  ▌  🌅  Today            where you are: now, what to pick up, the day and the week
     FIND  ───────────────────────────────────────────────────────────────
      🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-     🔭  Similar work      like this, the sessions that shipped something first
-     💬  My asks           what you opened each session asking for · last 30 days
+     🔭  Similar work      sessions sharing one's files, repository and opening ask
      🔖  Saved searches    pick one and run it live
-     📜  File history      every session, agent and turn that touched a file
-     🎬  Replay            step through a session turn by turn with ←/→
     MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
      📊  Stats             commits, PRs, files and what they cost · last 30 days
@@ -56,7 +47,6 @@ single line:
      🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
      🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
      📈  Spend anomalies   days and sessions over 2× their usual, and why · last 30 days
-     📐  Compare sessions  two sessions side by side: cost, tools, output
      📤  Team rollup       counts and rates to share, repos hashed · last 30 days
     GOVERN  ─────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
@@ -66,19 +56,16 @@ single line:
      🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
      🏁  Unclean endings   sessions cut off by an error, length or filter · last 30 days
     IMPROVE  ────────────────────────────────────────────────────────────
-     🎯  Practice          habits the record shows, worst first · last 30 days
-     🎵  Rhythm            when the work actually happens · last 30 days
-     📍  Context           what this repo hands the agent before you type
-     🏥  Repo health       this repo: spend, failures, busiest files, loose ends
-     🔣  Prompt patterns   how you open a session vs how it turns out · last 30 days
-     🚮  Clean-up          stale pins, quiet wip, handoffs nobody took · suggests only
+     📍  Context           instruction files, skills and hooks the next session is handed
+     🏥  Repo health       a verdict on this repo, and the few things worth doing
+     🔣  Prompt patterns   which ways of opening a session line up with shipping · last 30 days
+     🚮  Clean-up          stale pins, quiet work, handoffs waiting — commands to copy
     REFERENCE  ──────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here, what was used, when last
      🤖  Agents            the same for your agents, and whether their model held
      📋  Instructions      what every session here is told before you type
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
-     🔧  Doctor            can cs see the store, logs, config and terminal?
      🎨  Theme             Dark · choose from 20 palettes
      💡  Help              every command and every key
    ↑↓ move · ↵ open · type to find · / search text · q quit

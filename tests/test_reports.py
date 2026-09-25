@@ -163,9 +163,8 @@ class DataFormatTest(StoreTest):
         # command of its own.
         reach = {"sessions": ("recent",), "search": ("search", "portal"),
                  "skills-by-repo": ("skills", "--by-repo"),
-                 "similar": ("similar", "portal"),
-                 "file-history": ("files", "globe.js", "--history"),
-                 "diff": ("diff", "sess-alpha", "sess-empty")}
+                 "similar": ("similar", "sess-alpha"),
+                 "today": ("today",)}
         for view in export.VIEWS:
             args = reach.get(view, (view,))
             code, out = self._run(*args, "--json")

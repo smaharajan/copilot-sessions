@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import threading
 import time
 
 from .. import (
@@ -28,10 +29,8 @@ from ._common import (
 )
 from .analysis import (
     cmd_anomalies,
-    cmd_diff,
     cmd_health,
     cmd_patterns,
-    cmd_replay,
 )
 from .evidence import cmd_endings, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
@@ -45,8 +44,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_recent, cmd_search
-from .ops import cmd_doctor, cmd_rollup, cmd_watch, schema_notice
-from .practice_cmds import cmd_coach, cmd_rhythm, cmd_standup
+from .ops import WATCH_SECONDS, _live_lines, _watch_read, cmd_rollup, schema_notice
 from .reports import (
     cmd_cost,
     cmd_efficiency,
@@ -54,16 +52,12 @@ from .reports import (
     cmd_stats,
 )
 from .today import (
-    cmd_asks,
     cmd_cleanup,
-    cmd_eod,
-    cmd_file_history,
-    cmd_next,
     cmd_saved_menu,
     cmd_similar,
-    cmd_weekly,
+    cmd_today,
 )
-from .workflow import cmd_budget_view, cmd_pins
+from .workflow import cmd_pins
 
 
 def _home_items(period: int = 30,
@@ -89,28 +83,19 @@ def _home_items(period: int = 30,
     """
     window = _window_label(period)
     theme = theme or ui.theme_name()
-    limit = ui.daily_budget_aiu()
     return [
-        # Today · what to do now, and what the day and week came to.
-        (ui.menu_icon("next"), "Next up",
-         "open handoffs, cut-off endings, stuck loops, wip, pins",
-         cmd_next, ""),
-        (ui.menu_icon("standup"), "Standup",
-         f"today's brief: what moved, handoffs, risks · {window}",
-         cmd_standup, "period"),
-        (ui.menu_icon("eod"), "End of day",
-         "commits, PRs, handoffs, spend and failures since midnight",
-         cmd_eod, ""),
-        (ui.menu_icon("weekly"), "Weekly review",
-         "7 days against the 7 before: spend, failures, habits",
-         cmd_weekly, ""),
-        (ui.menu_icon("budget"), "Budget",
-         (f"daily limit {limit:g} AIU · ←/→ changes it" if limit
-          else "no daily limit · ←/→ sets one"),
-         cmd_budget_view, "budget"),
-        (ui.menu_icon("watch"), "Watch live",
-         "the session running now: burn rate, budget, last tool",
-         cmd_watch, ""),
+        # One Today row. The separate day-to-day commands stay on the CLI —
+        # next, standup, eod, weekly, budget — and the live session is drawn
+        # on this screen rather than opened as its own view. They came off
+        # the menu because six rows answering "where am I" was the menu.
+        (ui.menu_icon("today"), "Today",
+         "where you are: the session running now, what to pick up, the day and the week",
+         cmd_today, ""),
+        # (ui.menu_icon("next"), "Next up", ... cmd_next),
+        # (ui.menu_icon("standup"), "Standup", ... cmd_standup, "period"),
+        # (ui.menu_icon("eod"), "End of day", ... cmd_eod),
+        # (ui.menu_icon("weekly"), "Weekly review", ... cmd_weekly),
+        # (ui.menu_icon("budget"), "Budget", ... cmd_budget_view, "budget"),
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
          lambda: cmd_recent(7), ""),
@@ -123,20 +108,11 @@ def _home_items(period: int = 30,
         (ui.menu_icon("search"), "Search", "full text across every turn and checkpoint",
          cmd_search, "term"),
         (ui.menu_icon("similar"), "Similar work",
-         "like this, the sessions that shipped something first",
-         cmd_similar, "term"),
-        (ui.menu_icon("asks"), "My asks",
-         f"what you opened each session asking for · {window}",
-         cmd_asks, "period"),
+         "sessions sharing a session's files, repository and opening ask",
+         cmd_similar, "ref"),
         (ui.menu_icon("saved"), "Saved searches",
          "pick one and run it live",
          cmd_saved_menu, ""),
-        (ui.menu_icon("history"), "File history",
-         "every session, agent and turn that touched a file",
-         cmd_file_history, "term"),
-        (ui.menu_icon("replay"), "Replay",
-         "step through a session turn by turn with ←/→",
-         cmd_replay, "ref"),
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
         (ui.menu_icon("stats"), "Stats",
@@ -170,9 +146,6 @@ def _home_items(period: int = 30,
         (ui.menu_icon("anomalies"), "Spend anomalies",
          f"days and sessions over 2× their usual, and why · {window}",
          cmd_anomalies, "period"),
-        (ui.menu_icon("compare"), "Compare sessions",
-         "two sessions side by side: cost, tools, output",
-         lambda pair: cmd_diff(*pair), "pair"),
         (ui.menu_icon("rollup"), "Team rollup",
          f"counts and rates to share, repos hashed · {window}",
          cmd_rollup, "period"),
@@ -193,25 +166,22 @@ def _home_items(period: int = 30,
         (ui.menu_icon("endings"), "Unclean endings",
          f"sessions cut off by an error, length or filter · {window}",
          cmd_endings, "period"),
-        # Improve · Standup moved up to Today, so Practice opens this group;
-        # the ("Practice", "Improve") anchor in _HOME_GROUP_STARTS follows it.
-        (ui.menu_icon("practice"), "Practice",
-         f"habits the record shows, worst first · {window}",
-         cmd_coach, "period"),
-        (ui.menu_icon("rhythm"), "Rhythm",
-         f"when the work actually happens · {window}",
-         cmd_rhythm, "period"),
+        # Practice and Rhythm stay available as `cs coach` and `cs rhythm`.
+        # They came off the menu: the habits and the clock were the rows
+        # nobody opened, and Improve reads better as four things to do.
+        # (ui.menu_icon("practice"), "Practice", ... cmd_coach, "period"),
+        # (ui.menu_icon("rhythm"), "Rhythm", ... cmd_rhythm, "period"),
         (ui.menu_icon("context"), "Context",
-         "what this repo hands the agent before you type",
+         "instruction files, skills and hooks the next session will be handed",
          cmd_context, ""),
         (ui.menu_icon("health"), "Repo health",
-         "this repo: spend, failures, busiest files, loose ends",
+         "a verdict on this repo — spend, failures — and the few things worth doing",
          cmd_health, ""),
         (ui.menu_icon("patterns"), "Prompt patterns",
-         f"how you open a session vs how it turns out · {window}",
+         f"which ways of opening a session line up with shipping · {window}",
          cmd_patterns, "period"),
         (ui.menu_icon("cleanup"), "Clean-up",
-         "stale pins, quiet wip, handoffs nobody took · suggests only",
+         "stale pins, quiet work and handoffs left waiting — commands to copy",
          cmd_cleanup, ""),
         (ui.menu_icon("skills"), "Skills",
          "what Copilot can load here, what was used, when last",
@@ -235,9 +205,8 @@ def _home_items(period: int = 30,
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
          cmd_mcp, ""),
-        (ui.menu_icon("doctor"), "Doctor",
-         "can cs see the store, logs, config and terminal?",
-         cmd_doctor, ""),
+        # Doctor stays `cs doctor`. The status line names it when the schema
+        # drifts; it does not need a row beside Theme.
         (ui.menu_icon("theme"), "Theme",
          f"{ui.theme_label(theme)} · choose from {len(ui.THEMES)} palettes",
          ui.next_theme, "theme"),
@@ -274,19 +243,16 @@ _HOME_GROUP_TONE = {
 
 
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
-    ("Next up", "Today"),
+    ("Today", "Today"),
     ("Recent sessions", "Find"),
     ("Repositories", "Measure"),
     ("Autonomy", "Govern"),
-    ("Practice", "Improve"),
+    ("Context", "Improve"),
     ("Skills", "Reference"),
 )
 
 # What the prompt says on a row that asks for text. Search is the default.
-_TERM_PROMPTS = {
-    "Similar work": " similar to: ",
-    "File history": " file: ",
-}
+_TERM_PROMPTS: dict[str, str] = {}
 
 
 def _home_groups(items: list | None = None) -> dict[int, str]:
@@ -340,7 +306,10 @@ def _home_layout(indices, grouped: bool) -> list[tuple[str, object]]:
     seen = None
     for index in indices:
         if grouped and (group := _home_group(index)) != seen:
-            rows.append(("head", group))
+            # Today is one row. A heading above the only item in the group
+            # spends a line on a caption that repeats the row.
+            if group != "Today":
+                rows.append(("head", group))
             seen = group
         rows.append(("item", index))
     return rows
@@ -440,27 +409,33 @@ def _home_matches(items, query: str) -> list[int]:
     ]
 
 
-def _home_snapshot(days: int = 120) -> tuple[list[tuple], list[int]]:
+def _home_snapshot(days: int = 120, *, full: bool = True) -> tuple[list[tuple], list[int]]:
     """The current facts and activity strip, read in one database connection.
 
     Kept as pairs rather than one joined string so the numbers can be drawn
     apart from their labels: the counts are what the line is for, and in one
     flat colour they were the hardest part of it to pick out.
+
+    `full=False` skips the turn scan when its counts are not already cached,
+    so the first frame can paint. The missing counts are filled in afterwards.
     """
     conn = db.connect()
     try:
         basics = db.stats(conn)
-        skills = [name for name, _ in _asset_names("skills")]
-        agents = [name for name, _ in _asset_names("agents")]
-        skills_used = db.assets_used(conn, skills)
-        agents_used = db.assets_used(conn, agents)
-        subagents = sum(db.subagents_by_session(conn).values())
         series = db.activity(conn, days)
         budget = ui.daily_budget_aiu()
         today_nano = 0
         if budget is not None:
             today = db.cost_totals(conn, 1)
             today_nano = int(today.get("nano_aiu", 0) or 0) if today else 0
+        # Listing installed skills is a directory walk. On a cold cache the
+        # first frame does not need it: the counts are filled in afterwards.
+        usage = None
+        if full or db._asset_cache_load(conn) is not None:
+            skills = [name for name, _ in _asset_names("skills")]
+            agents = [name for name, _ in _asset_names("agents")]
+            usage = db.asset_usage(conn, skills, agents, compute=full)
+        mcp_count = len(mcp.load()[0])
     finally:
         conn.close()
     # Two halves, and the line is only as long as it can be: what the store
@@ -492,12 +467,32 @@ def _home_snapshot(days: int = 120) -> tuple[list[tuple], list[int]]:
         (f"{basics['total']:,}", "sessions"),
         (f"{basics['total_turns']:,}", "turns"),
         (f"{basics['repos']}", "repos"),
-        (f"{skills_used}/{len(skills)}", "skills used"),
-        (f"{agents_used}/{len(agents)}", "agents used"),
-        (f"{subagents:,}", "sub-agents run"),
-        (f"{len(mcp.load()[0])}", "mcp"),
     ]
+    if usage:
+        facts += [
+            (f"{usage['skills_used']}/{usage['skills']}", "skills used"),
+            (f"{usage['agents_used']}/{usage['agents']}", "agents used"),
+            (f"{usage['subagents']:,}", "sub-agents run"),
+        ]
+    facts.append((f"{mcp_count}", "mcp"))
     return facts, series if any(series) else []
+
+
+def _fill_usage(box: dict) -> None:
+    """The turn scan, off the curses thread. Writes facts back and nothing else."""
+    try:
+        box["facts"], box["activity"] = _home_snapshot(full=True)
+    except (OSError, sqlite3.Error):
+        box["facts"] = None
+    box["done"] = True
+
+
+def _refresh_live(state: dict) -> None:
+    """One cheap live tick. A failure leaves the previous reading in place."""
+    try:
+        _watch_read(state)
+    except (OSError, sqlite3.Error):
+        pass
 
 
 def _refresh_home(state: dict) -> bool:
@@ -515,7 +510,7 @@ def _refresh_home(state: dict) -> bool:
 
 
 def _home_header_rows(width: int, height: int, menu_rows: int,
-                      spark: bool = False) -> int:
+                      spark: bool = False, live: int = 0) -> int:
     """How many rows _draw_home_header will take, without drawing it.
 
     The menu has to know whether it can afford its headings before it knows
@@ -527,17 +522,18 @@ def _home_header_rows(width: int, height: int, menu_rows: int,
     too short for the other, which keeps this arithmetic straight rather
     than circular.
     """
-    art = _home_art(width, height, menu_rows, spark)
+    art = _home_art(width, height, menu_rows, spark, live)
     # The wordmark (or the one-line mark that replaces it), the counts, and
     # the rule under them — plus the activity row when the wordmark earned
-    # its place. The version rides on the counts and the keys ride on the
-    # status bar, because a row holding one short string is a row the menu
-    # could have had.
-    return (len(art) or 1) + 2 + (1 if art and spark else 0)
+    # its place, plus the live strip when a session is running. The version
+    # rides on the counts and the keys ride on the status bar, because a row
+    # holding one short string is a row the menu could have had.
+    return (len(art) or 1) + 2 + (1 if art and spark else 0) + live
 
 
 def _home_plan(width: int, height: int, shown: list[int],
-               spark: bool = False) -> tuple[list[tuple[str, object]], list[str]]:
+               spark: bool = False, live: int = 0
+               ) -> tuple[list[tuple[str, object]], list[str]]:
     """The menu's rows and the wordmark they leave room for.
 
     One function so the loop and its tests cannot disagree about the trade.
@@ -558,23 +554,23 @@ def _home_plan(width: int, height: int, shown: list[int],
     """
     heads = len({_home_group(index) for index in shown})
     wanted = len(shown) + heads
-    room = height - 1 - _home_header_rows(width, height, wanted, spark)
+    room = height - 1 - _home_header_rows(width, height, wanted, spark, live)
     # Headings go only when the menu gets at least two rows per heading
     # beyond a small floor — below that the captions would be most of what
     # is on screen.
     layout = _home_layout(shown, room >= heads * 2 + 4)
-    return layout, _home_art(width, height, len(layout), spark)
+    return layout, _home_art(width, height, len(layout), spark, live)
 
 
 def _home_art(width: int, height: int, menu_rows: int,
-              spark: bool = False) -> list[str]:
+              spark: bool = False, live: int = 0) -> list[str]:
     """The wordmark a menu of this many rows leaves room for — [] for none.
 
     Asked separately from the row count because the wordmark's size and the
     shape of the menu are one decision, and it has to be answerable before
     either is drawn.
     """
-    spare = height - 3 - menu_rows - (1 if spark else 0)
+    spare = height - 3 - menu_rows - (1 if spark else 0) - live
     return ui.banner(width, spare) if spare >= 4 else []
 
 
@@ -583,7 +579,8 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
                       sweep: list[int] | None = None,
                       reveal: int | None = None, start: int = 0,
                       activity: list[int] | None = None,
-                      pace: int | None = None) -> int:
+                      pace: int | None = None,
+                      live: list[tuple[str, str]] | None = None) -> int:
     """Draw the banner and the facts above the menu. Returns the first menu row.
 
     `art` is the wordmark _home_plan chose — passed in rather than worked out
@@ -660,6 +657,9 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
         _addstr(screen, row, column, label, width, theme["repo"])
         column += len(label) + 1
     row += 1
+    for text, role in live or []:
+        _addstr(screen, row, 0, text, width, theme.get(role, theme["summary"]))
+        row += 1
     if art and activity:
         row = _draw_home_activity(screen, theme, width, row, activity, sweep,
                                   swept - len(art) * ui.REVEAL_LAG, widest)
@@ -835,6 +835,9 @@ def _home_tui(screen, state: dict):
     next_refresh = state.get(
         "next_refresh", time.monotonic() + _REFRESH_SECONDS
     )
+    # The live strip ticks on its own deadline. It must not move the 60-second
+    # refresh: a tick that reset that clock would make "updated" drift.
+    next_live = state.get("next_live", time.monotonic())
 
     def wait(milliseconds: int) -> bool:
         """Ask for a timed getch. False when this window cannot do one."""
@@ -845,8 +848,12 @@ def _home_tui(screen, state: dict):
         return True
 
     def wait_until(milliseconds: int) -> bool:
-        remaining = max(1, round((next_refresh - time.monotonic()) * 1000))
-        return wait(min(milliseconds, remaining))
+        # The sooner of the live tick and the refresh, and never a blocking
+        # read. Re-armed by the caller immediately before getch.
+        now = time.monotonic()
+        remaining = min(next_refresh - now, next_live - now)
+        remaining_ms = max(1, round(remaining * 1000))
+        return wait(min(milliseconds, remaining_ms))
 
     # Once per run, not once per visit: replaying the wipe every time a view
     # hands you back would turn a greeting into a stutter.
@@ -908,15 +915,21 @@ def _home_tui(screen, state: dict):
         if asks == "ref":
             ref = _prompt(screen, theme, height - 1, width, " session (#N or id): ", "")
             return (index, ref.strip()) if ref and ref.strip() else None
-        if asks == "pair":
-            pair = _prompt(screen, theme, height - 1, width,
-                           " two sessions (#N or id, space between): ", "")
-            refs = (pair or "").split()
-            return (index, (refs[0], refs[1])) if len(refs) == 2 else None
         return (index, state.get("period", 30))
 
     try:
         while True:
+            box = state.get("usage_box")
+            if box and box.get("done"):
+                if box.get("facts"):
+                    state["facts"] = box["facts"]
+                    state["activity"] = box["activity"]
+                state.pop("usage_box", None)
+            if time.monotonic() >= next_live:
+                _refresh_live(state)
+                next_live += WATCH_SECONDS
+                if next_live <= time.monotonic():
+                    next_live = time.monotonic() + WATCH_SECONDS
             if time.monotonic() >= next_refresh:
                 _refresh_home(state)
                 next_refresh += _REFRESH_SECONDS
@@ -940,19 +953,22 @@ def _home_tui(screen, state: dict):
             # have to read every time; four rows of ASCII art is decoration,
             # and the banner already knows how to be smaller.
             activity = state.get("activity") or None
-            layout, art = _home_plan(width, height, shown, bool(activity))
+            live_rows = _live_lines(state, width)
+            layout, art = _home_plan(width, height, shown, bool(activity),
+                                     len(live_rows))
             # On a tall window everything sat at the top with ten empty rows
             # under it and the status bar stranded below them. The slack is
             # split, so the screen has a margin rather than a hole. It is
             # taken after the wordmark has been chosen, and only out of rows
             # nothing else wanted, so it can never push the menu off.
             slack = height - 1 - _home_header_rows(
-                width, height, len(layout), bool(activity))
+                width, height, len(layout), bool(activity), len(live_rows))
             pad = (slack - len(layout)) // 2 if slack - len(layout) >= 6 else 0
             top = _draw_home_header(screen, theme, width, art,
                                     state.get("facts", []), sweep, reveal, pad,
                                     activity,
-                                    None if reveal is not None else pace)
+                                    None if reveal is not None else pace,
+                                    live_rows)
 
             # The menu scrolls rather than spilling off a short window, so
             # every option stays reachable however small the terminal is.
@@ -1094,14 +1110,6 @@ def _home_tui(screen, state: dict):
                 cursor = _home_step(shown, cursor, -1)
             elif key == curses.KEY_DOWN:
                 cursor = _home_step(shown, cursor, 1)
-            elif key in (curses.KEY_LEFT, curses.KEY_RIGHT) and (
-                    items[cursor][4] == "budget"):
-                # On the Budget row the arrows move the limit, not the window:
-                # the row is the setting, and it is saved as it changes. The
-                # header re-reads so it shows the new limit straight away;
-                # the refresh deadline is left where it was.
-                ui.step_budget(1 if key == curses.KEY_RIGHT else -1)
-                _refresh_home(state)
             elif key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 # The same keys that step a column in the listing and the
                 # reader, stepping the window here. They are free on this
@@ -1135,6 +1143,7 @@ def _home_tui(screen, state: dict):
         state["cursor"] = cursor
         state["offset"] = offset
         state["next_refresh"] = next_refresh
+        state["next_live"] = next_live
         wait(-1)  # a view opened from here reads keys of its own
         if mouse:
             _disable_mouse()
@@ -1154,7 +1163,7 @@ def cmd_home() -> None:
         cmd_recent(1)
         return
 
-    facts, activity = _home_snapshot()
+    facts, activity = _home_snapshot(full=False)
     state = {
         "facts": facts,
         "activity": activity,
@@ -1162,6 +1171,10 @@ def cmd_home() -> None:
         "refreshed": time.strftime("%H:%M:%S"),
         "schema_drift": schema_notice(),
     }
+    if not any(label == "skills used" for _value, label, *_rest in facts):
+        box: dict = {}
+        state["usage_box"] = box
+        threading.Thread(target=_fill_usage, args=(box,), daemon=True).start()
     _HOME_ACTIVE = True
     try:
         while True:
@@ -1208,6 +1221,11 @@ def cmd_help() -> None:
     cs home               The same, by name
 
   {ui.BOLD}Today{ui.RST}
+    cs today              Where you are, on one page: the session running now,
+                          what to pick up, since midnight, and this week
+                          {ui.DIM}The home screen also draws the live session under the
+                          counts: burn, budget left, last tool. It ticks about
+                          every 5 seconds and does not move the 60-second refresh.{ui.RST}
     cs next [N|all]       What to pick up: open handoffs, cut-off endings,
                           stuck loops, wip tags and pins — each with its reason
                           {ui.DIM}default: the last 14 days; pins and wip always{ui.RST}
@@ -1215,7 +1233,9 @@ def cmd_help() -> None:
                           budget and tool failures since midnight
     cs weekly [--md]      Last 7 days against the 7 before: spend, dearest
                           sessions, repeated failures, top 3 habits
-                          {ui.DIM}--md prints Markdown ready to paste; text is masked{ui.RST}
+                          {ui.DIM}--md prints Markdown ready to paste; text is masked.
+                          next, eod, weekly and standup stay commands; the home
+                          screen opens them together as Today.{ui.RST}
 
   {ui.BOLD}List{ui.RST}
     cs recent [N|all]     Interactive sessions, last N days (default 7)
@@ -1244,13 +1264,14 @@ def cmd_help() -> None:
                           often each event ran and failed, and which point at
                           a script that is gone
     cs subagents [N|all]  Sub-agents run: models, overrides, tools, tokens, time
-    cs switches [N|all]   Model or effort changed mid-run, and the AIU either side
+    cs switches [N|all]   Model or effort changed mid-run: one line per switch,
+                          spend before and after, and whether it paid off
     cs anomalies [N|all]  Days and sessions over 2x the 14-day median, with the
                           turns that drove them (model, effort, cache)
-    cs diff <a> <b>       Two sessions side by side: cost, turns, models, cache,
-                          tools, files, commits and PRs, duration
-    cs rollup [N|all]     Counts and rates to share with a team — no text, ids,
-                          paths or names; repositories are salted hashes
+    cs rollup [N|all]     Counts and rates to share with a team — a report on
+                          the page, and the same reading as JSON with --json.
+                          No text, ids, paths or names; repositories are
+                          salted hashes
 
   {ui.BOLD}Improve{ui.RST}
     cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
@@ -1295,10 +1316,9 @@ def cmd_help() -> None:
     cs untag <ref> <tag>  Remove a tag
     cs budget [N|clear]   Daily AIU budget — show, set, or clear
     cs budget --check     One line, exit 1 when over budget — for hooks/scripts
-    cs watch              Live pane for the session running now: burn rate,
-                          budget left, last tool, last failure (every 5s; q)
                           {ui.DIM}Stored in ~/.config/cs/settings.json · home header
-                          colours amber at 70% and rose when over.{ui.RST}
+                          colours amber at 70% and rose when over. The live
+                          strip on the home screen shows what is left today.{ui.RST}
 
   {ui.BOLD}Find{ui.RST}
     cs search <words>     Full-text search, best match first
@@ -1306,12 +1326,9 @@ def cmd_help() -> None:
                           session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
     cs search --save <name> <words>   Save a search under a name, and run it
     cs saved [name]       List saved searches, or run one
-    cs similar <words>    The same search, sessions that shipped a commit or
-                          PR first, each with its outcome
-    cs asks [--repo .] [N|all]  Your opening request in each session, one line,
-                          with outcome and cost ('c' copies one in a listing)
-    cs files <path> --history   Every touch of a file: session, agent, turn,
-                          and what was asked
+    cs similar <N|id>     Up to ten sessions that share that session's files,
+                          its repository, or the distinctive words of its
+                          opening ask — each row says which overlap it was
 
   {ui.BOLD}Inspect & resume{ui.RST}
     {ui.DIM}Two views of one session: show is the page, read is the words.{ui.RST}
@@ -1321,8 +1338,6 @@ def cmd_help() -> None:
                           request in order · 'cs brief' == 'cs show --short'{ui.RST}
     cs read <N|id>        The conversation itself, both sides, in full
                           {ui.DIM}'--turn N' prints one turn · 'transcript' is an alias{ui.RST}
-    cs replay <N|id>      Step through it a turn at a time with ←/→: tools,
-                          files and credits for each turn, then the words
     cs files <path>       Sessions that touched a file (globs and partials work)
     cs resume <N|id>      Resume (cd's to session dir, runs 'copilot --resume')
 
@@ -1332,10 +1347,9 @@ def cmd_help() -> None:
     cs <view> --json      Structured output, for any of:
                           {ui.DIM}recent, all, search, stats, timeline, cost, efficiency,
                           agents, repos, skills, profiles, standup, failures,
-                          loops, subagents, switches, endings, next, eod,
-                          weekly, similar, asks, saved, cleanup, budget,
-                          diff, anomalies, health, patterns, doctor, rollup,
-                          files --history{ui.RST}
+                          loops, subagents, switches, endings, today, next, eod,
+                          weekly, similar, saved, cleanup, budget,
+                          anomalies, health, patterns, doctor, rollup{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
     cs completion <shell> Completions for bash, zsh or fish
@@ -1377,6 +1391,7 @@ def cmd_help() -> None:
       ←/→    the window the counting views use — Stats, AI spend, Delegation,
              Security, Tool failures and the rest. Those rows say which
              window they will use, and Enter opens them with it.
+             The daily budget is `cs budget`; the header shows it.
       click  open, wheel scrolls
 
     'cs recent' and 'cs search' run full-screen in a terminal:
@@ -1385,7 +1400,6 @@ def cmd_help() -> None:
       o      show: cost, files, turns    t      transcript: the conversation
       s      reverse the sort order     /      filter as you type
       p      pin / unpin the row        g/G    jump to first/last
-      e      replay the session         d      mark, then d again to compare
       Esc    clear filter, then quit    q      back to the menu, or quit
     Key hints shrink to fit a narrow window rather than being cut off, so
     the keys you cannot guess stay on screen.

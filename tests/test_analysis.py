@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from support import Screen, StoreTest, _alpha_events, _event, _tool, _write_events
+from support import Screen, StoreTest, _alpha_events, _event, _write_events
 
 SECRET = "ghp_" + "M" * 36  # gitleaks:allow
 
@@ -56,118 +56,6 @@ class AnalysisTest(StoreTest):
 
         return mock.patch.object(shutil, "get_terminal_size",
                                  return_value=os.terminal_size((width, 40)))
-
-    # ── Compare ──────────────────────────────────────────────────────
-
-    def test_diff_puts_two_sessions_side_by_side(self):
-        data = self._json("diff", "sess-alpha", "sess-empty")
-        a, b = data["a"], data["b"]
-        self.assertEqual((a["turns"], a["nano_aiu"], a["commits"], a["prs"]),
-                         (2, 4_000_000_000, 1, 1))
-        self.assertEqual((a["tool_calls"], a["tool_failures"]), (6, 4))
-        self.assertAlmostEqual(a["cache_hit"], 8000 / 11000, places=3)
-        self.assertEqual(sorted(a["models"]), ["claude-opus-4.8", "gpt-5.5"])
-        self.assertIsNone(b["tool_calls"])
-        with self._columns(100):
-            code, out = self._run("diff", "sess-alpha", "sess-empty")
-        self.assertIn("cache hit", out)
-        row = next(line for line in out.splitlines() if "tool calls" in line)
-        self.assertIn("6 · 4 failed", row)
-        self.assertIn("no log", row)          # both sides on one line
-
-    def test_diff_stacks_at_forty_columns(self):
-        with self._columns(40):
-            code, out = self._run("diff", "sess-alpha", "sess-empty")
-        self.assertEqual(code, 0)
-        self.assertIn("A · sess-alp", out)
-        self.assertIn("B · sess-emp", out)
-        self.assertEqual(out.count("tool calls"), 2)
-
-    def test_the_listing_marks_then_compares(self):
-        from cs import cli
-
-        rows = [("sess-alpha", "2026-09-01T12:00", "One", "r/a", "/tmp", 1, 0),
-                ("sess-empty", "2026-09-01T11:00", "Two", "r/b", "/tmp", 1, 0)]
-        import curses
-        screen = Screen([ord("d"), curses.KEY_DOWN, ord("d")])
-        state: dict = {}
-        self.assertEqual(cli._listing_tui(screen, rows, "Sessions", state=state),
-                         ("diff", ("sess-alpha", "sess-empty")))
-        marked = [text for text in screen.frames[1].values() if "marked" in text]
-        self.assertTrue(marked, "the status line never said a session was marked")
-        screen = Screen([ord("e")])
-        self.assertEqual(cli._listing_tui(screen, rows, "Sessions"),
-                         ("replay", "sess-alpha"))
-
-    def test_the_listing_opens_the_comparison_and_the_replay(self):
-        """What the listing hands back has to reach the views — through the
-        package, where `_page` can find its reader. An import inside the
-        function once handed back an un-lifted copy that raised KeyError."""
-        from cs import cli
-
-        rows = [("sess-alpha", "2026-09-01T12:00", "One", "r/a", "/tmp", 1, 0)]
-        for verb, target, shown in (("diff", ("sess-alpha", "sess-empty"),
-                                     "Compare sessions"),
-                                    ("replay", "sess-alpha", "Replay · ")):
-            with self.subTest(verb=verb):
-                with mock.patch.object(cli, "_curses_wrapper",
-                                       side_effect=[(verb, target), None]), \
-                        mock.patch.object(cli, "_pause", return_value=True), \
-                        redirect_stdout(io.StringIO()) as out:
-                    self.assertTrue(cli._interactive_listing(rows, "S", show_all=True))
-                self.assertIn(shown, out.getvalue())
-
-    # ── Replay ───────────────────────────────────────────────────────
-
-    def test_replay_pages_turn_by_turn_with_tools_files_and_credits(self):
-        from cs import cli
-
-        _write_events(self.base, "sess-alpha", [
-            *_tool("r1", "bash", _today(3), False),
-            *_tool("r2", "view", _today(12), True),
-        ])
-        data = cli._replay_data("sess-alpha")
-        first = cli._replay_page(data, 0)
-        second = cli._replay_page(data, 1)
-        self.assertIn("turn 0 of 1", first)
-        self.assertIn("1.50 AIU", first)
-        self.assertIn("bash 0", first)
-        self.assertIn("✗1", first)
-        self.assertIn("make a portal", first)
-        self.assertIn("2.50 AIU", second)
-        self.assertIn("view 1", second)
-        self.assertIn("globe.js", second)          # files touched in turn 1
-        self.assertIn("add charts", second)
-
-    def test_replay_steps_with_the_arrows_in_the_reader(self):
-        import curses
-
-        from cs import cli
-
-        data = cli._replay_data("sess-alpha")
-        sort = {"steps": "turn", "columns": [0, 1], "column": 0, "descending": False,
-                "defaults": {}, "render": lambda turn, _d: cli._replay_page(data, turn),
-                "label": lambda turn: f"turn {turn}/1"}
-        screen = Screen([ord("x"), curses.KEY_RIGHT, curses.KEY_RIGHT, ord("q")])
-        with mock.patch.object(cli.ui, "sgr_palette", return_value={}), \
-                mock.patch.object(cli.ui, "tui_theme",
-                                  return_value=__import__("collections").defaultdict(int)):
-            cli._reader_tui(screen, cli._replay_page(data, 0).split("\n"), False, sort)
-        text = " ".join(screen.frames[-1].values())
-        self.assertIn("add charts", text)
-        self.assertIn("turn 1/1", text)
-        self.assertEqual(sort["column"], 1, "→ past the last turn must stay put")
-
-    def test_replay_prints_every_turn_when_piped_and_masks_them(self):
-        self.conn.execute("UPDATE turns SET assistant_response = ? WHERE "
-                          "session_id = 'sess-alpha' AND turn_index = 1",
-                          (f"use {SECRET}",))
-        self.conn.commit()
-        code, out = self._run("replay", "sess-alpha")
-        self.assertEqual(code, 0)
-        self.assertIn("turn 0 of 1", out)
-        self.assertIn("turn 1 of 1", out)
-        self.assertNotIn(SECRET, out)
 
     # ── Spend anomalies ──────────────────────────────────────────────
 
@@ -294,16 +182,15 @@ class AnalysisTest(StoreTest):
             *_alpha_events(),
             _event("skill.invoked", _today(30), {"name": f"s-{SECRET}"}),
         ])
-        for args in (("diff", "sess-alpha", "sess-empty"), ("replay", "sess-alpha"),
-                     ("anomalies",), ("health", "--repo", "portal"), ("patterns",),
-                     ("skills",)):
+        for args in (("anomalies",), ("health", "--repo", "portal"),
+                     ("patterns",), ("skills",)):
             with self.subTest(view=args[0]):
                 code, out = self._run(*args)
+                self.assertEqual(code, 0, out)
                 self.assertNotIn(SECRET, out)
-                if args[0] != "replay":
-                    code, out = self._run(*args, "--json")
-                    self.assertEqual(code, 0)
-                    self.assertNotIn(SECRET, out)
+                code, out = self._run(*args, "--json")
+                self.assertEqual(code, 0)
+                self.assertNotIn(SECRET, out)
 
 
 class AnalysisHomeTest(StoreTest):
@@ -314,32 +201,26 @@ class AnalysisHomeTest(StoreTest):
         labels = [item[1] for item in items]
         group = {label: cli._home_group(i) for i, label in enumerate(labels)}
         asks = {item[1]: item[4] for item in items}
-        self.assertEqual((group["Replay"], asks["Replay"]), ("Find", "ref"))
-        self.assertEqual((group["Compare sessions"], asks["Compare sessions"]),
-                         ("Measure", "pair"))
+        self.assertNotIn("Replay", labels)
+        self.assertNotIn("Compare sessions", labels)
         self.assertEqual((group["Spend anomalies"], asks["Spend anomalies"]),
                          ("Measure", "period"))
+        self.assertEqual((group["Similar work"], asks["Similar work"]),
+                         ("Find", "ref"))
         improve = [label for label in labels if group[label] == "Improve"]
-        self.assertEqual(improve, ["Practice", "Rhythm", "Context", "Repo health",
-                                   "Prompt patterns", "Clean-up"])
+        self.assertEqual(improve, ["Context", "Repo health", "Prompt patterns",
+                                   "Clean-up"])
 
-    def test_ref_and_pair_rows_ask_then_open(self):
+    def test_similar_asks_for_a_session_then_opens(self):
         import curses
 
         from cs import cli
 
         labels = [item[1] for item in cli._home_items()]
-        replay = labels.index("Replay")
-        screen = Screen([curses.KEY_DOWN] * replay + [10, *map(ord, "#3"), 10])
-        self.assertEqual(cli._home_tui(screen, {"revealed": True}), (replay, "#3"))
-        compare = labels.index("Compare sessions")
-        screen = Screen([curses.KEY_DOWN] * compare + [10, *map(ord, "1 2"), 10])
+        at = labels.index("Similar work")
+        screen = Screen([curses.KEY_DOWN] * at + [10, *map(ord, "sess-alpha"), 10])
         self.assertEqual(cli._home_tui(screen, {"revealed": True}),
-                         (compare, ("1", "2")))
-        # One session where two are needed is not a comparison.
-        screen = Screen([curses.KEY_DOWN] * compare + [10, *map(ord, "1"), 10,
-                                                        ord("q")])
-        self.assertIsNone(cli._home_tui(screen, {"revealed": True}))
+                         (at, "sess-alpha"))
 
     def test_every_new_row_opens(self):
         from cs import cli
@@ -347,10 +228,9 @@ class AnalysisHomeTest(StoreTest):
         items = {item[1]: item for item in cli._home_items(7)}
         with mock.patch.object(cli, "_page", return_value=True), \
                 redirect_stdout(io.StringIO()):
-            for label, given in (("Replay", "sess-alpha"),
-                                 ("Compare sessions", ("sess-alpha", "sess-empty")),
-                                 ("Spend anomalies", 7), ("Repo health", None),
-                                 ("Prompt patterns", 7)):
+            for label, given in (("Spend anomalies", 7), ("Repo health", None),
+                                 ("Prompt patterns", 7),
+                                 ("Similar work", "sess-alpha")):
                 with self.subTest(row=label):
                     action = items[label][3]
                     action(given) if given is not None else action()

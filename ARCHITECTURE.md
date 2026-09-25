@@ -354,8 +354,10 @@ then the goal and the final request. The full turn list is behind `--asks`.
 `cs` with no arguments opens `cmd_home()`: a curses menu over `_home_items()`,
 which is one line per view — label, description, the callable to run, and
 what it needs first (`asks`): nothing, a window (`period`, set with ←/→), a
-term (Search, Similar work, File history), the theme gallery, or `budget`,
-whose row takes ←/→ itself to change the limit. Every action is callable, so
+term (Search), a session ref (Similar work), or the theme gallery. Today is
+one row and draws no heading. The session running now is a strip under the
+counts, not a menu row; it ticks about every five seconds and does not move
+the 60-second refresh. Every action is callable, so
 choosing a row cannot call something that isn't there: the menu collects what
 the row asks for and `cmd_home` passes it in. The groups are anchored by label
 in `_HOME_GROUP_STARTS` — Today, Find, Measure, Govern, Improve, Reference —

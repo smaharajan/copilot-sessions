@@ -21,10 +21,8 @@ from ._common import (
 from .analysis import (
     _config_usage,
     cmd_anomalies,
-    cmd_diff,
     cmd_health,
     cmd_patterns,
-    cmd_replay,
 )
 from .evidence import (
     cmd_endings,
@@ -45,7 +43,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_files, cmd_recent, cmd_search
-from .ops import cmd_doctor, cmd_rollup, cmd_watch
+from .ops import cmd_doctor, cmd_rollup
 from .practice_cmds import cmd_coach, cmd_rhythm, cmd_standup
 from .reports import (
     cmd_cost,
@@ -62,13 +60,12 @@ from .session import (
     cmd_show,
 )
 from .today import (
-    cmd_asks,
     cmd_cleanup,
     cmd_eod,
-    cmd_file_history,
     cmd_next,
     cmd_saved,
     cmd_similar,
+    cmd_today,
     cmd_weekly,
 )
 from .workflow import (
@@ -88,9 +85,9 @@ _COMPLETION_COMMANDS = (
     "instructions", "hooks", "mcp", "standup", "daily", "coach", "rhythm",
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "similar", "asks", "saved", "cleanup",
-    "diff", "replay", "anomalies", "health", "patterns",
-    "watch", "doctor", "rollup",
+    "next", "eod", "weekly", "today", "similar", "saved", "cleanup",
+    "anomalies", "health", "patterns",
+    "doctor", "rollup",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
 )
@@ -99,7 +96,7 @@ _COMPLETION_COMMANDS = (
 _COMPLETION_FLAGS = (
     "--json", "--csv", "--sort", "--asc", "--desc",
     "--all", "--turn", "--asks", "--short", "--by-repo", "--loops",
-    "--md", "--save", "--repo", "--history", "--check",
+    "--md", "--save", "--repo", "--check",
 )
 
 
@@ -481,7 +478,7 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(build(30 if days is None else days), fmt)
         return 0
 
-    if cmd in ("next", "eod", "weekly", "cleanup"):
+    if cmd in ("next", "eod", "weekly", "cleanup", "today"):
         days, _sort, _desc, _word, _flags, error = _report_options(
             rest, None, days=cmd in ("next", "cleanup"), flags=("--md",)
         )
@@ -490,38 +487,20 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
             return 1
         builders = {"next": lambda: export.next_up(14 if days is None else days),
                     "eod": export.eod, "weekly": export.weekly,
+                    "today": export.today,
                     "cleanup": lambda: export.cleanup(14 if days is None else days)}
         export.emit(builders[cmd](), fmt)
         return 0
 
     if cmd == "similar":
-        _days, _sort, _desc, term, error = _listing_options(rest, term=True)
-        if error:
-            print(f"error: {error}", file=sys.stderr)
+        if len(rest) != 1:
+            print("error: similar <#N|id> — which session", file=sys.stderr)
             return 1
-        export.emit(export.similar(term), fmt)
-        return 0
-
-    if cmd == "asks":
-        repo, rest, error = _repo_option(rest)
-        if not error:
-            days, _sort, _desc, _word, _flags, error = _report_options(
-                rest, None, days=True)
-        if error:
-            print(f"error: {error}", file=sys.stderr)
-            return 1
-        export.emit(export.asks(30 if days is None else days, repo), fmt)
+        export.emit(export.similar(rest[0]), fmt)
         return 0
 
     if cmd == "saved":
         export.emit(export.saved(), fmt)
-        return 0
-
-    if cmd in ("diff", "compare"):
-        if len(rest) != 2:
-            print("error: diff <#N|id> <#N|id> — two sessions", file=sys.stderr)
-            return 1
-        export.emit(export.diff(rest[0], rest[1]), fmt)
         return 0
 
     if cmd in ("anomalies", "patterns"):
@@ -557,14 +536,6 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
                   file=sys.stderr)
             return 1
         export.emit(export.health(repo or "."), fmt)
-        return 0
-
-    if cmd == "files" and "--history" in rest:
-        words = [arg for arg in rest if arg != "--history"]
-        if not words:
-            print("error: files <path> --history — which file", file=sys.stderr)
-            return 1
-        export.emit(export.file_history(" ".join(words)), fmt)
         return 0
 
     if cmd == "budget":
@@ -679,12 +650,6 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_read(rest[0], turn)
-    elif cmd == "files" and "--history" in rest:
-        words = [arg for arg in rest if arg != "--history"]
-        if not words:
-            print("error: files <path> --history — which file", file=sys.stderr)
-            return 1
-        cmd_file_history(" ".join(words))
     elif cmd == "files":
         _, sort_by, descending, pattern, _, error = _report_options(
             rest, None, word=True
@@ -937,37 +902,22 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         (cmd_eod if cmd == "eod" else cmd_weekly)(markdown="--md" in flags)
+    elif cmd == "today":
+        if rest:
+            print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
+            return 1
+        cmd_today()
     elif cmd in ("similar", "like"):
-        _, _, _, term, error = _listing_options(rest, term=True)
-        if error:
-            print(f"error: {error}", file=sys.stderr)
+        if len(rest) != 1:
+            print("error: missing argument — usage: cs similar <#N|id>",
+                  file=sys.stderr)
             return 1
-        cmd_similar(term)
-    elif cmd == "asks":
-        repo, rest, error = _repo_option(rest)
-        if not error:
-            days, _, _, _, _, error = _report_options(rest, None, days=True)
-        if error:
-            print(f"error: {error}", file=sys.stderr)
-            return 1
-        cmd_asks(30 if days is None else days, repo)
+        cmd_similar(rest[0])
     elif cmd == "saved":
         if len(rest) > 1:
             print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
             return 1
         cmd_saved(rest[0] if rest else None)
-    elif cmd in ("diff", "compare"):
-        if len(rest) != 2:
-            print("error: missing argument — usage: cs diff <#N|id> <#N|id>",
-                  file=sys.stderr)
-            return 1
-        cmd_diff(rest[0], rest[1])
-    elif cmd == "replay":
-        _require(rest, "replay <#N|id>")
-        if len(rest) > 1:
-            print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
-            return 1
-        cmd_replay(rest[0])
     elif cmd in ("anomalies", "spikes"):
         days, _, _, _, _, error = _report_options(rest, None, days=True)
         if error:
@@ -988,11 +938,6 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_patterns(30 if days is None else days)
-    elif cmd == "watch":
-        if rest:
-            print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
-            return 1
-        cmd_watch()
     elif cmd == "doctor":
         if rest:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)

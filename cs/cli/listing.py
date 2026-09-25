@@ -232,12 +232,8 @@ def _interactive_listing(
     hits: dict[str, tuple[str, str]] | None = None,
     term: str = "",
     reload=None,
-    copy: dict[str, str] | None = None,
 ) -> bool:
     """True when the full-screen view ran and so already waited for the user.
-
-    `copy` is text to hand the clipboard per session — `c` copies the row's
-    — for a listing whose rows stand for something worth pasting.
 
     It does not always run: with nothing to list, or on a terminal curses
     cannot drive, this prints instead — and a caller that skipped its pause
@@ -260,7 +256,7 @@ def _interactive_listing(
         try:
             action = _curses_wrapper(
                 _listing_tui, rows, title, default_sort, hits, state, reload,
-                copy, _find_sessions,
+                _find_sessions,
             )
             # The view re-reads the store on its own heartbeat; what it read
             # last is what a trip out to a detail view should come back to.
@@ -283,23 +279,8 @@ def _interactive_listing(
         # analysis imports this module, and an import inside the function
         # would hand back the un-lifted copy, whose `_page` cannot find the
         # reader it needs.
-        if verb == "diff":
-            dismissed = globals()["cmd_diff"](*session_id)
-            if not dismissed and not _pause("Esc or Enter for the list · q quits "):
-                return True
-            continue
-        if verb == "replay":
-            dismissed = globals()["cmd_replay"](session_id)
-            if not dismissed and not _pause("Esc or Enter for the list · q quits "):
-                return True
-            continue
         if verb == "resume":
             _resume_from_listing(session_id)
-            continue
-        if verb == "copy":
-            globals()["_copy_ask"]((copy or {}).get(session_id, ""))
-            if not _pause("Esc or Enter for the list · q quits "):
-                return True
             continue
         # A pager already waited for the user, so returning is immediate;
         # output printed straight to the terminal needs an explicit pause,
@@ -334,7 +315,7 @@ def _reread_listing(reload, rows: list[tuple], title: str,
     return fresh, fresh_title, numbers, here
 
 
-_LISTING_KEYS = frozenset("vVoOtTrRsSgGqQpPdDeE/")
+_LISTING_KEYS = frozenset("vVoOtTrRsSgGqQpP/")
 
 
 def _listing_tui(
@@ -345,7 +326,6 @@ def _listing_tui(
     hits: dict[str, tuple[str, str]] | None = None,
     state: dict | None = None,
     reload=None,
-    copy: dict[str, str] | None = None,
     find=None,
 ) -> tuple[str, str] | None:
     """The full-screen listing. Returns (verb, session id), or None to leave.
@@ -564,8 +544,7 @@ def _listing_tui(
                     0,
                     f"{numbers[sid]:>3}",
                     4,
-                    theme["cursor"] if on_cursor else theme["title"]
-                    if sid == state.get("compare") else theme["number"],
+                    theme["cursor"] if on_cursor else theme["number"],
                 )
                 # One-cell pin mark in the spare column of the #N field, so
                 # existing click targets and frame assertions stay put.
@@ -621,9 +600,6 @@ def _listing_tui(
                     " no match · / edits · Esc clears ",
                     " no match ",
                 )
-            if state.get("compare") in numbers:
-                mark = f" #{numbers[state['compare']]} marked · d on another compares ·"
-                forms = tuple(mark + form for form in forms[:-1]) + forms[-1:]
             status = next((form for form in forms if ui.cells(form) <= width),
                           forms[-1])
             _addstr(screen, height - 1, 0, status, width, theme["status"])
@@ -719,25 +695,10 @@ def _listing_tui(
                 return "read", sorted_rows[cursor][0]
             elif key in (ord("r"), ord("R")) and sorted_rows:
                 return "resume", sorted_rows[cursor][0]
-            elif copy and key in (ord("c"), ord("C")) and sorted_rows:
-                # Only where the listing has something to copy; elsewhere 'c'
-                # is a letter like any other and starts a filter.
-                return "copy", sorted_rows[cursor][0]
             elif key in (ord("p"), ord("P")) and sorted_rows:
                 sid = sorted_rows[cursor][0]
                 ui.toggle_pin(sid)
                 follow = sid
-            elif key in (ord("e"), ord("E")) and sorted_rows:
-                return "replay", sorted_rows[cursor][0]
-            elif key in (ord("d"), ord("D")) and sorted_rows:
-                # The first d marks a session, a d on another compares them;
-                # d on the marked one again clears the mark.
-                sid = sorted_rows[cursor][0]
-                marked = state.get("compare")
-                if marked and marked != sid:
-                    state.pop("compare", None)
-                    return "diff", (marked, sid)
-                state["compare"] = None if marked == sid else sid
             elif key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 # Arrows sort on press, which leaves Enter free to act on the row.
                 step = -1 if key == curses.KEY_LEFT else 1

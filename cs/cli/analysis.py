@@ -13,8 +13,7 @@ import os
 import re
 import shutil
 import statistics
-import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -27,10 +26,8 @@ from .. import (
 )
 from ._common import (
     _capture,
-    _cell,
     _note,
     _page,
-    _resolve_ref,
     _short_path,
     _user_text,
     _visible,
@@ -41,14 +38,12 @@ from .evidence import (
     _clean,
     _frame,
     _headline,
-    _number,
     _plural,
     _rate,
     _session_fields,
     _table,
 )
 from .inventory import _asset_inventory
-from .session import _read_in_place, _transcript_turn
 from .today import _repo_match
 
 # A day or a session is a spike when it cost more than this many times the
@@ -73,199 +68,6 @@ def _duration(first: str, last: str) -> str:
         return f"{minutes / 60:.1f}h"
     return f"{minutes:.0f}m"
 
-
-# ── Compare ──────────────────────────────────────────────────────────
-
-def _diff_side(conn, session_id: str) -> dict:
-    detail = db.session_detail(conn, session_id)
-    if detail is None:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
-        sys.exit(1)
-    metrics = db.session_metrics(conn, session_id)
-    refs = db.session_refs(conn, session_id)
-    digest = events.session_digest(session_id)
-    first = metrics["first"] or (detail[4] or "")[:19].replace(" ", "T")
-    last = metrics["last"] or (detail[5] or "")[:19].replace(" ", "T")
-    return {
-        "id": session_id,
-        "summary": _clean(detail[0]),
-        "repository": _clean(detail[1]) if detail[1] != "-" else None,
-        "turns": db.session_turn_count(conn, session_id),
-        "nano_aiu": metrics["nano_aiu"],
-        "calls": metrics["calls"],
-        "cache_hit": metrics["cache_hit"],
-        "models": [_clean(m["model"]) for m in metrics["models"]],
-        "tool_calls": digest["calls"] if digest else None,
-        "tool_failures": digest["failures"] if digest else None,
-        "files": len(db.session_files(conn, session_id)),
-        "commits": sum(1 for kind, _ in refs if kind == "commit"),
-        "prs": sum(1 for kind, _ in refs if kind == "pr"),
-        "duration": _duration(first, last),
-    }
-
-
-def _diff_data(first: str, second: str) -> dict:
-    a, b = _resolve_ref(first), _resolve_ref(second)
-    conn = db.connect()
-    try:
-        return {"a": _diff_side(conn, a), "b": _diff_side(conn, b)}
-    finally:
-        conn.close()
-
-
-_DIFF_ROWS = (
-    ("cost", lambda s: f"{s['nano_aiu'] / 1e9:,.2f} AIU"),
-    ("turns", lambda s: f"{s['turns']:,}"),
-    ("model calls", lambda s: f"{s['calls']:,}"),
-    ("models", lambda s: ", ".join(s["models"]) or "—"),
-    ("cache hit", lambda s: _cache(s["cache_hit"])),
-    ("tool calls", lambda s: "no log" if s["tool_calls"] is None
-     else f"{s['tool_calls']:,} · {s['tool_failures']} failed"),
-    ("files", lambda s: f"{s['files']:,}"),
-    ("shipped", lambda s: f"{_plural(s['commits'], 'commit')} · "
-                          f"{_plural(s['prs'], 'PR')}"),
-    ("duration", lambda s: s["duration"]),
-)
-
-
-def cmd_diff(first: str, second: str) -> bool:
-    """Two sessions side by side — what each cost, used and produced."""
-    return _page(_capture(lambda: _render_diff(_diff_data(first, second))))
-
-
-def _render_diff(data: dict) -> None:
-    width = min(shutil.get_terminal_size().columns, 96)
-    inner = width - 4
-    a, b = data["a"], data["b"]
-    print()
-    print(ui.rule(inner, "Compare sessions"))
-    print()
-    label = 12
-    if inner < 60:
-        # Too narrow for two columns of values: one session, then the other.
-        for tag, side in (("A", a), ("B", b)):
-            print(ui.heading(ui._fit(f"{tag} · {side['id'][:8]} · "
-                                     f"{side['summary'] or '(untitled)'}", inner - 4),
-                             ui.SKY, inner))
-            for name, value in _DIFF_ROWS:
-                print(f"    {ui.MUTED}{name:<{label}}{ui.RST}"
-                      f"{ui._fit(value(side), inner - label - 4)}")
-            print()
-        return
-    span = (inner - 4 - label - 2) // 2
-    for tag, side in (("A", a), ("B", b)):
-        print(f"    {ui.SKY}{tag} {side['id'][:8]}{ui.RST}  "
-              f"{ui._fit(side['summary'] or '(untitled)', inner - 16)}")
-    print()
-    print(f"    {' ' * label}  {ui.BOLD}{'A':<{span}}{ui.RST}{ui.BOLD}B{ui.RST}")
-    print(f"    {ui.MUTED}{'─' * (label + 2 + span * 2)}{ui.RST}")
-    for name, value in _DIFF_ROWS:
-        left, right = value(a), value(b)
-        mark = ui.AMBER if left != right else ""
-        print(f"    {ui.MUTED}{name:<{label}}{ui.RST}  "
-              f"{mark}{ui._fit(left, span - 1):<{span}}{ui.RST if mark else ''}"
-              f"{mark}{ui._fit(right, span)}{ui.RST if mark else ''}")
-    print()
-    _note("Values that differ are highlighted. In a listing, d marks one "
-          "session and d on another compares them.", inner)
-    print()
-
-
-# ── Replay ───────────────────────────────────────────────────────────
-
-def _replay_data(session_id: str) -> dict:
-    """Everything the replay pages need, gathered once."""
-    conn = db.connect()
-    try:
-        detail = db.session_detail(conn, session_id)
-        if detail is None:
-            print(f"error: session not found: {session_id}", file=sys.stderr)
-            sys.exit(1)
-        turns = db.session_transcript(conn, session_id)
-        spend = db.turn_spend(conn, session_id)
-        files: dict[int, list[str]] = defaultdict(list)
-        if db.has_files(conn) and db._has_columns(conn, "session_files", "turn_index"):
-            for path, turn in conn.execute(
-                    "SELECT file_path, turn_index FROM session_files "
-                    "WHERE session_id = ? AND turn_index IS NOT NULL", (session_id,)):
-                files[turn].append(path)
-        times = db.turn_times(conn, [session_id])[session_id]
-    finally:
-        conn.close()
-    tools: dict[object, Counter] = defaultdict(Counter)
-    names: dict[str, str] = {}
-    for event in events.iter_events(session_id, ["tool.execution_start",
-                                                 "tool.execution_complete"]):
-        data = event["data"]
-        call = data.get("toolCallId") if isinstance(data.get("toolCallId"), str) else ""
-        if event["type"] == "tool.execution_start":
-            names[call] = data.get("toolName") if isinstance(
-                data.get("toolName"), str) else "unknown"
-            continue
-        stamp = event.get("timestamp")
-        turn = events.turn_of(stamp[:19] if isinstance(stamp, str) else "", times)
-        tool = _clean(names.pop(call, "unknown"))
-        tools[turn][(tool, data.get("success") is not False)] += 1
-    return {"id": session_id, "detail": detail, "turns": turns, "spend": spend,
-            "files": files, "tools": tools, "cwd": detail[2]}
-
-
-def _replay_page(data: dict, turn: int) -> str:
-    width = min(shutil.get_terminal_size().columns, 100)
-    inner = width - 4
-    turns = {row[0]: row for row in data["turns"]}
-    index, prompt, reply, when = turns[turn]
-    lines = [""]
-    title = f"Replay · {_clean(data['detail'][0]) or data['id'][:8]}"
-    lines.append(ui.rule(inner, title, note=f"turn {turn} of {max(turns)}"))
-    lines.append("")
-    peak = max(data["spend"].values(), default=0)
-    spent = data["spend"].get(turn, 0)
-    bar = max(8, min(24, inner - 30))
-    lines.append(f"    {ui.MUTED}{'credits':<8}{ui.RST}"
-                 f"{ui.bar(spent, peak or 1, bar, colour=ui.VIOLET, track=True)} "
-                 f"{ui.VIOLET}{ui.fmt_aiu(spent)} AIU{ui.RST}")
-    used = data["tools"].get(turn)
-    if used:
-        by_tool: dict[str, list[int]] = defaultdict(lambda: [0, 0])
-        for (tool, ok), count in used.items():
-            by_tool[tool][0 if ok else 1] += count
-        parts = []
-        for tool, (ok, failed) in sorted(by_tool.items(), key=lambda kv: -sum(kv[1])):
-            part = f"{tool} {ok}"
-            if failed:
-                part += f" {ui.ROSE}✗{failed}{ui.RST}"
-            parts.append(part)
-        lines.append(f"    {ui.MUTED}{'tools':<8}{ui.RST}" + " · ".join(parts))
-    touched = data["files"].get(turn, [])
-    for number, path in enumerate(touched[:6]):
-        label = "files" if not number else ""
-        lines.append(f"    {ui.MUTED}{label:<8}{ui.RST}"
-                     f"{ui._fit(_clean(_short_path(path, data['cwd'])), inner - 12)}")
-    if len(touched) > 6:
-        lines.append(f"    {' ' * 8}{ui.MUTED}… and {len(touched) - 6} more{ui.RST}")
-    lines.append("")
-    lines.extend(_transcript_turn(index, prompt, reply, when, inner))
-    return "\n".join(lines)
-
-
-def cmd_replay(ref: str) -> bool:
-    """Step through a session a turn at a time: ←/→ between turns."""
-    session_id = _resolve_ref(ref)
-    data = _replay_data(session_id)
-    order = [row[0] for row in data["turns"]]
-    if not order:
-        print(f"  {ui.MUTED}No turns recorded in {session_id[:8]}.{ui.RST}")
-        return False
-    if sys.stdout.isatty():
-        sort = {"steps": "turn", "columns": order, "column": order[0],
-                "descending": False, "defaults": {},
-                "render": lambda turn, _down: _replay_page(data, turn),
-                "label": lambda turn: f"turn {turn}/{order[-1]}"}
-        if _read_in_place(_replay_page(data, order[0]), sort):
-            return True
-    print("\n".join(_replay_page(data, turn) for turn in order))
-    return False
 
 
 # ── Spend anomalies ──────────────────────────────────────────────────
@@ -314,9 +116,13 @@ def _anomalies_data(days: int) -> dict:
     finally:
         conn.close()
     spiky_sessions.sort(key=lambda s: -s["factor"])
+    window_days = [
+        {"day": day, "nano_aiu": nano}
+        for day, nano in sorted(by_day.items()) if day >= since
+    ]
     return {"window_days": days, "factor": ANOMALY_FACTOR,
             "baseline_days": BASELINE_DAYS, "days": spiky_days,
-            "sessions": spiky_sessions[:_TOP * 2]}
+            "sessions": spiky_sessions[:_TOP * 2], "series": window_days}
 
 
 def _evidence(turns: list[dict], rows: dict) -> list[dict]:
@@ -349,39 +155,107 @@ def _evidence_lines(turns: list[dict], inner: int, indent: int = 6) -> None:
 
 
 def _render_anomalies(data: dict) -> None:
+    """Which days and sessions cost far more than usual, and why."""
     inner = _frame("Spend anomalies", data["window_days"])
-    _note(f"A day or a session is flagged when it cost more than "
-          f"{data['factor']:g}× the median of the {data['baseline_days']} days "
-          f"before it. The turns that drove each are listed with their model, "
-          f"effort and cache hit rate.", inner, indent=4)
-    print()
+    flagged = {day["day"] for day in data["days"]}
+    series = data.get("series") or []
+    if series:
+        spark = ui.sparkline([day["nano_aiu"] for day in series])
+        marks = "".join("▴" if day["day"] in flagged else " "
+                        for day in series[-len(spark):])
+        if spark.strip():
+            print(f"    {ui.VIOLET}{ui._fit(spark, inner - 4)}{ui.RST}")
+            if flagged and len(marks.strip()):
+                print(f"    {ui.AMBER}{ui._fit(marks, inner - 4)}{ui.RST}")
     if not data["days"] and not data["sessions"]:
-        _note("Nothing stood out in this window.", inner)
+        _note(f"Nothing over {data['factor']:g}× the median of the "
+              f"{data['baseline_days']} days before it.", inner)
         print()
         return
-    if data["days"]:
-        print(ui.heading(f"Days · {len(data['days'])}", ui.VIOLET, inner))
-        for day in data["days"]:
-            print(f"    {ui.BOLD}{day['day']}{ui.RST}  {ui.VIOLET}"
-                  f"{day['nano_aiu'] / 1e9:,.2f} AIU{ui.RST}  {ui.MUTED}"
-                  f"{day['factor']:g}× the median of "
-                  f"{day['baseline_nano_aiu'] / 1e9:,.2f}{ui.RST}")
-            _evidence_lines(day["turns"], inner)
-        print()
-    if data["sessions"]:
-        _number(data["sessions"])
-        print(ui.heading(f"Sessions · {len(data['sessions'])}", ui.VIOLET, inner))
-        for session in data["sessions"]:
-            print(f"    {ui.SKY}{session['n']:>3}{ui.RST}  "
-                  f"{ui._fit(session['summary'] or '(untitled)', inner - 10)}")
-            _note(f"{session['session_nano_aiu'] / 1e9:,.2f} AIU · "
-                  f"{session['factor']:g}× the median session of "
-                  f"{session['baseline_nano_aiu'] / 1e9:,.2f}", inner, indent=9)
-            _evidence_lines(session["turns"], inner, indent=9)
-        print()
-    _note("cs replay N — step through the session · cs efficiency — cache and "
-          "effort across the window", inner)
+    _note(f"Flagged at {data['factor']:g}× the median of the "
+          f"{data['baseline_days']} days before. ▴ marks a flagged day.",
+          inner, indent=4)
     print()
+    # A day whose spend is one session is one story. Say it once.
+    owned = {}
+    for day in data["days"]:
+        by_session: dict[str, int] = {}
+        for turn in day["turns"]:
+            by_session[turn["id"]] = by_session.get(turn["id"], 0) + turn["nano_aiu"]
+        if by_session:
+            owner = max(by_session, key=by_session.get)
+            if by_session[owner] >= day["nano_aiu"] * 0.6:
+                owned[day["day"]] = owner
+    sessions = {session["id"]: session for session in data["sessions"]}
+    cards = []
+    seen_sessions = set()
+    for day in sorted(data["days"], key=lambda item: -item["factor"])[:5]:
+        owner = owned.get(day["day"])
+        twin = sessions.get(owner) if owner else None
+        if twin and twin["day"] == day["day"]:
+            seen_sessions.add(owner)
+            cards.append(("day", day, twin))
+        else:
+            cards.append(("day", day, None))
+    for session in data["sessions"]:
+        if session["id"] in seen_sessions:
+            continue
+        if len([card for card in cards if card[0] == "session" or card[2]]) >= 5:
+            break
+        cards.append(("session", None, session))
+        if sum(1 for kind, _day, twin in cards if kind == "session" or twin) >= 5 \
+                and len(cards) >= 5:
+            break
+    cards = cards[:5]
+    extra = max(0, len(data["days"]) + len(data["sessions"]) - len(cards)
+                - len(seen_sessions))
+    for _kind, day, session in cards:
+        if day and session:
+            title = (f"{day['day']} · {session['summary'] or session['id'][:8]}")
+            multiple = (f"{day['factor']:g}× usual · "
+                        f"{day['nano_aiu'] / 1e9:,.2f} AIU")
+            turns = day["turns"][:4]
+            where = session
+        elif day:
+            title = day["day"]
+            multiple = (f"{day['factor']:g}× usual · "
+                        f"{day['nano_aiu'] / 1e9:,.2f} AIU")
+            turns = day["turns"][:4]
+            where = None
+        else:
+            title = session["summary"] or "(untitled)"
+            multiple = (f"{session['factor']:g}× usual · "
+                        f"{session['session_nano_aiu'] / 1e9:,.2f} AIU")
+            turns = session["turns"][:4]
+            where = session
+        print(ui.heading(ui._fit(f"{title} · {multiple}", inner - 4),
+                         ui.VIOLET, inner))
+        _turn_table(turns, inner)
+        if where and where.get("n"):
+            top = turns[0]["turn"] if turns else None
+            hint = f"cs read {where['n']}"
+            if top is not None:
+                hint += f" --turn {top}"
+            _note(hint, inner, indent=4)
+        print()
+    if extra > 0:
+        _note(f"+{extra} more", inner)
+    _note("cs efficiency — cache and effort across the window", inner)
+    print()
+
+
+def _turn_table(turns: list[dict], inner: int) -> None:
+    """The turns that drove a spike: model, effort and cache, in one block."""
+    if not turns:
+        return
+    for turn in turns[:5]:
+        where = f"turn {turn['turn']}" if turn["turn"] is not None else "turn"
+        bits = [", ".join(turn["models"]) or "model not recorded"]
+        if turn["effort"]:
+            bits.append(turn["effort"])
+        bits.append(f"cache {_cache(turn['cache_hit'])}")
+        text = f"{ui.fmt_aiu(turn['nano_aiu'])}  {where}  {' · '.join(bits)}"
+        _note(text, inner, indent=4)
 
 
 # ── Repo health ──────────────────────────────────────────────────────
@@ -447,7 +321,17 @@ def cmd_health(repo: str = ".") -> bool:
     return _page(_capture(lambda: _render_health(_health_data(repo))))
 
 
+def _judgement(kind: str) -> tuple[str, str]:
+    """(word, colour) for a health number. good, watch, act."""
+    return {
+        "good": ("good", ui.MINT),
+        "watch": ("watch", ui.AMBER),
+        "act": ("act", ui.ROSE),
+    }[kind]
+
+
 def _render_health(data: dict) -> None:
+    """A card: a few numbers with a verdict, then the things worth doing."""
     width = min(shutil.get_terminal_size().columns, 96)
     inner = width - 4
     print()
@@ -458,59 +342,65 @@ def _render_health(data: dict) -> None:
               "name one: cs health --repo <name>.", inner)
         print()
         return
-    rate = ("no event logs" if data["failure_rate"] is None else
-            f"{data['failure_rate']:.1%} of {data['tool_calls']:,} tool calls")
-    for label, value, colour in (
-        ("sessions", f"{data['sessions']:,}", ""),
-        ("spend", f"{data['nano_aiu'] / 1e9:,.2f} AIU", ui.VIOLET),
-        ("failures", rate, ui.ROSE if (data["failure_rate"] or 0) > 0.05 else ""),
-        ("instructions",
-         "run from the checkout to read them"
-         if data["instructions_over_limit"] is None else
-         f"{len(data['instructions_over_limit'])} past "
-         f"{data['instruction_limit']:,} characters", ui.AMBER
-         if data["instructions_over_limit"] else ""),
-        ("skills", "run from the checkout to read them"
-         if data["skills_unused"] is None else
-         f"{len(data['skills_unused'])} of {data['skills_available']} never used",
-         ""),
-        ("hooks", f"{sum(data['hooks_failing'].values())} failed runs"
-         if data["hooks_failing"] else "none failing",
-         ui.ROSE if data["hooks_failing"] else ""),
-        ("handoffs", f"{len(data['handoffs_open'])} open", ui.SKY
-         if data["handoffs_open"] else ""),
-    ):
-        print(ui.field(label, f"{colour}{value}{ui.RST if colour else ''}", 13))
+    rate = data["failure_rate"]
+    tiles = []
+    tiles.append(("sessions", f"{data['sessions']:,}", "good"))
+    tiles.append(("spend", f"{data['nano_aiu'] / 1e9:,.1f} AIU", "good"))
+    if rate is None:
+        tiles.append(("failures", "no logs", "watch"))
+    elif rate >= 0.05:
+        tiles.append(("failures", f"{rate:.1%}", "act"))
+    elif rate >= 0.02:
+        tiles.append(("failures", f"{rate:.1%}", "watch"))
+    else:
+        tiles.append(("failures", f"{rate:.1%}", "good"))
+    oversized = data["instructions_over_limit"]
+    if oversized is not None:
+        tiles.append(("instructions", str(len(oversized)),
+                      "act" if oversized else "good"))
+    unused = data["skills_unused"]
+    if unused is not None and data["skills_available"]:
+        share = len(unused) / data["skills_available"]
+        tiles.append(("unused skills", str(len(unused)),
+                      "act" if share > 0.5 else "watch" if unused else "good"))
+    hook_fails = sum(data["hooks_failing"].values())
+    tiles.append(("hook failures", str(hook_fails), "act" if hook_fails else "good"))
+    open_n = len(data["handoffs_open"])
+    tiles.append(("open handoffs", str(open_n), "watch" if open_n else "good"))
+    tiles = tiles[:6]
+    # Two columns when the window can hold them, one when it cannot.
+    columns = 2 if inner >= 48 else 1
+    for start in range(0, len(tiles), columns):
+        row = tiles[start:start + columns]
+        parts = []
+        for label, value, kind in row:
+            word, colour = _judgement(kind)
+            cell = f"{colour}{word:<5}{ui.RST} {value} {ui.MUTED}{label}{ui.RST}"
+            parts.append(cell)
+        print("    " + "    ".join(parts))
     print()
+    actions = []
+    if rate is not None and rate >= 0.02:
+        actions.append("cs failures — which tools fail here, and where")
+    if oversized:
+        actions.append("cs instructions — files past the length Copilot reads")
+    if unused:
+        actions.append("cs skills — installed skills this repo never reached for")
+    if hook_fails:
+        actions.append("cs hooks — events whose commands are failing")
+    if open_n:
+        actions.append("cs handoff — work passed on and not picked up")
+    if actions:
+        print(ui.heading("Worth doing", ui.ACCENT, inner))
+        for action in actions[:3]:
+            _note(action, inner, indent=4)
+        print()
     if data["top_files"]:
         print(ui.heading("Files agents edit most", ui.MINT, inner))
-        for item in data["top_files"]:
+        for item in data["top_files"][:3]:
             print(f"    {ui.MINT}{item['sessions']:>4}{ui.RST}  "
                   f"{ui._fit(item['path'], inner - 10)}")
         print()
-    for title, entries, colour in (
-        ("Instructions past the limit",
-         [f"{i['file']} · {i['chars']:,} characters"
-          for i in data["instructions_over_limit"] or []], ui.AMBER),
-        ("Hooks failing", [f"{kind} · {n} failed" for kind, n in
-                           data["hooks_failing"].items()], ui.ROSE),
-        ("Handoffs open", [f"{h['summary'] or h['id'][:8]} · {h['evidence']}"
-                           for h in data["handoffs_open"]], ui.SKY),
-    ):
-        if entries:
-            print(ui.heading(f"{title} · {len(entries)}", colour, inner))
-            for entry in entries[:_TOP]:
-                _note(entry, inner, indent=4)
-            print()
-    if data["skills_unused"]:
-        print(ui.heading(f"Skills never used · {len(data['skills_unused'])}",
-                         ui.MUTED, inner))
-        _note(", ".join(data["skills_unused"][:24])
-              + (" …" if len(data["skills_unused"]) > 24 else ""), inner, indent=4)
-        print()
-    _note("Drill in: cs failures · cs instructions · cs skills · cs hooks · "
-          "cs handoff", inner)
-    print()
 
 
 # ── Prompt patterns ──────────────────────────────────────────────────
@@ -588,46 +478,66 @@ def _pct(rate: float | None) -> str:
 
 
 def _render_patterns(data: dict) -> None:
+    """One comparison: which opening habits line up with shipping."""
     inner = _frame("Prompt patterns", data["window_days"])
     if not data["sessions"]:
         _note("No session in this window has an opening request to read.", inner)
         print()
         return
-    _headline(f"Opening requests of {_plural(data['sessions'], 'session')}", inner)
-    _note("Correlation, not causation: a habit that lines up with shipping may "
-          "only share a cause with it. n is how many sessions each side rests "
-          "on; under 5 is too few to read anything into.", inner, indent=4)
-    print()
+    kept, hidden = [], 0
     for feature in data["features"]:
-        print(ui.heading(ui._fit(feature["feature"], inner - 4), ui.ACCENT, inner))
-        rows = []
-        for side in ("with", "without"):
-            reading = feature[side]
-            thin = reading["sessions"] < 5
-            rows.append({
-                "side": (side, ui.MUTED if thin else ""),
-                "n": (str(reading["sessions"]), ui.AMBER if thin else ""),
-                "shipped": (_pct(reading["shipped_rate"]), ui.MINT),
-                "turns": ("—" if reading["median_turns"] is None
-                          else f"{reading['median_turns']:g}", ""),
-                "aiu": ("—" if reading["median_nano_aiu"] is None
-                        else ui.fmt_aiu(reading["median_nano_aiu"]), ui.VIOLET),
-            })
-        # Fixed, narrow columns: five short numbers read best side by side,
-        # not spread across the window. AIU is the one that gives way.
-        spans = [("side", "", 8, "<"), ("n", "n", 4, ">"),
-                 ("shipped", "shipped", 8, ">"), ("turns", "turns", 6, ">")]
-        if inner >= 44:
-            spans.append(("aiu", "AIU", 9, ">"))
-        heads = " ".join(_cell(head, span, align) for _k, head, span, align in spans)
-        print(f"    {ui.MUTED}{heads.rstrip()}{ui.RST}")
-        print(f"    {ui.MUTED}{'─' * ui.cells(heads)}{ui.RST}")
-        for row in rows:
-            print("    " + " ".join(_cell(row[key][0], span, align, row[key][1])
-                                    for key, _h, span, align in spans).rstrip())
+        if (feature["with"]["sessions"] < 5
+                or feature["without"]["sessions"] < 5):
+            hidden += 1
+        else:
+            kept.append(feature)
+    _headline(f"Opening requests of {_plural(data['sessions'], 'session')}",
+              inner)
+    if kept:
+        def gap(feature: dict) -> float:
+            left, right = feature["with"]["shipped_rate"], feature["without"]["shipped_rate"]
+            if left is None or right is None:
+                return 0.0
+            return abs(left - right)
+
+        lead = max(kept, key=gap)
+        left, right = lead["with"]["shipped_rate"], lead["without"]["shipped_rate"]
+        if left is not None and right is not None and left != right:
+            higher = "with" if left > right else "without"
+            _note(f"Strongest: {lead['feature']} — shipped {higher} it "
+                  f"{_pct(max(left, right))} against {_pct(min(left, right))}. "
+                  f"Correlation, not causation.", inner, indent=4)
         print()
-    _note("shipped = the session recorded a commit or PR · turns and AIU are "
-          "medians", inner)
+        # Features down the page, with and without as two shipped bars.
+        if inner < 48:
+            name_w, bar_w = 12, 4
+        elif inner < 64:
+            name_w, bar_w = 18, 6
+        else:
+            name_w, bar_w = 28, 10
+        head = (f"{'feature':<{name_w}} {'with':>{bar_w + 5}}  "
+                f"{'without':>{bar_w + 5}}")
+        print(f"    {ui.MUTED}{ui._fit(head, inner - 4)}{ui.RST}")
+        print(f"    {ui.MUTED}{'─' * min(ui.cells(head), inner - 4)}{ui.RST}")
+        for feature in kept:
+            label = ui._fit(feature["feature"], name_w)
+            cells = []
+            for side in ("with", "without"):
+                reading = feature[side]
+                rate = reading["shipped_rate"] or 0
+                cells.append(f"{ui.meter(rate, bar_w, ui.MINT)} {_pct(reading['shipped_rate']):>4}")
+            print(f"    {label} {'  '.join(cells)}")
+        print()
+    else:
+        _note("Not enough sessions on both sides of any habit to compare.",
+              inner)
+        print()
+    if hidden:
+        _note(f"{hidden} hidden · under 5 is too few to read anything into. "
+              f"Correlation, not causation.", inner)
+    else:
+        _note("Correlation, not causation. Shipped means a commit or a PR.",
+              inner)
     print()
 
 

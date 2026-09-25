@@ -636,9 +636,7 @@ def _reader_tui(
         hints.insert(3, ("/ find", "/", 0))
         if term:
             hints.insert(4, ("n/N next", "n/N", 0))
-        if sort and sort.get("steps"):
-            hints.insert(0, (f"←/→ {sort['steps']}", "←/→", 1))
-        elif sort:
+        if sort:
             hints.insert(0, ("←/→ sort", "←/→ sort", 1))
             hints.insert(1, ("s reverse", "s", 2))
         if mouse:
@@ -736,17 +734,7 @@ def _reader_tui(
             after = selected_match if selected_match is not None else offset
             offset = _next_match(found, after, 1 if key == ord("n") else -1, offset)
             selected_match = offset
-        elif sort and sort.get("steps") and key in (curses.KEY_LEFT, curses.KEY_RIGHT):
-            # Stepping pages (a replay's turns), not re-sorting a table: the
-            # ends are ends, and there is no direction to reverse.
-            order = sort["columns"]
-            at = order.index(sort["column"]) + (1 if key == curses.KEY_RIGHT else -1)
-            if 0 <= at < len(order):
-                sort["column"] = order[at]
-                lines = sort["render"](sort["column"], False).split("\n")
-                offset = 0
-        elif (sort and not sort.get("steps")
-              and key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("s"), ord("S"))):
+        elif sort and key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("s"), ord("S")):
             if key == ord("s") or key == ord("S"):
                 sort["descending"] = not sort["descending"]
             else:

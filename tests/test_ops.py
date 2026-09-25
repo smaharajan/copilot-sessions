@@ -80,42 +80,61 @@ class WatchTest(StoreTest):
         self.assertEqual(tail.offset, self.log.stat().st_size - len(
             '{"type":"tool.execution_complete","data":{"toolCa'))
 
-    def test_the_timeout_is_rearmed_before_every_read_and_keys_do_not_reread(self):
+    def test_a_quiet_session_is_not_drawn(self):
         from cs import cli
 
-        class Timed(Screen):
-            def __init__(self, keys):
-                super().__init__(keys)
-                self.armed: list[int] = []
-                self.reads = 0
+        conn = sqlite3.connect(self.base / "session-store.db")
+        conn.execute("UPDATE sessions SET updated_at = '2020-01-01 00:00:00', "
+                     "created_at = '2020-01-01 00:00:00'")
+        conn.commit()
+        conn.close()
+        state: dict = {}
+        cli._watch_read(state)
+        self.assertIsNone(state["session"])
+        self.assertEqual(cli._live_lines(state, 100), [])
+        self.assertEqual(cli._live_lines(state, 40), [])
+
+    def test_the_home_strip_ticks_without_moving_the_refresh_deadline(self):
+        from cs import cli, ui
+
+        class ClockScreen(Screen):
+            now = 0.0
+            delay = -1
 
             def timeout(self, milliseconds):
-                self.armed.append(milliseconds)
                 super().timeout(milliseconds)
+                self.delay = milliseconds
 
             def getch(self):
-                self.reads += 1
+                delay = self.delay
+                if not 1 <= delay <= 1000:
+                    raise AssertionError(f"unbounded timeout {delay}")
+                self.now += delay / 1000
                 return super().getch()
 
-        screen = Timed([ord("x"), ord("y"), ord("q")])
-        calls = []
-        real = cli._watch_read
-        with mock.patch.object(cli, "_watch_read",
-                               side_effect=lambda state: calls.append(1) or real(state)):
-            cli._watch_tui(screen, {})
-        self.assertEqual(screen.reads, 3)
-        self.assertEqual(len(screen.armed), 3, "a read went without a timeout")
-        self.assertTrue(all(0 < ms <= 1000 for ms in screen.armed))
-        self.assertEqual(len(calls), 1, "a keypress re-read the store")
-        text = " ".join(screen.frames[-1].values())
-        self.assertIn("burn", text)
-        self.assertIn("every 5s", text)
+        screen = ClockScreen([-1] * 6 + [ord("q")])
+        live, home = [], []
+        real_live = cli._refresh_live
 
-    def test_watch_prints_once_when_not_a_terminal(self):
-        code, out = self._run("watch")
-        self.assertEqual(code, 0)
-        self.assertIn("Watch · Build Three.js portal", out)
-        self.assertIn("last fail", out)
+        def track_live(state):
+            live.append(screen.now)
+            real_live(state)
+
+        def track_home(state):
+            home.append(screen.now)
+            return True
+
+        with (
+            mock.patch.object(ui, "PACE_FRAMES", 0),
+            mock.patch.object(cli.time, "monotonic",
+                              side_effect=lambda: screen.now),
+            mock.patch.object(cli, "_refresh_live", side_effect=track_live),
+            mock.patch.object(cli, "_refresh_home", side_effect=track_home),
+        ):
+            cli._home_tui(screen, {"revealed": True, "facts": [("1", "sessions")]})
+        self.assertEqual(home, [], "a live tick moved the 60-second refresh")
+        self.assertGreaterEqual(len(live), 2)
+        self.assertEqual(live[1] - live[0], cli.WATCH_SECONDS)
 
 
 class DoctorTest(StoreTest):
@@ -300,21 +319,18 @@ class OpsHomeTest(StoreTest):
         labels = [item[1] for item in items]
         group = {label: cli._home_group(i) for i, label in enumerate(labels)}
         today = [label for label in labels if group[label] == "Today"]
-        self.assertEqual(today, ["Next up", "Standup", "End of day", "Weekly review",
-                                 "Budget", "Watch live"])
+        self.assertEqual(today, ["Today"])
         self.assertEqual(group["Team rollup"], "Measure")
         reference = [label for label in labels if group[label] == "Reference"]
-        self.assertEqual(reference[-3:], ["Doctor", "Theme", "Help"])
+        self.assertEqual(reference[-2:], ["Theme", "Help"])
+        self.assertNotIn("Doctor", reference)
 
     def test_the_rows_open(self):
         from cs import cli
 
         items = {item[1]: item for item in cli._home_items(7)}
         with mock.patch.object(cli, "_page", return_value=True) as page:
-            self.assertTrue(items["Doctor"][3]())
             self.assertTrue(items["Team rollup"][3](7))
-        self.assertIn('"view": "rollup"', page.call_args_list[1].args[0])
-        with mock.patch.object(cli, "_curses_wrapper", return_value=None), \
-                mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)), \
-                mock.patch("sys.stdout", mock.Mock(isatty=lambda: True)):
-            self.assertTrue(items["Watch live"][3]())
+        self.assertNotIn('"view": "rollup"', page.call_args.args[0])
+        self.assertIn("Team rollup", page.call_args.args[0])
+        self.assertIn("session", page.call_args.args[0])

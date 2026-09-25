@@ -1197,9 +1197,6 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "copilot": ("🤖", "@"),
     # Improve group icons. Kept on the same age / block rules as every other
     # glyph so restoring or extending a row cannot reintroduce a blank icon.
-    "standup": ("📣", ";"),
-    "practice": ("🎯", "\""),
-    "rhythm": ("🎵", "'"),
     "context": ("📍", "."),
     "pin": ("📌", ","),
     # Evidence read from the per-session event log and the last billed call.
@@ -1208,25 +1205,15 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "endings": ("🏁", "e"),
     "subagents": ("🐝", "a"),
     "switches": ("🔀", "w"),
-    # Today and the Find additions.
-    "next": ("👉", "n"),
-    "eod": ("🌙", "d"),
-    "weekly": ("📆", "k"),
-    "budget": ("💳", "b"),
+    # The one Today row, and the Find row that starts from a session.
+    "today": ("🌅", "n"),
     "similar": ("🔭", "s"),
-    "asks": ("💬", "q"),
     "saved": ("🔖", "v"),
-    "history": ("📜", "h"),
     "cleanup": ("🚮", "c"),
-    # Analysis.
-    "replay": ("🎬", "r"),
-    "compare": ("📐", "l"),
+    # Analysis that stayed on the menu.
     "anomalies": ("📈", "y"),
     "health": ("🏥", "i"),
     "patterns": ("🔣", "p"),
-    # Operations and trust.
-    "watch": ("📡", "u"),
-    "doctor": ("🔧", "f"),
     "rollup": ("📤", "m"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
