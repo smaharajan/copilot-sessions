@@ -257,6 +257,12 @@ class GovernanceTest(StoreTest):
                 cli._file_history_data("portal")),
             "saved": lambda: cli._render_saved({"a-long-saved-name": "three.js "
                                                 "portal charts globe live data"}),
+            "diff": lambda: cli._render_diff(cli._diff_data("sess-alpha",
+                                                            "sess-empty")),
+            "replay": lambda: print(cli._replay_page(cli._replay_data("sess-alpha"), 0)),
+            "anomalies": lambda: cli._render_anomalies(cli._anomalies_data(3650)),
+            "health": lambda: cli._render_health(cli._health_data("portal")),
+            "patterns": lambda: cli._render_patterns(cli._patterns_data(3650)),
         }
         views.update(narrow)
         for name, render in views.items():

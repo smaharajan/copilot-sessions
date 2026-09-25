@@ -26,6 +26,13 @@ from ._common import (
     _prompt,
     _window_label,
 )
+from .analysis import (
+    cmd_anomalies,
+    cmd_diff,
+    cmd_health,
+    cmd_patterns,
+    cmd_replay,
+)
 from .evidence import cmd_endings, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
@@ -123,6 +130,9 @@ def _home_items(period: int = 30,
         (ui.menu_icon("history"), "File history",
          "every session, agent and turn that touched a file",
          cmd_file_history, "term"),
+        (ui.menu_icon("replay"), "Replay",
+         "step through a session turn by turn with ←/→",
+         cmd_replay, "ref"),
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
         (ui.menu_icon("stats"), "Stats",
@@ -153,6 +163,12 @@ def _home_items(period: int = 30,
         (ui.menu_icon("switches"), "Model switches",
          f"model or effort changed mid-run, cost either side · {window}",
          cmd_switches, "period"),
+        (ui.menu_icon("anomalies"), "Spend anomalies",
+         f"days and sessions over 2× their usual, and why · {window}",
+         cmd_anomalies, "period"),
+        (ui.menu_icon("compare"), "Compare sessions",
+         "two sessions side by side: cost, tools, output",
+         lambda pair: cmd_diff(*pair), "pair"),
         (ui.menu_icon("autonomy"), "Autonomy",
          "which sessions ran unattended · YOLO", cmd_yolo, ""),
         (ui.menu_icon("handoff"), "Handoffs",
@@ -181,13 +197,20 @@ def _home_items(period: int = 30,
         (ui.menu_icon("context"), "Context",
          "what this repo hands the agent before you type",
          cmd_context, ""),
+        (ui.menu_icon("health"), "Repo health",
+         "this repo: spend, failures, busiest files, loose ends",
+         cmd_health, ""),
+        (ui.menu_icon("patterns"), "Prompt patterns",
+         f"how you open a session vs how it turns out · {window}",
+         cmd_patterns, "period"),
         (ui.menu_icon("cleanup"), "Clean-up",
          "stale pins, quiet wip, handoffs nobody took · suggests only",
          cmd_cleanup, ""),
-        (ui.menu_icon("skills"), "Skills", "what Copilot can load here versus used",
+        (ui.menu_icon("skills"), "Skills",
+         "what Copilot can load here, what was used, when last",
          lambda: cmd_assets("skills"), ""),
         (ui.menu_icon("profiles"), "Agents",
-         "the same, for the agents you have defined",
+         "the same for your agents, and whether their model held",
          lambda: cmd_assets("agents"), ""),
         (ui.menu_icon("instructions"), "Instructions",
          "what every session here is told before you type",
@@ -368,6 +391,17 @@ def _home_status(query: str, matched: int, total: int, width: int,
         if ui.cells(line) <= width:
             return line
     return " ↑↓ · ↵ · q "
+
+
+def _label_rank(label: str, query: str) -> int:
+    """How well a row's name matches what was typed: 0 exactly, 1 as its
+    start, 2 anywhere in it, 3 only in the description."""
+    label, query = label.lower(), query.lower()
+    if label == query:
+        return 0
+    if label.startswith(query):
+        return 1
+    return 2 if query in label else 3
 
 
 def _home_matches(items, query: str) -> list[int]:
@@ -848,6 +882,14 @@ def _home_tui(screen, state: dict):
             term = _prompt(screen, theme, height - 1, width,
                            _TERM_PROMPTS.get(items[index][1], " search: "), "")
             return (index, term) if term else None
+        if asks == "ref":
+            ref = _prompt(screen, theme, height - 1, width, " session (#N or id): ", "")
+            return (index, ref.strip()) if ref and ref.strip() else None
+        if asks == "pair":
+            pair = _prompt(screen, theme, height - 1, width,
+                           " two sessions (#N or id, space between): ", "")
+            refs = (pair or "").split()
+            return (index, (refs[0], refs[1])) if len(refs) == 2 else None
         return (index, state.get("period", 30))
 
     try:
@@ -867,9 +909,8 @@ def _home_tui(screen, state: dict):
                 # A row whose name matches beats one whose description does:
                 # typing "sub-agents" means the Sub-agents row, not the
                 # Delegation row above it that mentions sub-agents.
-                cursor = next((index for index in shown
-                               if query.lower() in items[index][1].lower()),
-                              shown[0])
+                cursor = min(shown, key=lambda index: (
+                    _label_rank(items[index][1], query), shown.index(index)))
             cursor = min(max(cursor, 0), len(items) - 1)
             # Headings pay for themselves out of the wordmark, not out of the
             # menu. Eighteen options in one undivided column is a list you
@@ -1176,6 +1217,10 @@ def cmd_help() -> None:
                           a script that is gone
     cs subagents [N|all]  Sub-agents run: models, overrides, tools, tokens, time
     cs switches [N|all]   Model or effort changed mid-run, and the AIU either side
+    cs anomalies [N|all]  Days and sessions over 2x the 14-day median, with the
+                          turns that drove them (model, effort, cache)
+    cs diff <a> <b>       Two sessions side by side: cost, turns, models, cache,
+                          tools, files, commits and PRs, duration
 
   {ui.BOLD}Improve{ui.RST}
     cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
@@ -1185,6 +1230,12 @@ def cmd_help() -> None:
     cs context            What this repo hands the agent before you type
     cs cleanup [N]        Stale pins (quiet N days, default 14), wip quiet 7+
                           days, handoffs nobody took — suggests, never removes
+    cs health [--repo .]  One card for this repo: spend, failure rate, busiest
+                          files, long instructions, unused skills, failing
+                          hooks, open handoffs
+    cs patterns [N|all]   How opening requests (length, a named file, criteria
+                          or a test command, a skill) line up with outcomes —
+                          with sample sizes; correlation, not causation
                           {ui.DIM}standup, coach and rhythm read the sessions; context and
                           hooks read disk. Scheduled runs hidden by
                           .cs-ignore are left out.{ui.RST}
@@ -1238,6 +1289,8 @@ def cmd_help() -> None:
                           request in order · 'cs brief' == 'cs show --short'{ui.RST}
     cs read <N|id>        The conversation itself, both sides, in full
                           {ui.DIM}'--turn N' prints one turn · 'transcript' is an alias{ui.RST}
+    cs replay <N|id>      Step through it a turn at a time with ←/→: tools,
+                          files and credits for each turn, then the words
     cs files <path>       Sessions that touched a file (globs and partials work)
     cs resume <N|id>      Resume (cd's to session dir, runs 'copilot --resume')
 
@@ -1249,6 +1302,7 @@ def cmd_help() -> None:
                           agents, repos, skills, profiles, standup, failures,
                           loops, subagents, switches, endings, next, eod,
                           weekly, similar, asks, saved, cleanup, budget,
+                          diff, anomalies, health, patterns,
                           files --history{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
@@ -1299,6 +1353,7 @@ def cmd_help() -> None:
       o      show: cost, files, turns    t      transcript: the conversation
       s      reverse the sort order     /      filter as you type
       p      pin / unpin the row        g/G    jump to first/last
+      e      replay the session         d      mark, then d again to compare
       Esc    clear filter, then quit    q      back to the menu, or quit
     Key hints shrink to fit a narrow window rather than being cut off, so
     the keys you cannot guess stay on screen.

@@ -270,6 +270,22 @@ class TodayTest(StoreTest):
         self.assertEqual(code, 1)
         self.assertIn("no saved search named 'nope'", err)
 
+    def test_a_pinned_session_opens_from_the_pinned_listing(self):
+        """'v' on a pinned row used to raise KeyError: the listing was
+        imported inside `cmd_pins`, un-lifted, and its `show` could not find
+        the reader."""
+        from cs import cli, ui
+
+        ui.pin_session("sess-alpha")
+        with mock.patch.object(cli, "_curses_wrapper",
+                               side_effect=[("show", "sess-alpha"), None]), \
+                mock.patch.object(cli, "_pause", return_value=True), \
+                mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)), \
+                mock.patch("sys.stdout", mock.Mock(isatty=lambda: True)), \
+                mock.patch.object(cli, "_page", return_value=True) as page:
+            self.assertTrue(cli.cmd_pins())
+        self.assertIn("Build Three.js portal", page.call_args.args[0])
+
     def test_the_home_row_picks_a_saved_search_and_runs_it(self):
         from cs import cli, ui
 

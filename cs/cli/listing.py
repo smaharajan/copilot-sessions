@@ -279,13 +279,25 @@ def _interactive_listing(
         if not action:
             return True
         verb, session_id = action
+        # Looked up through the package namespace rather than imported here:
+        # analysis imports this module, and an import inside the function
+        # would hand back the un-lifted copy, whose `_page` cannot find the
+        # reader it needs.
+        if verb == "diff":
+            dismissed = globals()["cmd_diff"](*session_id)
+            if not dismissed and not _pause("Esc or Enter for the list · q quits "):
+                return True
+            continue
+        if verb == "replay":
+            dismissed = globals()["cmd_replay"](session_id)
+            if not dismissed and not _pause("Esc or Enter for the list · q quits "):
+                return True
+            continue
         if verb == "resume":
             _resume_from_listing(session_id)
             continue
         if verb == "copy":
-            from .today import _copy_ask
-
-            _copy_ask((copy or {}).get(session_id, ""))
+            globals()["_copy_ask"]((copy or {}).get(session_id, ""))
             if not _pause("Esc or Enter for the list · q quits "):
                 return True
             continue
@@ -322,7 +334,7 @@ def _reread_listing(reload, rows: list[tuple], title: str,
     return fresh, fresh_title, numbers, here
 
 
-_LISTING_KEYS = frozenset("vVoOtTrRsSgGqQpP/")
+_LISTING_KEYS = frozenset("vVoOtTrRsSgGqQpPdDeE/")
 
 
 def _listing_tui(
@@ -552,7 +564,8 @@ def _listing_tui(
                     0,
                     f"{numbers[sid]:>3}",
                     4,
-                    theme["cursor"] if on_cursor else theme["number"],
+                    theme["cursor"] if on_cursor else theme["title"]
+                    if sid == state.get("compare") else theme["number"],
                 )
                 # One-cell pin mark in the spare column of the #N field, so
                 # existing click targets and frame assertions stay put.
@@ -608,6 +621,9 @@ def _listing_tui(
                     " no match · / edits · Esc clears ",
                     " no match ",
                 )
+            if state.get("compare") in numbers:
+                mark = f" #{numbers[state['compare']]} marked · d on another compares ·"
+                forms = tuple(mark + form for form in forms[:-1]) + forms[-1:]
             status = next((form for form in forms if ui.cells(form) <= width),
                           forms[-1])
             _addstr(screen, height - 1, 0, status, width, theme["status"])
@@ -711,6 +727,17 @@ def _listing_tui(
                 sid = sorted_rows[cursor][0]
                 ui.toggle_pin(sid)
                 follow = sid
+            elif key in (ord("e"), ord("E")) and sorted_rows:
+                return "replay", sorted_rows[cursor][0]
+            elif key in (ord("d"), ord("D")) and sorted_rows:
+                # The first d marks a session, a d on another compares them;
+                # d on the marked one again clears the mark.
+                sid = sorted_rows[cursor][0]
+                marked = state.get("compare")
+                if marked and marked != sid:
+                    state.pop("compare", None)
+                    return "diff", (marked, sid)
+                state["compare"] = None if marked == sid else sid
             elif key in (curses.KEY_LEFT, curses.KEY_RIGHT):
                 # Arrows sort on press, which leaves Enter free to act on the row.
                 step = -1 if key == curses.KEY_LEFT else 1

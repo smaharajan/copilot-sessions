@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Analysis views.** `cs diff <a> <b>` compares two sessions side by side
+  (stacked below 64 columns), and `d` then `d` in a listing does the same;
+  `cs replay <ref>` steps through a session turn by turn with ←/→, each page
+  showing that turn's tools, failures, files and credits above the turn as
+  `cs read` sets it (`e` in a listing); `cs anomalies [N|all]` flags days and
+  sessions over 2× the median of the 14 days before, with the turns that
+  drove them; `cs health [--repo .]` is one card for a repository; and
+  `cs patterns [N|all]` compares opening-request features against outcomes,
+  with sample sizes. All have home rows and, except replay, `--json`.
+- **`cs skills` and `cs profiles` show recorded use**: invoked, last used and,
+  for agent profiles that declare `model:`, how many runs kept it.
 - **A Today group opens the home screen.** `cs next [N|all]` ranks what to
   pick up — open handoffs, unclean endings, stuck loops, `wip` tags and pins
   — with each reason and a ready `cs resume N`, and opens as a listing where
@@ -99,6 +110,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`cs timeline`) stays off the menu on purpose.
 
 ### Fixed
+
+- **Opening a session from the Pinned listing no longer crashes.** `v`, `o`
+  and `t` on a pinned row raised `KeyError: '_read_in_place'`: the listing
+  was imported inside `cmd_pins`, which handed back the un-lifted copy whose
+  pager could not find the in-app reader. It is now looked up through the
+  `cs.cli` namespace, like every other cross-module call there.
 
 - **Search finds every session that matches, not the first forty.** Results
   were cut at 40 sessions with nothing on screen to say so, and the title

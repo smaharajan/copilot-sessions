@@ -40,7 +40,7 @@ VIEWS = (
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
     "standup", "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "similar", "asks", "saved", "file-history",
-    "cleanup", "budget",
+    "cleanup", "budget", "diff", "anomalies", "health", "patterns",
 )
 
 # What someone actually types to reach each of those. The names above are what
@@ -53,6 +53,7 @@ DATA_COMMANDS = (
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "similar", "asks", "saved", "cleanup", "budget",
+    "diff", "anomalies", "health", "patterns",
 )
 
 
@@ -256,7 +257,8 @@ def repos() -> dict:
 def assets(kind: str, names: list[str], counts: dict[str, int],
            scopes: dict[str, str] | None = None,
            states: dict[str, str] | None = None,
-           ran: dict[str, int] | None = None) -> dict:
+           ran: dict[str, int] | None = None,
+           usage: dict[str, dict] | None = None) -> dict:
     """The skills or agent-profile inventory, with how many sessions used each.
 
     `scopes` and `states` say where a name lives and whether it is switched
@@ -265,7 +267,7 @@ def assets(kind: str, names: list[str], counts: dict[str, int],
     rather than left out. The original two keys are unchanged — a reader
     pinned to `name` and `sessions_referencing` keeps working.
     """
-    scopes, states, ran = scopes or {}, states or {}, ran or {}
+    scopes, states, ran, usage = scopes or {}, states or {}, ran or {}, usage or {}
     installed = [name for name in names if name in scopes]
     return {
         "view": "skills" if kind == "skills" else "profiles",
@@ -281,6 +283,13 @@ def assets(kind: str, names: list[str], counts: dict[str, int],
                 "scope": scopes.get(name, "not installed"),
                 "state": states.get(name, "unknown"),
                 "sessions_loaded": ran.get(name.lower(), 0),
+                # Recorded in the event logs: how often it was invoked, when
+                # last, and for an agent profile whether its model held.
+                "invoked": usage.get(name.lower(), {}).get("invoked", 0),
+                "last_used": usage.get(name.lower(), {}).get("last_used") or None,
+                **({"override_honoured":
+                    usage.get(name.lower(), {}).get("override_honoured")}
+                   if kind != "skills" else {}),
             }
             for name in sorted(names, key=lambda n: (-counts.get(n, 0), n.lower()))
         ],
@@ -468,6 +477,28 @@ def budget() -> dict:
     return {"view": "budget", "window": "last 24 hours", "nano_aiu": spent,
             "limit_aiu": limit,
             "over": bool(limit is not None and spent / 1e9 > limit)}
+
+
+# ── Analysis ─────────────────────────────────────────────────────────
+
+def diff(first: str, second: str) -> dict:
+    from .cli.analysis import _diff_data
+    return {"view": "diff", **_diff_data(first, second)}
+
+
+def anomalies(days: int) -> dict:
+    from .cli.analysis import _anomalies_data
+    return {"view": "anomalies", **_anomalies_data(days)}
+
+
+def health(repo: str = ".") -> dict:
+    from .cli.analysis import _health_data
+    return {"view": "health", **_health_data(repo)}
+
+
+def patterns(days: int) -> dict:
+    from .cli.analysis import _patterns_data
+    return {"view": "patterns", **_patterns_data(days)}
 
 
 def emit(payload: dict, fmt: str = "json") -> None:

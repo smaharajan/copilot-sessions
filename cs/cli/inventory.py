@@ -288,6 +288,8 @@ def _render_assets(kind: str, limit: int, column: str = "sessions",
         for folder in _asset_dirs(kind):
             print(f"    {ui.MUTED}{ui._fit(str(folder), inner - 2)}{ui.RST}")
         print()
+        # None on this disk, but the logs may still show them running.
+        globals()["_print_config_usage"](kind, [], inner)
         return
 
     counted = [(name, counts.get(name, 0)) for name in names]
@@ -406,6 +408,9 @@ def _render_assets(kind: str, limit: int, column: str = "sessions",
             print(f"    {ui.MUTED}… and {len(switched_off) - 24} more{ui.RST}")
         print()
 
+    # Recorded use from the event logs: how often each was invoked, when it
+    # was last, and — for agent profiles — whether the declared model held.
+    globals()["_print_config_usage"](kind, names, inner)
     print(ui.field("drill down", f"cs {kind if kind == 'skills' else 'profiles'} <name>"))
     print()
     _why(f"Counts are sessions that reference the {kind[:-1]} in a qualified "
@@ -735,7 +740,7 @@ def _print_hook_runs(by_event: Counter, inner: int) -> None:
     logs recorded. An event can have runs and no command here — a plugin or
     another checkout declared it — and it is listed rather than hidden.
     """
-    from .evidence import _table
+    _table = globals()["_table"]
 
     runs = _hook_runs()
     names = sorted(set(by_event) | set(runs), key=hooks.order)

@@ -30,6 +30,17 @@ drawing — and
 listing/session/reports/governance/inventory/home/resume helpers, with shared
 pieces in `_common`).
 
+`cs/cli/__init__.py` *lifts* every submodule function into the `cs.cli`
+namespace — rebuilt with that namespace as its globals — so tests can patch
+`cs.cli.<name>` and reach every caller. One consequence bites: an import
+**inside a function** (`from .listing import cmd_x`) hands back the
+un-lifted original, whose globals are its own module's, and anything it
+calls that expects the package namespace (`_page` looks up `_read_in_place`
+there) fails with a `KeyError`. Import at module level, or resolve through
+`globals()["name"]` where a module-level import would be circular. The view
+modules added for the day-to-day features are `evidence.py`, `today.py` and
+`analysis.py`.
+
 ```mermaid
 flowchart TD
     M["__main__.py"] --> D["cli.main()<br/>argument dispatch"]

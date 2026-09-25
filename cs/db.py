@@ -2162,16 +2162,26 @@ def spend_since(conn: sqlite3.Connection, since: str) -> int | None:
     ).fetchone()[0]
 
 
-def opening_prompts(conn: sqlite3.Connection,
-                    session_ids: list[str]) -> dict[str, list[tuple[int, str]]]:
-    """Every (turn_index, prompt) per session — the caller picks the openers."""
+def opening_prompts(conn: sqlite3.Connection, session_ids: list[str],
+                    first_only: bool = False) -> dict[str, list[tuple[int, str]]]:
+    """(turn_index, prompt) per session, in order — the caller picks the openers.
+
+    `first_only` fetches just each session's first non-empty prompt, which
+    is all most callers need: a long session's later prompts are most of the
+    text in the store, and reading them to throw them away was most of the
+    cost of the views that ask.
+    """
     out: dict[str, list[tuple[int, str]]] = {sid: [] for sid in session_ids}
+    first = """AND turn_index = (SELECT MIN(f.turn_index) FROM turns f
+                               WHERE f.session_id = turns.session_id
+                                 AND COALESCE(f.user_message, '') <> '')"""
     for chunk in _chunks(list(session_ids)):
         marks = ",".join("?" * len(chunk))
         for sid, index, prompt in conn.execute(
             f"""SELECT session_id, turn_index, COALESCE(user_message, '')
                 FROM turns WHERE session_id IN ({marks})
                   AND COALESCE(user_message, '') <> ''
+                  {first if first_only else ""}
                 ORDER BY session_id, turn_index""",
             chunk,
         ):
@@ -2213,4 +2223,126 @@ def file_touches(conn: sqlite3.Connection, pattern: str,
             ORDER BY f.file_path, MAX(s.created_at, s.updated_at) DESC, {turn}
             LIMIT ?""",
         (like, limit),
+    ).fetchall()
+
+
+# ── Analysis: comparing, replaying and spotting spikes ───────────────
+
+def _usage_optional(conn: sqlite3.Connection, column: str, default: str = "0") -> str:
+    return optional(conn, "assistant_usage_events", column, default=default)
+
+
+def session_metrics(conn: sqlite3.Connection, session_id: str) -> dict:
+    """What a session cost and how: spend, calls, cache, models and its span.
+
+    `cache_hit` uses the definition `cs efficiency` uses —
+    `cache_read / (input + cache_read + cache_write)` — and is None when the
+    store keeps no token counts. `first` and `last` are the first and last
+    billed call, `YYYY-MM-DDTHH:MM:SS`, or '' when calls carry no time.
+    """
+    out = {"nano_aiu": 0, "calls": 0, "cache_hit": None, "models": [],
+           "first": "", "last": ""}
+    if not _has_usage(conn):
+        return out
+    fresh = _usage_optional(conn, "input_tokens")
+    read = _usage_optional(conn, "cache_read_tokens")
+    write = _usage_optional(conn, "cache_write_tokens")
+    created = _usage_optional(conn, "created_at", "''")
+    nano, calls, i, r, w, first, last = conn.execute(
+        f"""SELECT COALESCE(SUM(total_nano_aiu), 0), COUNT(*),
+                   COALESCE(SUM({fresh}), 0), COALESCE(SUM({read}), 0),
+                   COALESCE(SUM({write}), 0),
+                   MIN({_stamp_sql(created)}), MAX({_stamp_sql(created)})
+            FROM assistant_usage_events WHERE session_id = ?""",
+        (session_id,),
+    ).fetchone()
+    out.update(nano_aiu=nano, calls=calls, first=first or "", last=last or "")
+    if _has_columns(conn, "assistant_usage_events", "input_tokens",
+                    "cache_read_tokens") and (i + r + w):
+        out["cache_hit"] = r / (i + r + w)
+    out["models"] = [
+        {"model": model or "", "calls": n, "nano_aiu": spent or 0}
+        for model, n, spent in conn.execute(
+            """SELECT model, COUNT(*), SUM(total_nano_aiu)
+               FROM assistant_usage_events WHERE session_id = ?
+               GROUP BY model ORDER BY SUM(total_nano_aiu) DESC""",
+            (session_id,),
+        )
+    ]
+    return out
+
+
+def turn_spend(conn: sqlite3.Connection, session_id: str) -> dict[int, int]:
+    """Nano-AIU billed per turn of one session. Empty without turn indices."""
+    if not _has_usage(conn) or not _has_columns(
+            conn, "assistant_usage_events", "turn_index"):
+        return {}
+    return {
+        turn: spent or 0
+        for turn, spent in conn.execute(
+            """SELECT turn_index, SUM(total_nano_aiu) FROM assistant_usage_events
+               WHERE session_id = ? AND turn_index IS NOT NULL
+               GROUP BY turn_index""",
+            (session_id,),
+        )
+    }
+
+
+def turn_costs(conn: sqlite3.Connection, *, day: str | None = None,
+               session_id: str | None = None, limit: int = 3) -> list[dict]:
+    """The dearest turns on a day, or in a session: the evidence for a spike.
+
+    Each carries the model(s), the reasoning effort where recorded, and the
+    cache hit rate of that turn's calls.
+    """
+    if not _has_usage(conn):
+        return []
+    turn = _usage_optional(conn, "turn_index", "NULL")
+    effort = _usage_optional(conn, "reasoning_effort", "''")
+    fresh = _usage_optional(conn, "input_tokens")
+    read = _usage_optional(conn, "cache_read_tokens")
+    write = _usage_optional(conn, "cache_write_tokens")
+    created = _usage_optional(conn, "created_at", "''")
+    where, args = [], []
+    if day is not None:
+        where.append(f"substr({_stamp_sql(created)}, 1, 10) = ?")
+        args.append(day)
+    if session_id is not None:
+        where.append("session_id = ?")
+        args.append(session_id)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+    rows = conn.execute(
+        f"""SELECT session_id, {turn}, COALESCE(SUM(total_nano_aiu), 0),
+                   GROUP_CONCAT(DISTINCT model), MAX({effort}),
+                   COALESCE(SUM({fresh}), 0), COALESCE(SUM({read}), 0),
+                   COALESCE(SUM({write}), 0), COUNT(*)
+            FROM assistant_usage_events {clause}
+            GROUP BY session_id, {turn}
+            ORDER BY 3 DESC LIMIT ?""",
+        (*args, limit),
+    ).fetchall()
+    return [
+        {"session_id": sid, "turn": index, "nano_aiu": spent,
+         "models": sorted(set((models or "").split(","))) if models else [],
+         "effort": effort_used or "", "calls": calls,
+         "cache_hit": (r / (i + r + w)) if (i + r + w) else None}
+        for sid, index, spent, models, effort_used, i, r, w, calls in rows
+    ]
+
+
+def session_spend(conn: sqlite3.Connection, days: int) -> list[tuple[str, str, int]]:
+    """(session, day of its last billed call, nano-AIU) for sessions billed
+    within `days` (0 = all), oldest first — what a per-session spike is
+    measured against."""
+    if not _has_usage(conn) or not _has_columns(
+            conn, "assistant_usage_events", "created_at"):
+        return []
+    day = f"substr(MAX({_stamp_sql('created_at')}), 1, 10)"
+    having = (f"HAVING MAX({_stamp_sql('created_at')}) >= "
+              f"strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)") if days > 0 else ""
+    return conn.execute(
+        f"""SELECT session_id, {day}, COALESCE(SUM(total_nano_aiu), 0)
+            FROM assistant_usage_events GROUP BY session_id {having}
+            ORDER BY {day}""",
+        (f"-{days} days",) if days > 0 else (),
     ).fetchall()

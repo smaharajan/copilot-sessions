@@ -43,6 +43,7 @@ from .. import (  # noqa: F401
 # we then lift callables into this package's globals for patch compatibility.
 from . import (  # noqa: E402
     _common,
+    analysis,
     dispatch,
     evidence,
     governance,
@@ -69,6 +70,7 @@ _SUBMODULES = (
     session,
     workflow,
     listing,
+    analysis,
     home,
     dispatch,
 )

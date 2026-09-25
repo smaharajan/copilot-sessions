@@ -187,6 +187,21 @@ session, agent and turn that touched a file. **`cs cleanup`** lists stale pins,
 quiet `wip` tags and abandoned handoffs, with the command that would tidy each
 — it never removes anything itself.
 
+### 🔬 Looking closer
+
+**`cs diff <a> <b>`** puts two sessions side by side — cost, turns, models,
+cache hit rate, tool calls and failures, files, commits and PRs, duration — and
+stacks them on a narrow window; in a listing `d` marks one and `d` on another
+compares. **`cs replay <ref>`** steps through a session a turn at a time with
+←/→, showing each turn's tools (and failures), files and credits above the
+conversation (`e` in a listing). **`cs anomalies`** flags days and sessions
+that cost more than twice the median of the fortnight before, with the turns
+that drove them — model, effort and cache hit rate. **`cs health`** is one
+card for the repository you are in, and **`cs patterns`** lines up how you
+open a session against how it turns out, with sample sizes and the reminder
+that it is correlation, not causation. `cs skills` and `cs profiles` gain
+*invoked*, *last used* and — for agents — whether the declared model held.
+
 ### 🧾 What actually happened in a session
 
 Copilot's per-session event log records what the store does not, and `cs`

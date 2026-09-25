@@ -144,12 +144,15 @@ The same windows work from the shell: `cs cost all`, `cs efficiency 7`,
 | letters | narrow the menu as you type | — | start the filter, already typed (any letter that is not a key here) |
 | `space` / `b` | — | page down / up | — |
 | `g` / `G` | — | top / bottom | first / last row |
-| `←` `→` | step the counting window | re-sort by column | re-sort by column |
+| `←` `→` | step the counting window · on Budget, change the limit | re-sort by column · in a replay, the next / previous turn | re-sort by column |
 | `s` | — | reverse sort | reverse sort |
 | `/` | full-text search | find text; submit an empty search to clear | filter: titles, repos, folders and the full text, as `cs search` reads them |
 | `n` / `N` | — | next / previous matching row, wrapping at the ends | — |
 | `v` `o` `t` | — | — | session page (`v` and `o` both) · transcript (`t`) |
 | `p` | — | — | pin / unpin the highlighted session |
+| `e` | — | — | replay the session a turn at a time |
+| `d` | — | — | mark for comparison; `d` on another compares the two |
+| `c` | — | — | in My asks: copy the ask, masked |
 | `Esc` | clear the filter, then quit | back to the menu | clear filter, then back |
 | `q` | quit, when nothing is typed | back to the menu | back to the menu |
 | Mouse | click, wheel | wheel scrolls 3 lines | click row, click header, wheel |
@@ -631,6 +634,46 @@ Every block is independent, and a store that does not record a column simply
 does not get that block — an absent reading is left absent rather than shown
 as zero.
 
+### 🔬 `cs diff` — two sessions side by side
+
+```
+  ── Compare sessions ─────────────────────────────────────────────────────
+
+    A 1a2b3c4d  Port the importer to the new API
+    B 5e6f7a8b  Port the exporter to the new API
+
+                  A                               B
+    ──────────────────────────────────────────────────────────────────────
+    cost          18.40 AIU                       6.10 AIU
+    turns         22                              9
+    models        claude-opus-4.8                 gpt-5.5
+    cache hit     41%                             78%
+    tool calls    310 · 19 failed                 96 · 2 failed
+    shipped       1 commit · 1 PR                 2 commits · 1 PR
+    duration      2.4h                            48m
+```
+
+Values that differ are highlighted. Below 64 columns the two sessions stack,
+one block each. From a listing, `d` marks the session under the cursor (the
+status line says so) and `d` on another opens the comparison; `d` on the
+marked one clears it.
+
+### 🎬 `cs replay` — a session, a turn at a time
+
+A full-screen page per turn: the credits that turn spent as a bar against the
+dearest turn, the tools it called with failures marked `✗`, the files it
+touched, and then the turn exactly as `cs read` sets it — masked. ←/→ steps
+between turns; the scroll, find and Esc keys are the reader's. Piped, every
+turn is printed in order. `e` on a listing row opens it.
+
+### 📈 `cs anomalies` — spend that stood out
+
+A day, or a session, is flagged when it cost more than **2×** the median of
+the **14** days before it (`ANOMALY_FACTOR`, `BASELINE_DAYS`); with fewer than
+three comparable days or sessions there is no baseline and nothing is
+flagged. Each flag lists the turns that drove it with their model, reasoning
+effort and cache hit rate — the three things that usually explain a spike.
+
 ### 🎓 `cs skills` / 🤖 `cs profiles` — installed versus used
 
 ```
@@ -691,6 +734,15 @@ bare word match is worthless when skills are called `commit`, `plan` or
 
 Only skills leave a load marker, so `cs profiles` reports references alone and
 never claims a profile ran.
+
+#### Invoked, last used, model kept
+
+Below the inventory, both views list what the event logs recorded: how many
+times each skill was invoked (`skill.invoked`) or each agent ran as a
+sub-agent, and when it was last. For an agent profile that declares `model:`,
+**model kept** is how many of its runs ran on that model — `0/5` means the
+profile's choice never applied. `--json` carries `invoked`, `last_used` and
+`override_honoured`.
 
 #### `cs skills --by-repo` — where each one was actually reached for
 
@@ -1004,6 +1056,25 @@ marked with `·` rather than coloured red: making the block visible is useful,
 calling it bad is not this report's job. The window cuts by the **turn**, not
 the session — a session touched yesterday may have opened in March, and its
 March evenings do not belong in this month's histogram.
+
+### 🏥 `cs health` — this repository, on one card
+
+Sessions and spend in the repository you are standing in (or `--repo
+<name>`), the tool failure rate, the files agents edit most, instruction
+files past Copilot's 4,000-character read, skills available here but never
+used, hook failures, and handoffs still open. Instructions and skills are
+read off the disk of the checkout you are in, so for `--repo <name>` they
+are left out rather than describing the wrong one.
+
+### 🔣 `cs patterns` — how you open a session, and how it goes
+
+Each session's opening request is scored on five features — short (under 80
+characters), long (400+), names a file or path, carries acceptance criteria
+or a test command, and whether a skill was invoked. For each feature the
+sessions with it and without it are compared on how often they shipped a
+commit or PR, and their median turns and AIU. Every side shows `n`, and
+anything under 5 is marked: this is **correlation, not causation**, and the
+view says so.
 
 ### 🚮 `cs cleanup` — what has gone stale
 

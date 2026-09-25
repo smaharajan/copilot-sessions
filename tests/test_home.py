@@ -105,6 +105,12 @@ class HomeMenuTest(StoreTest):
         for _, label, _, action, asks in cli._home_items():
             if asks == "term":
                 continue
+            if asks in ("ref", "pair"):
+                # The menu asks for a session (or two) first, then passes it.
+                given = "sess-alpha" if asks == "ref" else ("sess-alpha", "sess-empty")
+                with self.subTest(label=label), redirect_stdout(io.StringIO()):
+                    action(given)
+                continue
             if asks == "theme":
                 self.assertEqual(action("dark"), "light")
                 continue
@@ -512,6 +518,12 @@ class HomeMenuTest(StoreTest):
         screen = Screen([*map(ord, "sub-agents"), curses.KEY_ENTER])
         choice = cli._home_tui(screen, {"period": 30, "revealed": True})
         self.assertEqual(choice, (wanted, 30))
+        # And a label that is a word inside another one: "agents" is the
+        # Agents row, not the Sub-agents row that happens to come first.
+        agents = next(i for i, item in enumerate(items) if item[1] == "Agents")
+        screen = Screen([*map(ord, "agents"), curses.KEY_ENTER])
+        self.assertEqual(cli._home_tui(screen, {"period": 30, "revealed": True}),
+                         agents)
 
     def test_a_heading_only_appears_when_its_group_does(self):
         """Filtering to two rows should show two headings, not all five."""
@@ -686,8 +698,8 @@ class HomeMenuTest(StoreTest):
         items = cli._home_items()
         state: dict = {"revealed": True, "period": 30, "theme": "dark"}
         for index, item in enumerate(items):
-            if item[4] == "term":
-                continue  # a search with no term is not a view
+            if item[4] in ("term", "ref", "pair"):
+                continue  # a search with no term, or a replay of nothing, is not a view
             with self.subTest(row=item[1]):
                 # Down to the row, then a single Enter.
                 stays = item[4] == "theme"

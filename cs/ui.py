@@ -1198,6 +1198,12 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "saved": ("🔖", "v"),
     "history": ("📜", "h"),
     "cleanup": ("🚮", "c"),
+    # Analysis.
+    "replay": ("🎬", "r"),
+    "compare": ("📐", "l"),
+    "anomalies": ("📈", "y"),
+    "health": ("🏥", "i"),
+    "patterns": ("🔣", "p"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and
 # up) rather than from the older symbol blocks at U+2100–U+2BFF. Both are

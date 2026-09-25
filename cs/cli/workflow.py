@@ -50,7 +50,11 @@ def cmd_unpin(ref: str) -> None:
 
 def cmd_pins() -> bool:
     """List pinned sessions. True when a full-screen listing ran."""
-    from .listing import _interactive_listing, _render_listing
+    # Through the package namespace, not an import here: an import inside
+    # the function handed back the un-lifted listing, whose `show` could not
+    # find the reader and raised KeyError on the first 'v'.
+    _interactive_listing = globals()["_interactive_listing"]
+    _render_listing = globals()["_render_listing"]
 
     ids = ui.pinned_ids()
     if not ids:

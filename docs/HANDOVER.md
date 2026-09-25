@@ -15,8 +15,8 @@ home screen (`cs` / `cs home`), in five phases:
 | 1 | `cs/events.py`: streamed, cached digests of `events.jsonl` (no UI) | **done** |
 | 2 | Evidence views: tool failures, stuck loops, hook health, autonomy evidence, sub-agents, model switches, unclean endings | **done** |
 | 3 | Day-to-day workflow: next up, end of day, weekly review, similar work, my asks, saved searches, file history, budget row, clean-up | **done** |
-| 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | next |
-| 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | — |
+| 4 | Analysis: compare, replay, spend anomalies, repo health, prompt patterns, agent config | **done** |
+| 5 | Operations and trust: watch, doctor, schema drift guard, team rollup | next |
 
 The standing rules are in `AGENTS.md` and `CONTRIBUTING.md`: the store is
 opened `mode=ro`, nothing is written under `COPILOT_HOME`, stored text is
@@ -198,10 +198,76 @@ Decisions worth knowing:
   shows in the header); arrows reach Help; theme gallery; `updated` advanced
   after a hover and after a view.
 
+## Phase 4 — analysis
+
+All in `cs/cli/analysis.py`.
+
+| Command | Home row | Notes |
+|---|---|---|
+| `cs diff <a> <b>` | Compare sessions → Measure (pair) | stacks below 64 columns; listing `d` … `d` |
+| `cs replay <ref>` | Replay → Find (ref) | reuses `_transcript_turn` from `cs read`; listing `e` |
+| `cs anomalies [N\|all]` | Spend anomalies → Measure (period) | `ANOMALY_FACTOR = 2.0`, `BASELINE_DAYS = 14`, needs 3 comparable points |
+| `cs health [--repo .]` | Repo health → Improve | instructions and skills only for the checkout you are in |
+| `cs patterns [N\|all]` | Prompt patterns → Improve (period) | five features, `n` per side, correlation note |
+| `cs skills`, `cs profiles` (extended) | Skills, Agents → Reference | invoked, last used, model kept |
+
+Decisions and fixes worth knowing:
+
+- `_transcript_turn` was extracted from `_render_transcript` so `cs read`
+  and `cs replay` draw a turn with the same code.
+- The reader (`_reader_tui`) gained a step mode: a `sort` dict with `steps`
+  makes ←/→ move between pages (clamped at the ends) and hides `s`.
+- **Lifting gotcha, fixed.** A function-local `from .x import f` inside a
+  lifted `cs.cli` function returns the *un-lifted* `f`, whose `_page`
+  raises `KeyError: '_read_in_place'`. The listing's `d`/`e` keys hit it
+  and so, since before this work, did `v`/`o`/`t` on the **Pinned** listing
+  (`cmd_pins`). Both now resolve through `globals()[...]`; regression tests
+  cover each. Top-level imports are fine.
+- Home type-to-filter ranks label matches exact → prefix → substring →
+  description (typing `agents` opened Sub-agents; found in the tmux check).
+- `db.opening_prompts(..., first_only=True)` fetches only each session's
+  first prompt; `cs asks` masks once (`_user_text` already masks), which
+  took `asks` from 2.35 s to 1.29 s and `patterns` from 2.06 s to 1.31 s.
+- The suite is not `COLUMNS`-agnostic: with `COLUMNS=100` exported, the
+  baseline fails 26 tests. CI does not set it; do not export it when running
+  the tests locally.
+
+### Measured (reference store, warm cache, read-only)
+
+| View | Time | Note |
+|---|---|---|
+| `cs diff 1 2` | 0.23 s | |
+| `cs replay 1` | 0.23 s | piped: every turn |
+| `cs anomalies` | 0.85 s | store only |
+| `cs next` / `eod` / `weekly` | 0.56 / 0.52 / 0.66 s | |
+| `cs similar <words>` | 0.23 s | |
+| `cs asks` | 1.29 s | 241 opening asks, masked |
+| `cs patterns` | 1.31 s | |
+| `cs health` | 2.11 s | includes the skills inventory scan |
+| `cs skills` / `cs profiles` | 1.83 / 1.71 s | baseline `cs skills` was 1.81 s: the reference scan predates this work |
+
+Over the 1-second target: `asks`, `patterns`, `health`, `skills`, `profiles`.
+None of them reads the event logs cold, and the extra cost is the store's
+turn scans (prompt masking, skill references), not the digest. Deferred:
+caching masked opening asks and the skills reference scan across processes
+would need a text cache, which the counts-only rule forbids. Worth a
+maintainer decision.
+
+### Verified
+
+- Lint and the full suite (686 tests) pass on 3.12 and 3.10.
+- Width test covers diff, replay, anomalies, health and patterns at
+  40–140 columns; skills and profiles checked at 40, 60 and 100.
+- tmux, `TERM=xterm-ghostty`, 100x40 and 40x24: all seven Phase 4 rows
+  found by typing, opened (Replay and Compare with typed sessions) and
+  returned; replay → moves to the next turn and stops at the last; listing
+  `e` opens a replay, `d` marks (status line says so), `d` on another
+  opens the comparison; the 60 s refresh advanced after a hover and after a
+  view.
+
 ## What's next
 
-Phase 4: compare, replay, spend anomalies, repo health, prompt patterns, and
-agent-config columns on `cs profiles` / `cs skills`.
+Phase 5: watch, doctor, the schema drift guard, and team rollup.
 
 ## Earlier history
 

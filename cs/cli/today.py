@@ -515,9 +515,13 @@ def _asks_data(days: int, repo: str | None = None) -> dict:
         if repo:
             rows = [row for row in rows if _repo_match(row, repo)]
         ids = [row[0] for row in rows]
-        prompts = db.opening_prompts(conn, ids)
         took_up = {h["id"] for h in signals.handoffs(conn)
                    if h["role"] in ("received", "both")}
+        # Every prompt only where a handoff was picked up; the opener alone
+        # everywhere else.
+        prompts = db.opening_prompts(conn, [i for i in ids if i not in took_up],
+                                     first_only=True)
+        prompts.update(db.opening_prompts(conn, [i for i in ids if i in took_up]))
         refs = db.refs_by_session(conn, ids)
     finally:
         conn.close()
@@ -534,9 +538,11 @@ def _asks_data(days: int, repo: str | None = None) -> dict:
             if picked:
                 chosen.append((picked[0], "after handoff", picked[1]))
         for index, kind, text in chosen:
-            full = redact.redact(text)
+            # `_user_text` has already masked it (in `_plain`); masking a
+            # long prompt twice was most of this view's time.
             asks.append({**_session_fields(row), "turn": index, "kind": kind,
-                         "ask": redact.one_line(full), "ask_full": full.strip(),
+                         "ask": redact.one_line(text[:300]),
+                         "ask_full": text.strip(),
                          "outcome": _outcome(refs.get(row[0]))})
     return {"window_days": days, "repo": repo, "count": len(asks), "asks": asks}
 

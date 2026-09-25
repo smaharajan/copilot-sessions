@@ -491,27 +491,38 @@ def _render_transcript(
             lines.append(f"  {ui.DIM}no turn #{only} in this session{ui.RST}")
 
     for index, prompt, reply, when in turns:
-        stamp = when[11:16] if len(when) >= 16 else ""
-        note = " · ".join(part for part in (stamp, _turn_size(prompt, reply)) if part)
-        # The ask goes in the rule itself: scrolling a long transcript should
-        # say what you are looking at, not just how far in you are. When and
-        # how big ride the same rule's other end, so a turn opens on one line
-        # of furniture rather than on a rule and a stray line of grey.
-        gist = _user_text(prompt or "")
-        title = f"Turn {index}"
-        if gist:
-            title = f"{title} · {ui.trunc(gist, max(inner - len(note) - 26, 12))}"
-        lines.append(ui.rule(inner, title, note=note))
-        lines.append("")
-        lines.append(ui.speaker(ui.YOU_MARK, "You", ui.MINT))
-        lines.extend(_turn_body(prompt, "(empty)", ui.MINT, inner))
-        lines.append("")
-        lines.append(ui.speaker(ui.COPILOT_MARK, "Copilot", ui.VIOLET))
-        lines.extend(_turn_body(reply, "(no reply recorded)", ui.VIOLET, inner))
-        lines.append("")
+        lines.extend(_transcript_turn(index, prompt, reply, when, inner))
 
     lines.extend(_session_footer(session_id, "brief|show|resume", inner))
     return "\n".join(lines)
+
+
+def _transcript_turn(index: int, prompt: str, reply: str, when: str,
+                     inner: int) -> list[str]:
+    """One turn as `cs read` sets it: the rule, then both sides, masked.
+
+    Shared with `cs replay`, which shows one of these per page.
+    """
+    stamp = when[11:16] if len(when) >= 16 else ""
+    note = " · ".join(part for part in (stamp, _turn_size(prompt, reply)) if part)
+    # The ask goes in the rule itself: scrolling a long transcript should
+    # say what you are looking at, not just how far in you are. When and
+    # how big ride the same rule's other end, so a turn opens on one line
+    # of furniture rather than on a rule and a stray line of grey.
+    gist = _user_text(prompt or "")
+    title = f"Turn {index}"
+    if gist:
+        title = f"{title} · {ui.trunc(gist, max(inner - len(note) - 26, 12))}"
+    return [
+        ui.rule(inner, title, note=note),
+        "",
+        ui.speaker(ui.YOU_MARK, "You", ui.MINT),
+        *_turn_body(prompt, "(empty)", ui.MINT, inner),
+        "",
+        ui.speaker(ui.COPILOT_MARK, "Copilot", ui.VIOLET),
+        *_turn_body(reply, "(no reply recorded)", ui.VIOLET, inner),
+        "",
+    ]
 
 
 def _reader_tui(
@@ -625,7 +636,9 @@ def _reader_tui(
         hints.insert(3, ("/ find", "/", 0))
         if term:
             hints.insert(4, ("n/N next", "n/N", 0))
-        if sort:
+        if sort and sort.get("steps"):
+            hints.insert(0, (f"←/→ {sort['steps']}", "←/→", 1))
+        elif sort:
             hints.insert(0, ("←/→ sort", "←/→ sort", 1))
             hints.insert(1, ("s reverse", "s", 2))
         if mouse:
@@ -643,7 +656,8 @@ def _reader_tui(
             # The column belongs beside the position, not in the hints: hints
             # shrink to their short forms on a narrow window, and the one
             # thing you need after pressing ← is which column you landed on.
-            order = f"{sort['column']}{'↓' if sort['descending'] else '↑'}"
+            order = (sort["label"](sort["column"]) if sort.get("label") else
+                     f"{sort['column']}{'↓' if sort['descending'] else '↑'}")
             place = f"{order} · {place}"
         # Allocate both sides before drawing: status must never overwrite
         # the search keys or the way back on a narrow terminal.
@@ -722,7 +736,17 @@ def _reader_tui(
             after = selected_match if selected_match is not None else offset
             offset = _next_match(found, after, 1 if key == ord("n") else -1, offset)
             selected_match = offset
-        elif sort and key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("s"), ord("S")):
+        elif sort and sort.get("steps") and key in (curses.KEY_LEFT, curses.KEY_RIGHT):
+            # Stepping pages (a replay's turns), not re-sorting a table: the
+            # ends are ends, and there is no direction to reverse.
+            order = sort["columns"]
+            at = order.index(sort["column"]) + (1 if key == curses.KEY_RIGHT else -1)
+            if 0 <= at < len(order):
+                sort["column"] = order[at]
+                lines = sort["render"](sort["column"], False).split("\n")
+                offset = 0
+        elif (sort and not sort.get("steps")
+              and key in (curses.KEY_LEFT, curses.KEY_RIGHT, ord("s"), ord("S"))):
             if key == ord("s") or key == ord("S"):
                 sort["descending"] = not sort["descending"]
             else:
