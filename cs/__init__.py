@@ -6,7 +6,7 @@ inspect and resume sessions. Zero third-party dependencies.
 
 import sys
 
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 
 # Every entry point - the `cs` console script, `python -m cs`, and the bin/cs
 # launcher - imports this package first, so one check here covers all of them.
