@@ -299,6 +299,25 @@ def save_theme(name: str) -> bool:
     return _save_settings(settings)
 
 
+def home_row() -> str | None:
+    """The label of the home-screen row opened last, or None."""
+    row = _load_settings().get("home_row")
+    return row if isinstance(row, str) and row else None
+
+
+def save_home_row(label: str) -> bool:
+    """Remember the row just opened, so the next run starts on it.
+
+    Stored by label, not position: rows come and go from the menu, and an
+    index would quietly land on whatever moved into the old slot.
+    """
+    settings = _load_settings()
+    if settings.get("home_row") == label:
+        return True
+    settings["home_row"] = label
+    return _save_settings(settings)
+
+
 def pinned_ids() -> list[str]:
     """Session ids the user has pinned, in pin order. Missing key → []."""
     pins = _load_settings().get("pins")

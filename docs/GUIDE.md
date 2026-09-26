@@ -20,44 +20,40 @@ shrinks to pay for the headings, and below about twenty rows it becomes a
 single line:
 
 ```
-                     ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗ ████████╗
-                    ██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗╚══██╔══╝
-                    ██║     ██║   ██║██████╔╝██║██║     ██║   ██║   ██║
-                    ██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║   ██║
-                    ╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝   ██║
-                     ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝
-                            S E S S I O N S   B R O W S E R
-  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
-    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆▅▃▅▅▂▁▅▆▄▆▆  ▄▆▆▇▄ ▁▅▂▆█▆  ▆ all time
-  ───────────────────────────────────────────────────────────────────────────
-    FIND  ───────────────────────────────────────────────────────────────
+                                  ___ ___
+                                 / __/ __|
+                                | (__\__ \  copilot sessions
+                                 \___|___/
+  2,480.5k AIU · 420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
+  ↻ last  Refactor cart service · acme/webshop · 2h ago · ⇥ Tab resumes
+  activity ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄ all time · since 9 Mar 2026
+  ────────────────────────────────────────────────────────────────────────────────────────────
+   ▌FIND  ──────────────────────────────────────────────────────────────────────────────────
   ▌  🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-    MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
-     📊  Stats             commits, PRs, files and what they cost · last 30 days
-     💰  AI spend          credits by model, repository and day · last 30 days
-     🔋  Efficiency        cache, rate multiplier, latency, reasoning · last 30 days
-     👥  Delegation        you vs the main agent vs sub-agents · last 30 days
-     🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
-     🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
-    GOVERN  ─────────────────────────────────────────────────────────────
-     🚀  Autonomy          which sessions ran unattended · YOLO
-     🔗  Handoffs          work passed from one session to the next
-     🔐  Security          credentials found in session text · last 30 days
-     💥  Tool failures     which tools fail, where, worst sessions · last 30 days
-     🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
-    REFERENCE  ──────────────────────────────────────────────────────────
+   ▌MEASURE  ─────────────────────────────────────────────────────────────── last 30 days ──
+     📊  Stats             commits, PRs, files and what they cost
+     💰  AI spend          credits by model, repository and day
+     🔋  Efficiency        cache, rate multiplier, latency, reasoning
+     👥  Delegation        you vs the main agent vs sub-agents
+     🐝  Sub-agents        which agents ran, on which models, how long
+     🔀  Model switches    model or effort changed mid-run, cost either side
+   ▌GOVERN  ──────────────────────────────────────────────────────────────── last 30 days ──
+     🚀  Autonomy          which sessions ran unattended · YOLO · all time
+     🔗  Handoffs          work passed from one session to the next · all time
+     🔐  Security          credentials found in session text
+     💥  Tool failures     which tools fail, where, worst sessions
+     🌀  Stuck loops       one tool failing again and again, with turns
+   ▌REFERENCE  ─────────────────────────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here, what was used, when last
      🤖  Agents            the same for your agents, and whether their model held
      📋  Instructions      what every session here is told before you type
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
-     🎨  Theme             Dark · choose from 20 palettes
-     💡  Help              every command and every key
-   ↑↓ move · ↵ open · type to find · / search text · q quit
+   ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · updated 12:00 · / search · q quit
 ```
 
 **The facts line reads *used over installed*.** `11/30 skills` is not an
@@ -65,7 +61,19 @@ inventory count — it is eleven of your thirty skills having actually been
 reached for, and nineteen sitting idle. Kit nobody uses is kit that is quietly
 rotting, and the gap between the two numbers is the only part worth looking at.
 Sub-agent runs are not on this line; **Delegation** and **Sub-agents** count
-them.
+them. Credits read exactly below ten thousand and in thousands above it
+(`835.0k`), and the session count and the activity strip count the same
+sessions — the blank rows Copilot writes at launch are in neither.
+
+**Tab resumes where you left off.** When no session is running, the line
+under the counts names the last session you worked in, its repository and how
+long ago, and `Tab` resumes it — in a child process, so quitting Copilot comes
+back here. Tab rather than a letter, because every letter types into the
+filter. When a session *is* running, that line is the live strip instead.
+
+**Theme and Help are keys.** `t` opens the theme gallery and `?` the help;
+the status bar says so. **The menu remembers the row you opened last** and
+starts on it next time.
 
 **Type to find.** There is no column of numbers, because a numbered menu only
 ever reaches its first nine rows and this one has fifteen. Type instead: the
@@ -125,14 +133,16 @@ short for the other.
 Stats, AI spend, Efficiency and Delegation — count over a span, and which span
 it was is half the answer. So the window is a *setting* on the menu rather
 than a question asked after you commit: `←` and `→` step it through 7 days →
-30 → 90 → a year → all time, the counting rows caption themselves with it, and
-the status line says which one is live.
+30 → 90 → a year → all time. The window is named once, at the end of the
+Measure and Govern headings — every row under Measure counts over it, and the
+two Govern rows that do not (Autonomy, Handoffs) say "all time" themselves.
 
 ```
-   💰  AI spend          credits by model, repository and day · last 30 days
-   🔋  Efficiency        cache, rate multiplier, latency, reasoning · last 30 days
+  ▌MEASURE  ───────────────────────────────────────────────── last 30 days ──
+     💰  AI spend          credits by model, repository and day
+     🔋  Efficiency        cache, rate multiplier, latency, reasoning
 
- ↑↓ move · ↵ open · ←→ window 30d · type to find · / search · q quit
+ ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · / search · q quit
 ```
 
 This used to be a picker that opened *after* Enter and wanted an Enter of its
@@ -1528,7 +1538,7 @@ the same document in the reader.
 | 👁️ **Show everything** | `cs all` drops the date window and your ignore file; sessions that recorded nothing at all are never listed |
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
-| 🎨 **Theme** | Choose **Theme** on the home screen (or press `t`) for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
+| 🎨 **Theme** | Press `t` on the home screen for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
 | 📌 **Pins & budget** | `cs pin` / `unpin` / `pins`, `cs note`, `cs tag` / `untag`, and `cs budget [N|clear]`. Settings in `~/.config/cs/settings.json`. Listings float pins to the top (`p` toggles); home shows `spent/budget` for the last 24h when a budget is set (amber ≥70%, rose over). |
 | 🔄 **Live data** | The landing page *and* an open session listing are re-read from the read-only session database every 60 seconds, so a session started in another window arrives without reopening the view; a session already listed keeps its `#N` and a new arrival takes the next free number. Search results are not re-read — re-ranking a result set under the reader is not a refresh. The landing page is rebuilt on the same heartbeat; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
 | 🗃️ **Event-log cache** | Views that read Copilot's per-session `events.jsonl` (tool failures, hooks that ran, sub-agents, model switches) keep a digest of **counts, names and timestamps only** in `~/.cache/cs/events-digest.json`; `XDG_CACHE_HOME` moves it. It is keyed by each log's size and modification time, so a changed log is re-read and an unchanged one never is. Deleting the file is always safe. A first, cold read of a large store reports progress on stderr |

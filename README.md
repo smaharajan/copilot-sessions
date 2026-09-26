@@ -32,52 +32,50 @@ needs nothing beyond Python itself.
 ## 🖥️ Run it with no arguments and it is an app
 
 ```
-                     ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗ ████████╗
-                    ██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗╚══██╔══╝
-                    ██║     ██║   ██║██████╔╝██║██║     ██║   ██║   ██║
-                    ██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║   ██║
-                    ╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝   ██║
-                     ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝
-                            S E S S I O N S   B R O W S E R
-  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
-    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆ all time
-  ───────────────────────────────────────────────────────────────────────────
-    FIND  ───────────────────────────────────────────────────────────────
+                                  ___ ___
+                                 / __/ __|
+                                | (__\__ \  copilot sessions
+                                 \___|___/
+  2,480.5k AIU · 420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
+  ↻ last  Refactor cart service · acme/webshop · 2h ago · ⇥ Tab resumes
+  activity ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄ all time · since 9 Mar 2026
+  ────────────────────────────────────────────────────────────────────────────────────────────
+   ▌FIND  ──────────────────────────────────────────────────────────────────────────────────
   ▌  🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-    MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
-     📊  Stats             commits, PRs, files and what they cost · last 30 days
-     💰  AI spend          credits by model, repository and day · last 30 days
-     🔋  Efficiency        cache, rate multiplier, latency, reasoning · last 30 days
-     👥  Delegation        you vs the main agent vs sub-agents · last 30 days
-     🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
-     🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
-    GOVERN  ─────────────────────────────────────────────────────────────
-     🚀  Autonomy          which sessions ran unattended · YOLO
-     🔗  Handoffs          work passed from one session to the next
-     🔐  Security          credentials found in session text · last 30 days
-     💥  Tool failures     which tools fail, where, worst sessions · last 30 days
-     🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
-    REFERENCE  ──────────────────────────────────────────────────────────
+   ▌MEASURE  ─────────────────────────────────────────────────────────────── last 30 days ──
+     📊  Stats             commits, PRs, files and what they cost
+     💰  AI spend          credits by model, repository and day
+     🔋  Efficiency        cache, rate multiplier, latency, reasoning
+     👥  Delegation        you vs the main agent vs sub-agents
+     🐝  Sub-agents        which agents ran, on which models, how long
+     🔀  Model switches    model or effort changed mid-run, cost either side
+   ▌GOVERN  ──────────────────────────────────────────────────────────────── last 30 days ──
+     🚀  Autonomy          which sessions ran unattended · YOLO · all time
+     🔗  Handoffs          work passed from one session to the next · all time
+     🔐  Security          credentials found in session text
+     💥  Tool failures     which tools fail, where, worst sessions
+     🌀  Stuck loops       one tool failing again and again, with turns
+   ▌REFERENCE  ─────────────────────────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here, what was used, when last
      🤖  Agents            the same for your agents, and whether their model held
      📋  Instructions      what every session here is told before you type
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
-     🎨  Theme             Dark · choose from 20 palettes
-     💡  Help              every command and every key
-   ↑↓ move · ↵ open · type to find · / search text · q quit
+   ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · updated 12:00 · / search · q quit
 ```
 
 Arrow keys move, `Enter` opens, `/` filters, `Esc` goes back — and **every view
-returns here**, so nothing is a dead end. The layout is width-aware: columns
+returns here**, so nothing is a dead end. `Tab` resumes the last session named
+under the counts, `t` opens the themes, `?` the help, and the menu starts on
+the row you opened last. The layout is width-aware: columns
 retire in a fixed order as the window narrows, so a view still reads at 60
 columns instead of wrapping into rubble.
 
-Choose **Theme** on the home screen (or press `t`) for a mouse-and-keyboard
+Press `t` on the home screen for a mouse-and-keyboard
 live-preview picker with 20 curated palettes, including Dark, Light, High
 Contrast, Nord, Dracula, Solarized, Gruvbox, Tokyo Night, Catppuccin, Kanagawa,
 Rosé Pine and Cyberpunk. Hover or single-click previews; `Enter` or double-click

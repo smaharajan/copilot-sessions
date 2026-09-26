@@ -1711,7 +1711,7 @@ class CSTest(StoreTest):
                          "only search asks for text")
         self.assertEqual([item[1] for item in items if item[4] == "ref"], [])
         self.assertEqual([item[1] for item in items if item[4] == "theme"],
-                         ["Theme"], "only Theme changes appearance")
+                         [], "the theme is the t key, not a row")
         self.assertTrue([item for item in items if item[4] == "period"],
                         "nothing offers a window to count over")
         code, out = self._run("home")

@@ -282,7 +282,9 @@ class EvidenceHomeTest(StoreTest):
                 self.assertEqual(groups[label], group)
                 row = items[labels.index(label)]
                 self.assertEqual(row[4], "period")
-                self.assertIn("last 7 days", row[2])
+                # The window is on the group's heading, not the row.
+                self.assertIn(group, cli._WINDOWED_GROUPS)
+                self.assertNotIn("days", row[2])
         with mock.patch.object(cli, "_page", return_value=True) as page:
             for label in ("Tool failures", "Stuck loops",
                           "Sub-agents", "Model switches"):

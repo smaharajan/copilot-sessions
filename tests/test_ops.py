@@ -321,7 +321,8 @@ class OpsHomeTest(StoreTest):
         self.assertNotIn("Today", group.values())
         self.assertNotIn("Team rollup", labels)
         reference = [label for label in labels if group[label] == "Reference"]
-        self.assertEqual(reference[-2:], ["Theme", "Help"])
+        self.assertEqual(reference[-2:], ["Hooks", "MCP servers"])
+        self.assertEqual(group["Repositories"], "Find")
         self.assertNotIn("Doctor", reference)
 
     def test_the_rollup_command_opens(self):

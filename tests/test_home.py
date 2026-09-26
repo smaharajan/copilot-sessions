@@ -16,13 +16,14 @@ class HomeMenuTest(StoreTest):
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
         for wanted in ("Autonomy", "Handoffs", "Security",
-                       "Efficiency", "Hooks", "Theme"):
+                       "Efficiency", "Hooks", "Repositories"):
             self.assertIn(wanted, labels)
         # Practice, Rhythm, Standup and Working days are commands, not rows.
         # Asserting both halves keeps a restored view from quietly rotting
         # and a retired command from disappearing.
         for wanted in ("Practice", "Rhythm", "Standup", "Working days",
-                       "Watch live", "Doctor", "Today", "Saved searches",
+                       "Watch live", "Doctor", "Today", "Theme", "Help",
+                       "Saved searches",
                        "Spend anomalies", "Team rollup", "Unclean endings",
                        "Context", "Repo health", "Prompt patterns",
                        "Clean-up"):
@@ -251,7 +252,7 @@ class HomeMenuTest(StoreTest):
         layout, art = cli._home_plan(100, height, shown, True)
         self.assertTrue(any(kind == "head" for kind, _ in layout),
                         "a tall window should show its groups")
-        self.assertGreater(len(art), 4, "and still have the full wordmark")
+        self.assertEqual(len(art), 4, "and the small wordmark, never the tall one")
 
     def test_no_row_is_numbered(self):
         """A column of 1-18 only ever reached the first nine, so it went."""
@@ -377,57 +378,34 @@ class HomeMenuTest(StoreTest):
         finally:
             ui.set_theme(original)
 
-    def test_the_theme_row_opens_the_gallery_and_returns_home_after_applying(self):
-        import curses
-
-        from cs import cli, ui
-
-        original = ui.theme_name()
-        items = cli._home_items(theme="dark")
-        theme = next(i for i, item in enumerate(items) if item[1] == "Theme")
-        state = {"revealed": True, "theme": "dark"}
-        screen = Screen(
-            [curses.KEY_DOWN] * theme
-            + [10, curses.KEY_DOWN, 10, ord("q"), ord("q")]
-        )
-        try:
-            self.assertIsNone(cli._home_tui(screen, state))
-            self.assertEqual(state["theme"], "light")
-            self.assertTrue(any(
-                text.startswith("Light · choose from 20")
-                for text in screen.frames[-1].values()
-            ))
-        finally:
-            ui.set_theme(original)
-
-    def test_double_click_opens_the_theme_gallery(self):
-        import curses
-
+    def test_question_mark_opens_help_and_tab_resumes_the_last_session(self):
+        """Theme and Help left the menu for keys; the last session got one."""
         from cs import cli
 
-        probe = Screen([curses.KEY_END, ord("q")])
-        cli._home_tui(probe, {"revealed": True, "theme": "dark"})
-        theme_row = next(
-            row for frame in probe.frames for (row, column), text in frame.items()
-            if column == 6 and text.strip() == "Theme"
-        )
-        events = iter([
-            ("move", 6, theme_row),
-            ("double", 6, theme_row),
-        ])
-
-        def mouse_event(_screen, _curses, key, _last_click, _pending):
-            return next(events) if key == curses.KEY_MOUSE else None
-
-        screen = Screen([
-            curses.KEY_END, curses.KEY_MOUSE, curses.KEY_MOUSE, 27
-        ])
-        with (
-            patch.object(cli, "_mouse_event", side_effect=mouse_event),
-            patch.object(cli, "_theme_picker", return_value="dark") as picker,
-        ):
-            cli._home_tui(screen, {"revealed": True, "theme": "dark"})
-        picker.assert_called_once_with(screen, "dark")
+        self.assertEqual(cli._home_tui(Screen([ord("?")]), {"revealed": True}),
+                         ("help", None))
+        # '?' is a filter character once something is typed.
+        self.assertIsNone(cli._home_tui(Screen([ord("x"), ord("?"), 27, 27]),
+                                        {"revealed": True}))
+        last = {"id": "sess-alpha", "last_active": "2026-01-01T10:00",
+                "summary": "Build Three.js portal", "repo": "acme/portal"}
+        # The fixture has a session running, which rightly hides the line;
+        # holding the live tick off is what leaves it nothing running.
+        import time
+        quiet = {"revealed": True, "last": last,
+                 "next_live": time.monotonic() + 3600}
+        self.assertEqual(cli._home_tui(Screen([9]), dict(quiet)),
+                         ("resume", "sess-alpha"))
+        screen = Screen([ord("q")])
+        cli._home_tui(screen, dict(quiet))
+        line = next(text for text in screen.frames[-1].values() if "↻ last" in text)
+        self.assertIn("Build Three.js portal", line)
+        self.assertIn("Tab resumes", line)
+        # A running session has the live strip; there is nothing to resume.
+        busy = {"revealed": True, "last": last, "session": {"id": "x"}}
+        self.assertEqual(cli._resume_lines(busy, 100), [])
+        self.assertIsNone(cli._home_tui(Screen([9, ord("q")]),
+                                        {"revealed": True, "last": None}))
 
     def test_hover_and_single_click_preview_without_applying(self):
         import curses
@@ -502,7 +480,7 @@ class HomeMenuTest(StoreTest):
         import cs.cli as cli
 
         items = cli._home_items()
-        shown = cli._home_matches(items, "days")
+        shown = cli._home_matches(items, "session")
         self.assertGreater(len(shown), 2)
         first, second = shown[0], shown[1]
         self.assertEqual(cli._home_step(shown, first, 1), second)
@@ -601,7 +579,7 @@ class HomeMenuTest(StoreTest):
                                   None, frame, 0, [3] * 60)
             drawn = {}
             for (y, _x), text in screen.frame.items():
-                if any(ch in "█╗╔╚╝║═" for ch in text):
+                if y < len(art) and text.strip():
                     drawn[y] = max(drawn.get(y, 0), len(text))
             return [drawn[y] for y in sorted(drawn)]
 
@@ -640,6 +618,31 @@ class HomeMenuTest(StoreTest):
         self.assertEqual(len(drawn), 5)
         self.assertEqual(drawn[0], " ")
         self.assertNotIn(" ", drawn[1:], "a day with sessions drew as empty")
+
+    def test_rows_carry_no_count_at_the_right_edge(self):
+        """Counts beside the rows were tried and taken off; the right side
+        carries the window on the heading and nothing else."""
+        import cs.cli as cli
+
+        class Tall(Screen):
+            def getmaxyx(self):
+                return 60, 100
+
+        screen = Tall([ord("q")])
+        cli._home_tui(screen, {"revealed": True, "period": 30})
+        labels = {row for (row, column), text in screen.frames[-1].items()
+                  if column == 6}
+        for (row, column), text in screen.frames[-1].items():
+            if row in labels and column > 24:
+                self.fail(f"row {row} drew {text!r} past its description")
+        self.assertFalse(hasattr(cli, "_home_badges"))
+
+    def test_the_menu_starts_on_the_row_opened_last(self):
+        from cs import ui
+
+        self.assertIsNone(ui.home_row())
+        self.assertTrue(ui.save_home_row("Stats"))
+        self.assertEqual(ui.home_row(), "Stats")
 
     def test_the_activity_strip_is_all_time_at_any_width(self):
         """Every recorded day is in the strip, whatever the width: one cell a
@@ -790,19 +793,35 @@ class HomeMenuTest(StoreTest):
         again = cli._home_tui(Screen(opening + [10]), state)
         self.assertEqual(again, (spend, 0))
 
-    def test_the_counting_rows_say_which_window_they_will_use(self):
-        """The window is a setting now, so the rows have to show it."""
+    def test_the_counting_groups_say_which_window_they_will_use(self):
+        """The window is a setting, so the screen has to show it — once, on
+        the headings of the groups that count over it, not on every row."""
         import cs.cli as cli
+
+        class Tall(Screen):
+            def getmaxyx(self):
+                return 60, 100
 
         for period, said in ((7, "last 7 days"), (0, "all time")):
             with self.subTest(period=period):
                 described = {label: description for _icon, label, description,
                              _action, _asks in cli._home_items(period)}
-                self.assertIn(said, described["Efficiency"])
-                self.assertIn(said, described["AI spend"])
-                self.assertIn(said, described["Security"])
-                # And a row that counts nothing says nothing about a window.
-                self.assertNotIn(said, described["MCP servers"])
+                self.assertNotIn("days", described["Efficiency"])
+                self.assertNotIn("days", described["Security"])
+                screen = Tall([ord("q")])
+                cli._home_tui(screen, {"revealed": True, "period": period})
+                frame = screen.frames[-1]
+                heads = {text: row for (row, column), text in frame.items()
+                         if column == 2 and text.isupper()}
+                notes = {row for (row, _c), text in frame.items()
+                         if text.strip() == said}
+                self.assertIn(heads["MEASURE"], notes)
+                self.assertIn(heads["GOVERN"], notes)
+                self.assertNotIn(heads["FIND"], notes)
+                self.assertNotIn(heads["REFERENCE"], notes)
+                # The two Govern rows that are not windowed say so.
+                self.assertIn("all time", described["Autonomy"])
+                self.assertIn("all time", described["Handoffs"])
 
     def test_every_counting_view_takes_all_from_the_shell_too(self):
         """The menu is not the only way in, so `cs cost all` has to work."""
@@ -1087,8 +1106,21 @@ class LandingAnimationTest(StoreTest):
                    VALUES ('sess-alpha', 'test-model', 250000000)"""
             )
         after, _ = cli._home_snapshot()
-        self.assertIn(("1,000,000.00", "AIU"), before)
-        self.assertIn(("1,000,000.25", "AIU"), after)
+        # Past ten thousand the total reads as thousands, and a live change
+        # of a quarter credit is below what it shows.
+        self.assertIn(("1,000.0k", "AIU"), before)
+        self.assertIn(("1,000.0k", "AIU"), after)
+        with sqlite3.connect(cli.db.default_db_path()) as conn:
+            conn.execute("DELETE FROM assistant_usage_events WHERE total_nano_aiu >= 250000000")
+            conn.execute(
+                """INSERT INTO assistant_usage_events
+                   (session_id, model, total_nano_aiu)
+                   VALUES ('sess-alpha', 'test-model', 5000000000000)"""
+            )
+        small, _ = cli._home_snapshot()
+        self.assertTrue(any(label == "AIU" and value.endswith(".00") and "k" not in value
+                            for value, label, *_ in small),
+                        f"below ten thousand the total is exact: {small}")
         facts = [
             ({"sessions": "1,234", "turns": "7,890"}.get(label, value), label)
             for value, label in after
@@ -1099,7 +1131,7 @@ class LandingAnimationTest(StoreTest):
                     screen = Screen([ord("q")])
                     screen.getmaxyx = lambda h=height, w=width: (h, w)
                     cli._home_tui(screen, {"revealed": True, "facts": facts})
-                    self.assertIn("1,000,000.25", screen.frames[0].values())
+                    self.assertIn("1,000.0k", screen.frames[0].values())
                     for (_row, column), text in screen.frames[0].items():
                         self.assertLessEqual(column + ui.cells(text), width)
 

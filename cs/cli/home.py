@@ -25,9 +25,10 @@ from ._common import (
     _page,
     _pause,
     _prompt,
+    _visible,
     _window_label,
 )
-from .evidence import cmd_failures, cmd_subagents, cmd_switches
+from .evidence import _clean, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
     _asset_names,
@@ -45,6 +46,7 @@ from .reports import (
     cmd_repos,
     cmd_stats,
 )
+from .resume import _resume_from_listing
 from .workflow import cmd_pins
 
 
@@ -57,10 +59,10 @@ def _home_items(period: int = 30,
     `"term"` for the search box, `"period"` for the views that count over a
     window, and `""` for the rest.
 
-    `period` is the window those counting rows will use, and it is written
-    into their own descriptions rather than left to a prompt — a row that
-    already says "last 30 days" has nothing left to ask after you press
-    Enter, which is what lets every row on this menu open in one keystroke.
+    `period` and `theme` are accepted so callers can rebuild the menu on
+    every frame without caring what it shows. The window is no longer
+    written into each description: the Measure and Govern headings carry it
+    once, and the rows under them that do not count over it say "all time".
 
     Actions return True when they already waited for the user (a pager, or a
     full-screen listing), which is what tells the caller not to ask twice.
@@ -69,20 +71,12 @@ def _home_items(period: int = 30,
     fifteen rows of identical text is a list you have to work down every time,
     and the shape of a row is what you actually remember about it.
     """
-    window = _window_label(period)
-    theme = theme or ui.theme_name()
     return [
         # The day-to-day views are commands, not rows: `cs today`, and next,
         # standup, eod, weekly and budget before it. The live session is
-        # drawn on this screen rather than opened as its own view. Six rows
-        # answering "where am I" came down to one Today row, and then that
-        # came off too.
+        # drawn on this screen rather than opened as its own view, and the
+        # last session sits under the counts with Tab to resume it.
         # (ui.menu_icon("today"), "Today", ... cmd_today),
-        # (ui.menu_icon("next"), "Next up", ... cmd_next),
-        # (ui.menu_icon("standup"), "Standup", ... cmd_standup, "period"),
-        # (ui.menu_icon("eod"), "End of day", ... cmd_eod),
-        # (ui.menu_icon("weekly"), "Weekly review", ... cmd_weekly),
-        # (ui.menu_icon("budget"), "Budget", ... cmd_budget_view, "budget"),
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
          lambda: cmd_recent(7), ""),
@@ -96,51 +90,50 @@ def _home_items(period: int = 30,
          cmd_search, "term"),
         # Saved searches stays `cs saved` and `cs search --save`; the row
         # came off the menu.
+        # Repositories is a way to find sessions, not a count over the
+        # window, so it sits in Find — which leaves every row under Measure
+        # counting over the window its heading names.
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
         (ui.menu_icon("stats"), "Stats",
-         f"commits, PRs, files and what they cost · {window}",
+         "commits, PRs, files and what they cost",
          cmd_stats, "period"),
         # Working days is commented off the menu, and `cs timeline` still
         # runs. It is the weakest row in Measure: Stats already carries the
         # window's totals and AI spend already carries the per-day bars, so
         # a third counting view mostly asks the room to hold one more shape
-        # in its head. Its own comment used to argue that three numbers
-        # side by side answer what one cannot — that is still true, and it
-        # is still one keystroke away for anyone who wants it.
-        # (ui.menu_icon("days"), "Working days",
-        #  f"sessions, turns and spend per day · {window}",
-        #  cmd_timeline, "period"),
+        # in its head.
+        # (ui.menu_icon("days"), "Working days", ... cmd_timeline, "period"),
         (ui.menu_icon("spend"), "AI spend",
-         f"credits by model, repository and day · {window}",
+         "credits by model, repository and day",
          cmd_cost, "period"),
         (ui.menu_icon("efficiency"), "Efficiency",
-         f"cache, rate multiplier, latency, reasoning · {window}",
+         "cache, rate multiplier, latency, reasoning",
          cmd_efficiency, "period"),
         (ui.menu_icon("delegation"), "Delegation",
-         f"you vs the main agent vs sub-agents · {window}",
+         "you vs the main agent vs sub-agents",
          cmd_agents, "period"),
         (ui.menu_icon("subagents"), "Sub-agents",
-         f"which agents ran, on which models, how long · {window}",
+         "which agents ran, on which models, how long",
          cmd_subagents, "period"),
         (ui.menu_icon("switches"), "Model switches",
-         f"model or effort changed mid-run, cost either side · {window}",
+         "model or effort changed mid-run, cost either side",
          cmd_switches, "period"),
         # Spend anomalies and Team rollup stay `cs anomalies` and
         # `cs rollup`; the rows came off the menu.
         (ui.menu_icon("autonomy"), "Autonomy",
-         "which sessions ran unattended · YOLO", cmd_yolo, ""),
+         "which sessions ran unattended · YOLO · all time", cmd_yolo, ""),
         (ui.menu_icon("handoff"), "Handoffs",
-         "work passed from one session to the next",
+         "work passed from one session to the next · all time",
          cmd_handoff, ""),
         (ui.menu_icon("security"), "Security",
-         f"credentials found in session text · {window}",
+         "credentials found in session text",
          lambda days=30: cmd_audit(days=days), "period"),
         (ui.menu_icon("failures"), "Tool failures",
-         f"which tools fail, where, worst sessions · {window}",
+         "which tools fail, where, worst sessions",
          cmd_failures, "period"),
         (ui.menu_icon("loops"), "Stuck loops",
-         f"one tool failing again and again, with turns · {window}",
+         "one tool failing again and again, with turns",
          lambda days=30: cmd_failures(days, loops=True), "period"),
         # Unclean endings stays `cs endings`; the row came off the menu.
         # The Improve group came off whole. Its views stay commands:
@@ -168,13 +161,9 @@ def _home_items(period: int = 30,
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
          cmd_mcp, ""),
-        # Doctor stays `cs doctor`. The status line names it when the schema
-        # drifts; it does not need a row beside Theme.
-        (ui.menu_icon("theme"), "Theme",
-         f"{ui.theme_label(theme)} · choose from {len(ui.THEMES)} palettes",
-         ui.next_theme, "theme"),
-        (ui.menu_icon("help"), "Help", "every command and every key",
-         lambda: _page(_capture(cmd_help)), ""),
+        # Theme and Help are keys, not rows: `t` opens the gallery and `?`
+        # the help, and the status bar says so. Doctor stays `cs doctor`;
+        # the status line names it when the schema drifts.
     ]
 
 
@@ -203,9 +192,15 @@ _HOME_GROUP_TONE = {
 }
 
 
+# The groups whose every row counts over the window ←/→ sets. Their headings
+# name it; Autonomy and Handoffs, the two Govern rows that do not, say
+# "all time" in their own descriptions.
+_WINDOWED_GROUPS = frozenset({"Measure", "Govern"})
+
+
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
     ("Recent sessions", "Find"),
-    ("Repositories", "Measure"),
+    ("Stats", "Measure"),
     ("Autonomy", "Govern"),
     ("Skills", "Reference"),
 )
@@ -328,8 +323,9 @@ def _home_status(query: str, matched: int, total: int, width: int,
                 return line
     for line in (
         f" ↑↓ move · ↵ open · ←→ window {short} · t theme {theme}{note} · "
-        f"{live} · type to find · / search · q quit ",
-        f" ↑↓ · ↵ open · ←→ {short} · t themes{note} · {live} · / search · q ",
+        f"? help · {live} · type to find · / search · q quit ",
+        f" ↑↓ · ↵ open · ←→ {short} · t themes{note} · ? help · {live} · / search · q ",
+        f" ↑↓ · ↵ · ←→ {short} · t themes{note} · ? help · {live} · q ",
         f" ↑↓ · ↵ · ←→ {short} · t themes{note} · {live} · q ",
         f" ↑↓ · ↵ · {live} · q ",
         " ↑↓ · ↵ · type · q ",
@@ -433,7 +429,12 @@ def _home_snapshot(*, full: bool = True) -> tuple[list[tuple], list[int]]:
             ui.budget_style_name(spent, budget),
         )
     else:
-        aiu_fact = (f"{nano_aiu / 1e9:,.2f}" if nano_aiu > 0 else "-", "AIU")
+        # Exact below ten thousand, where a live change of a few credits is
+        # worth seeing; past that, '834,979.78' is digits to count and
+        # '835.0k' is a number to read.
+        aiu = nano_aiu / 1e9
+        aiu_fact = ("-" if nano_aiu <= 0 else f"{aiu / 1000:,.1f}k" if aiu >= 10_000
+                    else f"{aiu:,.2f}", "AIU")
     facts = [
         aiu_fact,
         (f"{basics['total']:,}", "sessions"),
@@ -442,8 +443,11 @@ def _home_snapshot(*, full: bool = True) -> tuple[list[tuple], list[int]]:
     ]
     if usage:
         facts += [
-            (f"{usage['skills_used']}/{usage['skills']}", "skills used"),
-            (f"{usage['agents_used']}/{usage['agents']}", "agents used"),
+            # 'used' went from the labels: the slash already says "of", and
+            # the five characters were what pushed 'mcp' off a 110-column
+            # line without a word.
+            (f"{usage['skills_used']}/{usage['skills']}", "skills"),
+            (f"{usage['agents_used']}/{usage['agents']}", "agents"),
         ]
     facts.append((f"{mcp_count}", "mcp"))
     return facts, series if any(series) else []
@@ -456,6 +460,66 @@ def _fill_usage(box: dict) -> None:
     except (OSError, sqlite3.Error):
         box["facts"] = None
     box["done"] = True
+
+
+def _home_last() -> dict | None:
+    """The session worked in most recently, for the resume line.
+
+    Read from the last month only: this is "where did I leave off", and a
+    session older than that is a search, not a resume.
+    """
+    conn = db.connect()
+    try:
+        rows = _visible(db.recent_sessions(conn, 30), False)
+    finally:
+        conn.close()
+    if not rows:
+        return None
+    sid, last_active, summary, repo, *_rest = rows[0]
+    return {"id": sid, "last_active": last_active,
+            "summary": _clean(summary or "") or sid[:8], "repo": repo or ""}
+
+
+def _ago(stamp: str) -> str:
+    """How long ago an ISO timestamp was, the way a person says it."""
+    from datetime import datetime, timezone
+
+    try:
+        then = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=timezone.utc)
+    minutes = max(int((datetime.now(timezone.utc) - then).total_seconds() // 60), 0)
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes}m ago"
+    if minutes < 48 * 60:
+        return f"{minutes // 60}h ago"
+    return f"{minutes // (24 * 60)}d ago"
+
+
+def _resume_lines(state: dict, width: int) -> list[tuple[str, str]]:
+    """The line under the counts that offers the last session back.
+
+    Only when nothing is running: a live session has the strip, and offering
+    to resume the session you are in is noise. Tab rather than a letter,
+    because every letter on this screen types into the filter — 'r' would
+    fire the moment you started typing "recent".
+    """
+    last = state.get("last")
+    if not last or state.get("session") or width < 40:
+        return []
+    where = f" · {last['repo']}" if last["repo"] else ""
+    when = _ago(last["last_active"])
+    tail = f"{' · ' + when if when else ''} · ⇥ Tab resumes"
+    head = "  ↻ last  "
+    room = width - ui.cells(head) - ui.cells(tail) - 2
+    if room < 12:
+        return []
+    body = ui.trunc(f"{last['summary']}{where}", room)
+    return [(f"{head}{body}{tail}", "summary")]
 
 
 def _refresh_live(state: dict) -> None:
@@ -475,6 +539,10 @@ def _refresh_home(state: dict) -> bool:
         return False
     state["refreshed"] = time.strftime("%H:%M:%S")
     state.pop("refresh_error", None)
+    try:
+        state["last"] = _home_last()
+    except (OSError, sqlite3.Error):
+        pass
     # A handful of PRAGMAs: cheap enough for the heartbeat, and it reads no log.
     state["schema_drift"] = schema_notice()
     return True
@@ -542,7 +610,10 @@ def _home_art(width: int, height: int, menu_rows: int,
     either is drawn.
     """
     spare = height - 3 - menu_rows - (1 if spark else 0) - live
-    return ui.banner(width, spare) if spare >= 4 else []
+    # Four rows at most. The seven-row wordmark was the largest thing on the
+    # screen and said the least; the small one is still the product's mark,
+    # and the three rows go back to the menu.
+    return ui.banner(width, min(spare, 4)) if spare >= 4 else []
 
 
 def _draw_home_header(screen, theme, width: int, art: list[str],
@@ -654,7 +725,15 @@ def _draw_home_activity(screen, theme, width: int, row: int,
     should not move when the window is resized. Coloured along the same ramp
     as the wordmark, so the oldest day is purple and today is cyan.
     """
+    from datetime import date, timedelta
+
     label, tail = "  activity ", " all time"
+    # When the strip starts, where there is room to say it: "all time" alone
+    # does not tell you whether that is a month or two years.
+    first = date.today() - timedelta(days=max(len(activity) - 1, 0))
+    since = f"{tail} · since {first.day} {first:%b %Y}"
+    if width - len(label) - len(since) - 1 >= 40:
+        tail = since
     room = width - len(label) - len(tail) - 1
     if room < 12:
         return row
@@ -936,7 +1015,7 @@ def _home_tui(screen, state: dict):
             # have to read every time; four rows of ASCII art is decoration,
             # and the banner already knows how to be smaller.
             activity = state.get("activity") or None
-            live_rows = _live_lines(state, width)
+            live_rows = _live_lines(state, width) or _resume_lines(state, width)
             layout, art = _home_plan(width, height, shown, bool(activity),
                                      len(live_rows))
             # On a tall window everything sat at the top with ten empty rows
@@ -988,6 +1067,13 @@ def _home_tui(screen, state: dict):
                     if rule > 2:
                         _addstr(screen, line, 3 + len(value), " " + "─" * (rule - 1),
                                 width, theme["separator"])
+                    # The window, once, at the end of the rule of each group
+                    # that counts over it — where each row used to repeat it.
+                    note = (f" {_window_label(state.get('period', 30))} "
+                            if value in _WINDOWED_GROUPS else "")
+                    if note and rule > len(note) + 6:
+                        _addstr(screen, line, width - len(note) - 3, note,
+                                width, tone)
                     continue
                 index = value
                 icon, label, description = items[index][:3]
@@ -1008,7 +1094,9 @@ def _home_tui(screen, state: dict):
                 if width > 45:
                     # Two cells short of the edge: room for the scroll marks,
                     # and a description that does not fit ends in '…' rather
-                    # than stopping mid-word.
+                    # than stopping mid-word. Live counts at the right edge
+                    # were tried here and taken off: the window on the
+                    # heading is all the right side carries.
                     _addstr(screen, line, 24, ui.trunc(description, width - 27),
                             width - 25, style or theme["repo"])
             # On a short window the menu scrolls, and without a mark the rows
@@ -1103,6 +1191,10 @@ def _home_tui(screen, state: dict):
                 )
             elif key in (ord("t"), ord("T")) and not query:
                 activate_theme(_theme_picker(screen, active_theme))
+            elif key == ord("?") and not query:
+                return ("help", None)
+            elif key == 9 and _resume_lines(state, width):
+                return ("resume", state["last"]["id"])
             elif key == curses.KEY_HOME:
                 cursor = shown[0] if shown else cursor
             elif key == curses.KEY_END:
@@ -1154,7 +1246,16 @@ def cmd_home() -> None:
         "refreshed": time.strftime("%H:%M:%S"),
         "schema_drift": schema_notice(),
     }
-    if not any(label == "skills used" for _value, label, *_rest in facts):
+    try:
+        state["last"] = _home_last()
+    except (OSError, sqlite3.Error):
+        state["last"] = None
+    # Start on the row opened last time, found by its label so a row that
+    # has since come off the menu just means starting at the top.
+    labels = [label for _icon, label, *_rest in _home_items()]
+    if (remembered := ui.home_row()) in labels:
+        state["cursor"] = labels.index(remembered)
+    if not any(label == "skills" for _value, label, *_rest in facts):
         box: dict = {}
         state["usage_box"] = box
         threading.Thread(target=_fill_usage, args=(box,), daemon=True).start()
@@ -1175,7 +1276,14 @@ def cmd_home() -> None:
             if choice is None:
                 return
             index, given = choice if isinstance(choice, tuple) else (choice, None)
-            *_naming, action, asks = _home_items()[index]
+            if index == "help":
+                _page(_capture(cmd_help))
+                continue
+            if index == "resume":
+                _resume_from_listing(given)
+                continue
+            _icon, label, _what, action, asks = _home_items()[index]
+            ui.save_home_row(label)
             # Rows that open on Enter alone take no argument; the rest were
             # handed one by the menu (a window, a term, a session).
             takes = asks not in ("", "budget", "theme")
@@ -1368,9 +1476,10 @@ def cmd_help() -> None:
       type   narrow the menu as you go    Esc    clear what you typed
       /      full-text search             q      quit (when nothing is typed)
       t      open the live-preview theme picker
+      ?      this help                    Tab    resume the last session
       ←/→    the window the counting views use — Stats, AI spend, Delegation,
-             Security, Tool failures and the rest. Those rows say which
-             window they will use, and Enter opens them with it.
+             Security, Tool failures and the rest. The Measure and Govern
+             headings say which window, and Enter opens a row with it.
              The daily budget is `cs budget`; the header shows it.
       click  open, wheel scrolls
 

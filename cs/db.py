@@ -2026,11 +2026,18 @@ def activity(conn: sqlite3.Connection, days: int) -> list[int]:
 
     if days < 1:
         return []
+    # Only sessions that recorded something — the rule `stats` counts by.
+    # The blank rows the CLI writes at launch made the strip hold a fifth
+    # more sessions than the number printed beside it.
     counted = dict(
         conn.execute(
-            """SELECT substr(created_at, 1, 10) AS day, COUNT(*)
-               FROM sessions
-               WHERE created_at >= datetime('now', ?)
+            f"""SELECT substr(s.created_at, 1, 10) AS day, COUNT(*)
+               FROM sessions s
+               WHERE s.created_at >= datetime('now', ?)
+                 AND (EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id)
+                      OR TRIM(COALESCE({optional(conn, 'sessions', 'summary', 's', "''")},
+                                       '')) <> ''
+                      OR {_aiu_sub(conn)} > 0)
                GROUP BY day""",
             (f"-{days} days",),
         )

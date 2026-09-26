@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The home screen redesign.**
+  - A line under the counts names the last session you worked in; `Tab`
+    resumes it. A running session shows the live strip instead.
+  - The window is named once on the Measure and Govern headings instead of
+    on every row. Repositories moves to Find.
+  - Theme and Help leave the menu for the `t` and `?` keys.
+  - Credits over ten thousand read as `835.0k`; the facts say `skills` and
+    `agents` so `mcp` no longer falls off a 110-column line.
+  - The activity strip and the session count now count the same sessions,
+    and the strip says when it starts (`since 9 Mar 2026`).
+  - The wordmark is the four-row one at most, and the menu starts on the
+    row opened last.
 - **The home screen's activity strip is all time**, like the counts beside
   it, and says so. It used to cover the last 120 days whatever the window.
   Every day since the first session is drawn; once there are more days
