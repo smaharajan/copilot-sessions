@@ -39,12 +39,11 @@ needs nothing beyond Python itself.
                     ╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝   ██║
                      ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝
                             S E S S I O N S   B R O W S E R
-  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 96 sub-agents run · 2 mcp
-    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆ 120 days
+  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
+    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆ all time
   ───────────────────────────────────────────────────────────────────────────
-  ▌  🌅  Today            where you are: now, what to pick up, the day and the week
     FIND  ───────────────────────────────────────────────────────────────
-     🕒  Recent sessions   browse, read and resume · last 7 days
+  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
@@ -178,7 +177,7 @@ group.
 
 ### ☀️ Today, and finding the work again
 
-The home screen opens on one **Today** row. **`cs today`** is that page: the
+**`cs today`** is where you are, on one page (it is not on the home screen): the
 session running now (its name, the last ten minutes, and today's budget), the
 top sessions to pick up (each with its reason and `cs resume`), what happened
 since midnight, and this week against the week before. Empty sections are

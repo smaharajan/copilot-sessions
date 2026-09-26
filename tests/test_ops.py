@@ -318,8 +318,7 @@ class OpsHomeTest(StoreTest):
         items = cli._home_items(7)
         labels = [item[1] for item in items]
         group = {label: cli._home_group(i) for i, label in enumerate(labels)}
-        today = [label for label in labels if group[label] == "Today"]
-        self.assertEqual(today, ["Today"])
+        self.assertNotIn("Today", group.values())
         self.assertNotIn("Team rollup", labels)
         reference = [label for label in labels if group[label] == "Reference"]
         self.assertEqual(reference[-2:], ["Theme", "Help"])

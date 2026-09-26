@@ -45,7 +45,6 @@ from .reports import (
     cmd_repos,
     cmd_stats,
 )
-from .today import cmd_today
 from .workflow import cmd_pins
 
 
@@ -73,13 +72,12 @@ def _home_items(period: int = 30,
     window = _window_label(period)
     theme = theme or ui.theme_name()
     return [
-        # One Today row. The separate day-to-day commands stay on the CLI —
-        # next, standup, eod, weekly, budget — and the live session is drawn
-        # on this screen rather than opened as its own view. They came off
-        # the menu because six rows answering "where am I" was the menu.
-        (ui.menu_icon("today"), "Today",
-         "where you are: the session running now, what to pick up, the day and the week",
-         cmd_today, ""),
+        # The day-to-day views are commands, not rows: `cs today`, and next,
+        # standup, eod, weekly and budget before it. The live session is
+        # drawn on this screen rather than opened as its own view. Six rows
+        # answering "where am I" came down to one Today row, and then that
+        # came off too.
+        # (ui.menu_icon("today"), "Today", ... cmd_today),
         # (ui.menu_icon("next"), "Next up", ... cmd_next),
         # (ui.menu_icon("standup"), "Standup", ... cmd_standup, "period"),
         # (ui.menu_icon("eod"), "End of day", ... cmd_eod),
@@ -198,7 +196,6 @@ def _step_period(current: int, delta: int) -> int:
 
 
 _HOME_GROUP_TONE = {
-    "Today": "turns",       # the ramp's last hue: the one group about now
     "Find": "title",        # 39  — the product blue
     "Measure": "credits",   # 177 — violet, as spend is everywhere else
     "Govern": "warn",       # 214 — amber: this group is the bad news
@@ -207,7 +204,6 @@ _HOME_GROUP_TONE = {
 
 
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
-    ("Today", "Today"),
     ("Recent sessions", "Find"),
     ("Repositories", "Measure"),
     ("Autonomy", "Govern"),
@@ -269,10 +265,7 @@ def _home_layout(indices, grouped: bool) -> list[tuple[str, object]]:
     seen = None
     for index in indices:
         if grouped and (group := _home_group(index)) != seen:
-            # Today is one row. A heading above the only item in the group
-            # spends a line on a caption that repeats the row.
-            if group != "Today":
-                rows.append(("head", group))
+            rows.append(("head", group))
             seen = group
         rows.append(("item", index))
     return rows
@@ -372,7 +365,7 @@ def _home_matches(items, query: str) -> list[int]:
     ]
 
 
-def _home_snapshot(days: int = 120, *, full: bool = True) -> tuple[list[tuple], list[int]]:
+def _home_snapshot(*, full: bool = True) -> tuple[list[tuple], list[int]]:
     """The current facts and activity strip, read in one database connection.
 
     Kept as pairs rather than one joined string so the numbers can be drawn
@@ -385,7 +378,23 @@ def _home_snapshot(days: int = 120, *, full: bool = True) -> tuple[list[tuple], 
     conn = db.connect()
     try:
         basics = db.stats(conn)
-        series = db.activity(conn, days)
+        # The strip is all time, like the counts beside it: every day from
+        # the first recorded session to today. It used to be a flat 120 days
+        # under a row of all-time totals, which read as one window and was
+        # two.
+        oldest = conn.execute("SELECT MIN(created_at) FROM sessions").fetchone()[0]
+        span = 0
+        if oldest:
+            from datetime import date
+            try:
+                span = (date.today() - date.fromisoformat(oldest[:10])).days + 1
+            except ValueError:
+                span = 0
+        series = db.activity(conn, max(span, 1))
+        # Days before the first session are not quiet days, they are days
+        # before there was a record — a clock skew or time zone can add one.
+        first = next((at for at, count in enumerate(series) if count), len(series))
+        series = series[first:]
         budget = ui.daily_budget_aiu()
         today_nano = 0
         if budget is not None:
@@ -410,9 +419,9 @@ def _home_snapshot(days: int = 120, *, full: bool = True) -> tuple[list[tuple], 
     # The kit counts read 'used of installed' rather than a bare inventory.
     # A shelf of 125 skills says nothing about whether any of them are
     # earning their place; '9/125' says it immediately, and it is the number
-    # worth looking at before writing the hundred and twenty-sixth. Sub-agents
-    # are counted as runs, because the store bills those exactly and 'how
-    # much did we actually delegate' is the question behind the row.
+    # worth looking at before writing the hundred and twenty-sixth. The
+    # sub-agent run count came off this line; Delegation and Sub-agents on
+    # the menu carry it.
     nano_aiu = basics["total_nano_aiu"]
     # Precise credits come first so small live changes survive narrow windows.
     # When a daily budget is set, show today's spend against it (same 24h
@@ -435,7 +444,6 @@ def _home_snapshot(days: int = 120, *, full: bool = True) -> tuple[list[tuple], 
         facts += [
             (f"{usage['skills_used']}/{usage['skills']}", "skills used"),
             (f"{usage['agents_used']}/{usage['agents']}", "agents used"),
-            (f"{usage['subagents']:,}", "sub-agents run"),
         ]
     facts.append((f"{mcp_count}", "mcp"))
     return facts, series if any(series) else []
@@ -646,11 +654,11 @@ def _draw_home_activity(screen, theme, width: int, row: int,
     should not move when the window is resized. Coloured along the same ramp
     as the wordmark, so the oldest day is purple and today is cyan.
     """
-    label, tail = "  activity ", f" {len(activity)} days"
+    label, tail = "  activity ", " all time"
     room = width - len(label) - len(tail) - 1
     if room < 12:
         return row
-    series = activity[-room:]
+    series = _activity_cells(activity, room)
     spark = ui.sparkline(series)
     if not spark.strip():
         return row          # nothing recorded: an empty row says less than none
@@ -669,6 +677,21 @@ def _draw_home_activity(screen, theme, width: int, row: int,
         _addstr(screen, row, len(label) + len(spark), tail, width,
                 theme["repo"])
     return row + 1
+
+
+def _activity_cells(activity: list[int], room: int) -> list[int]:
+    """All of `activity` in at most `room` cells, newest day last.
+
+    One day per cell while the history fits. Past that, each cell sums the
+    same number of days, counted back from today so the last cell always
+    ends on it; only the oldest cell may hold fewer. Summed rather than
+    sampled, so a busy day never falls between two cells.
+    """
+    if len(activity) <= room:
+        return list(activity)
+    per = -(-len(activity) // room)
+    return [sum(activity[max(end - per, 0):end])
+            for end in range(len(activity), 0, -per)][::-1]
 
 
 def _theme_picker(screen, current: str) -> str:
@@ -1194,8 +1217,7 @@ def cmd_help() -> None:
     cs weekly [--md]      Last 7 days against the 7 before: spend, dearest
                           sessions, repeated failures, top 3 habits
                           {ui.DIM}--md prints Markdown ready to paste; text is masked.
-                          next, eod, weekly and standup stay commands; the home
-                          screen opens them together as Today.{ui.RST}
+                          None of these is on the home screen; type them.{ui.RST}
     cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
                           {ui.DIM}'daily' is an alias · default is the last day{ui.RST}
 

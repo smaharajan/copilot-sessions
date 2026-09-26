@@ -15,21 +15,21 @@ class HomeMenuTest(StoreTest):
         from cs import cli
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
-        for wanted in ("Today", "Autonomy", "Handoffs", "Security",
+        for wanted in ("Autonomy", "Handoffs", "Security",
                        "Efficiency", "Hooks", "Theme"):
             self.assertIn(wanted, labels)
         # Practice, Rhythm, Standup and Working days are commands, not rows.
         # Asserting both halves keeps a restored view from quietly rotting
         # and a retired command from disappearing.
         for wanted in ("Practice", "Rhythm", "Standup", "Working days",
-                       "Watch live", "Doctor", "Saved searches",
+                       "Watch live", "Doctor", "Today", "Saved searches",
                        "Spend anomalies", "Team rollup", "Unclean endings",
                        "Context", "Repo health", "Prompt patterns",
                        "Clean-up"):
             self.assertNotIn(wanted, labels)
         self.assertNotIn("Improve", set(cli._home_groups().values()))
         for command in ("standup", "coach", "rhythm", "context", "timeline",
-                        "hooks", "doctor", "next", "saved", "anomalies",
+                        "hooks", "doctor", "next", "today", "saved", "anomalies",
                         "rollup", "endings", "health", "patterns", "cleanup"):
             self.assertEqual(self._run(command)[0], 0, command)
 
@@ -168,10 +168,9 @@ class HomeMenuTest(StoreTest):
                     [value for kind, value in layout if kind == "item"],
                     list(range(count)))
                 heads = [value for kind, value in layout if kind == "head"]
-                # Today is a single row and draws no heading of its own.
-                expected = (len(cli._HOME_GROUPS) - 1) if grouped else 0
+                expected = len(cli._HOME_GROUPS) if grouped else 0
                 self.assertEqual(len(heads), expected)
-        self.assertEqual(cli._home_layout(range(count), True)[0][0], "item")
+        self.assertEqual(cli._home_layout(range(count), True)[0], ("head", "Find"))
 
     def test_the_menu_is_grouped_at_every_size_worth_grouping(self):
         """Nineteen options in one column is the thing being fixed.
@@ -193,7 +192,7 @@ class HomeMenuTest(StoreTest):
             with self.subTest(height=height):
                 layout, _art = cli._home_plan(100, height, shown, True)
                 heads = [row for row in layout if row[0] == "head"]
-                self.assertEqual(len(heads), groups - 1,
+                self.assertEqual(len(heads), groups,
                                  "the menu lost its sections")
                 # And every option is still in the layout, so scrolling
                 # reaches it — a heading may cost a scroll, never a row.
@@ -641,6 +640,53 @@ class HomeMenuTest(StoreTest):
         self.assertEqual(len(drawn), 5)
         self.assertEqual(drawn[0], " ")
         self.assertNotIn(" ", drawn[1:], "a day with sessions drew as empty")
+
+    def test_the_activity_strip_is_all_time_at_any_width(self):
+        """Every recorded day is in the strip, whatever the width: one cell a
+        day while it fits, several days summed per cell once it does not, and
+        the tail says all time rather than a count of days."""
+        import cs.cli as cli
+
+        theme = {k: 0 for k in ("repo", "turns")}
+        activity = [1, 3, 2, 5] * 150          # 600 days
+
+        def drawn(width):
+            screen = Screen()
+            screen.getmaxyx = lambda: (24, width)
+            cli._draw_home_activity(screen, theme, width, 0, activity,
+                                    None, 0, 0)
+            return "".join(t for (_y, _x), t in sorted(screen.frame.items()))
+
+        for width in (100, 700):
+            with self.subTest(width=width):
+                text = drawn(width)
+                self.assertIn("all time", text)
+                self.assertNotIn("days", text)
+        self.assertEqual(sum(ch in "▁▂▃▄▅▆▇█" for ch in drawn(700)), 600,
+                         "a window wide enough for every day drew fewer")
+
+        cells = cli._activity_cells(activity, 80)
+        self.assertLessEqual(len(cells), 80)
+        self.assertEqual(sum(cells), sum(activity), "a day fell out of the strip")
+        self.assertEqual(cli._activity_cells([1, 2, 3, 4, 5], 2), [3, 12],
+                         "cells must end on today, oldest cell short")
+        self.assertEqual(cli._activity_cells([4, 0, 7], 10), [4, 0, 7])
+
+    def test_the_snapshot_starts_at_the_first_recorded_day(self):
+        import cs.cli as cli
+
+        with patch.object(cli.db, "activity", return_value=[0, 0, 0, 2, 0, 1]) as read:
+            _facts, series = cli._home_snapshot()
+        self.assertEqual(series, [2, 0, 1])
+        self.assertNotIn("sub-agents run", [label for _n, label, *_ in _facts])
+        # Asked for every day back to the oldest session, not a fixed window.
+        from cs import db
+        conn = db.connect()
+        oldest = conn.execute("SELECT MIN(created_at) FROM sessions").fetchone()[0]
+        conn.close()
+        from datetime import date
+        span = (date.today() - date.fromisoformat(oldest[:10])).days + 1
+        self.assertEqual(read.call_args.args[1], span)
 
     def test_the_activity_strip_fills_in_with_the_wordmark(self):
         """Both are driven by the one wipe, so they finish together rather

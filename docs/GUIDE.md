@@ -27,12 +27,11 @@ single line:
                     ╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝   ██║
                      ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝
                             S E S S I O N S   B R O W S E R
-  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 96 sub-agents run · 2 mcp
-    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆▅▃▅▅▂▁▅▆▄▆▆  ▄▆▆▇▄ ▁▅▂▆█▆  ▆ 120 days
+  420 sessions · 5,120 turns · 12 repos · 11/30 skills · 4/6 agents · 2 mcp
+    activity  ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄▁▂▃▄▄▄▄  ▂▃▅▆▅▂▁▅▄▅▆▄ ▂▅▆▆▃▇▂ ▆▅▃▅▅▂▁▅▆▄▆▆  ▄▆▆▇▄ ▁▅▂▆█▆  ▆ all time
   ───────────────────────────────────────────────────────────────────────────
-  ▌  🌅  Today            where you are: now, what to pick up, the day and the week
     FIND  ───────────────────────────────────────────────────────────────
-     🕒  Recent sessions   browse, read and resume · last 7 days
+  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
@@ -65,8 +64,8 @@ single line:
 inventory count — it is eleven of your thirty skills having actually been
 reached for, and nineteen sitting idle. Kit nobody uses is kit that is quietly
 rotting, and the gap between the two numbers is the only part worth looking at.
-`96 sub-agents run` is counted rather than inferred: every model call the store
-bills carries the id of the sub-agent that made it.
+Sub-agent runs are not on this line; **Delegation** and **Sub-agents** count
+them.
 
 **Type to find.** There is no column of numbers, because a numbered menu only
 ever reaches its first nine rows and this one has fifteen. Type instead: the
@@ -200,8 +199,8 @@ stateDiagram-v2
 
 ## ☀️ Today
 
-The first group on the home screen is about now: what to pick up, and what
-the day and the week came to.
+These views are about now: what to pick up, and what the day and the week
+came to. None of them is on the home screen; `cs today` puts them on one page.
 
 ### 👉 `cs next` — what to pick up
 
@@ -1687,7 +1686,7 @@ Team rollup and Unclean endings. Every one of them still runs when typed.
 |---------|------------------|
 | `cs timeline` | **Off the menu, still runs.** It charted sessions per day; Stats and AI spend already carry the window's totals and per-day bars, so a third counting view mostly asks the room to hold one more shape. Typed as `cs timeline`. |
 | `cs hooks` | **On the menu.** It lists configuration, not history, and `copilot plugins list --json` enumerates the same declarations first-hand. What that missed is the thing reading the config cannot do: `cs hooks` **resolves every hook command against the disk** and names the ones whose script is gone. Copilot will still run those, and the shell will still fail. |
-| `cs standup` | **Off the menu, still runs; Today covers it.** Offline daily brief — activity, what moved, handoffs, light risks. |
+| `cs standup` | **Off the menu, still runs; `cs today` covers it.** Offline daily brief — activity, what moved, handoffs, light risks. |
 | `cs coach` | **Off the menu, still runs.** Habits scored and ranked. |
 | `cs rhythm` | **Off the menu, still runs.** When the work happens; below 25 turns it reports counts and says so. |
 | `cs context` | **Off the menu, still runs.** The only view that reads the setup your **next** session starts from rather than what a past one did. |

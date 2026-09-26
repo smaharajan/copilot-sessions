@@ -301,23 +301,23 @@ class TodayHomeTest(StoreTest):
         by_group: dict[str, list[str]] = {}
         for index, label in enumerate(labels):
             by_group.setdefault(cli._home_group(index), []).append(label)
-        self.assertEqual(by_group["Today"], ["Today"])
+        self.assertNotIn("Today", labels)
+        self.assertNotIn("Today", by_group)
         self.assertNotIn("Saved searches", labels)
         self.assertNotIn("Similar work", labels)
         self.assertNotIn("My asks", labels)
         self.assertNotIn("File history", labels)
         self.assertNotIn("Improve", by_group)
-        self.assertEqual(labels[0], "Today")
+        self.assertEqual(labels[0], "Recent sessions")
 
-    def test_every_new_row_opens(self):
+    def test_the_day_commands_off_the_menu_still_open(self):
         from cs import cli
 
-        items = {item[1]: item for item in cli._home_items(7)}
         with mock.patch.object(cli, "_page", return_value=True) as page, \
                 mock.patch.object(cli, "_interactive_listing", return_value=True), \
                 redirect_stdout(io.StringIO()):
-            # Clean-up is off the menu but still `cs cleanup`.
-            for label, action in (("Today", items["Today"][3]),
+            # Both are off the menu but still `cs today` and `cs cleanup`.
+            for label, action in (("Today", cli.cmd_today),
                                   ("Clean-up", cli.cmd_cleanup)):
                 with self.subTest(row=label):
                     self.assertIsNotNone(action())

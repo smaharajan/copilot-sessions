@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The home screen's activity strip is all time**, like the counts beside
+  it, and says so. It used to cover the last 120 days whatever the window.
+  Every day since the first session is drawn; once there are more days
+  than the row has room for, each cell adds up several days, ending on today.
+- **The Today row leaves the home screen**; `cs today` stays. The menu opens
+  on Recent sessions.
+- **The home screen's facts line drops the sub-agent run count.** Delegation
+  and Sub-agents still report it.
+
 - **The new views read as tables.** Every column is padded to a measured
   width and holds its shape from 40 to 140 columns.
   - Prompt patterns lines up its bars, puts the strongest habit first and
