@@ -13,7 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Doctor leave the menu (`cs coach`, `cs rhythm` and `cs doctor` stay).
   Next up, Standup, End of day, Weekly review and Budget leave the menu
   (`cs next`, `cs standup`, `cs eod`, `cs weekly` and `cs budget` stay) and
-  are replaced by one **Today** page.
+  are replaced by one **Today** page. Saved searches, Spend anomalies, Team
+  rollup and Unclean endings leave the menu, and so does the whole Improve
+  group — Context, Repo health, Prompt patterns and Clean-up (`cs saved`,
+  `cs anomalies`, `cs rollup`, `cs endings`, `cs context`, `cs health`,
+  `cs patterns` and `cs cleanup` stay).
 - **`cs watch`, `cs asks`, `cs files --history`, `cs replay`, `cs diff`
   and `cs similar`.**
   The live reading moved onto the home screen. My asks and file history did

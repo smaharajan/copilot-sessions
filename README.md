@@ -48,7 +48,6 @@ needs nothing beyond Python itself.
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-     🔖  Saved searches    pick one and run it live
     MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
      📊  Stats             commits, PRs, files and what they cost · last 30 days
@@ -57,20 +56,12 @@ needs nothing beyond Python itself.
      👥  Delegation        you vs the main agent vs sub-agents · last 30 days
      🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
      🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
-     📈  Spend anomalies   days and sessions over 2× their usual, and why · last 30 days
-     📤  Team rollup       counts and rates to share, repos hashed · last 30 days
     GOVERN  ─────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text · last 30 days
      💥  Tool failures     which tools fail, where, worst sessions · last 30 days
      🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
-     🏁  Unclean endings   sessions cut off by an error, length or filter · last 30 days
-    IMPROVE  ────────────────────────────────────────────────────────────
-     📍  Context           instruction files, skills and hooks the next session is handed
-     🏥  Repo health       a verdict on this repo, and the few things worth doing
-     🔣  Prompt patterns   which ways of opening a session line up with shipping · last 30 days
-     🚮  Clean-up          stale pins, quiet work, handoffs waiting — commands to copy
     REFERENCE  ──────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here, what was used, when last
      🤖  Agents            the same for your agents, and whether their model held
@@ -181,8 +172,9 @@ first-token latency, reasoning share, per model.
 
 `cs standup` (alias `daily`) is an offline daily brief over the last day —
 sessions, turns, spend, what moved, handoffs, and light autonomy risks when
-cheap to ask. `cs coach` and `cs rhythm` stay commands; **Context**, **Repo
-health**, **Prompt patterns** and **Clean-up** are the Improve rows.
+cheap to ask. `cs coach`, `cs rhythm`, `cs context`, `cs health`,
+`cs patterns` and `cs cleanup` are commands; the home screen has no Improve
+group.
 
 ### ☀️ Today, and finding the work again
 

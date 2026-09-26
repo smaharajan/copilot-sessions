@@ -360,7 +360,7 @@ counts, not a menu row; it ticks about every five seconds and does not move
 the 60-second refresh. Every action is callable, so
 choosing a row cannot call something that isn't there: the menu collects what
 the row asks for and `cmd_home` passes it in. The groups are anchored by label
-in `_HOME_GROUP_STARTS` — Today, Find, Measure, Govern, Improve, Reference —
+in `_HOME_GROUP_STARTS` — Today, Find, Measure, Govern, Reference —
 and a label that is not on the menu fails at start-up.
 
 The loop is the same shape as the listing's: the menu **returns a choice**, the

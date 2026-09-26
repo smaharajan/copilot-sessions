@@ -964,8 +964,7 @@ def _render_saved(saved: dict[str, str]) -> None:
         print(f"    {ui.SKY}{ui._fit(_clean(name), 18):<18}{ui.RST} "
               f"{ui._fit(_clean(term), max(inner - 24, 8))}")
     print()
-    _hint("cs saved <name> — run one · on the home screen, Saved searches "
-          "picks one", inner)
+    _hint("cs saved <name> — run one", inner)
     print()
 
 

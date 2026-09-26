@@ -276,7 +276,6 @@ class EvidenceHomeTest(StoreTest):
         labels = [label for _, label, *_ in items]
         groups = {labels[i]: cli._home_group(i) for i in range(len(labels))}
         for label, group in (("Tool failures", "Govern"), ("Stuck loops", "Govern"),
-                             ("Unclean endings", "Govern"),
                              ("Sub-agents", "Measure"),
                              ("Model switches", "Measure")):
             with self.subTest(row=label):
@@ -285,9 +284,10 @@ class EvidenceHomeTest(StoreTest):
                 self.assertEqual(row[4], "period")
                 self.assertIn("last 7 days", row[2])
         with mock.patch.object(cli, "_page", return_value=True) as page:
-            for label in ("Tool failures", "Stuck loops", "Unclean endings",
+            for label in ("Tool failures", "Stuck loops",
                           "Sub-agents", "Model switches"):
                 self.assertTrue(items[labels.index(label)][3](7))
-        self.assertEqual(page.call_count, 5)
+        self.assertEqual(page.call_count, 4)
+        self.assertNotIn("Unclean endings", labels)
         loops = page.call_args_list[1].args[0]
         self.assertIn("Stuck loops · last 7 days", loops)

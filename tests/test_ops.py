@@ -320,17 +320,16 @@ class OpsHomeTest(StoreTest):
         group = {label: cli._home_group(i) for i, label in enumerate(labels)}
         today = [label for label in labels if group[label] == "Today"]
         self.assertEqual(today, ["Today"])
-        self.assertEqual(group["Team rollup"], "Measure")
+        self.assertNotIn("Team rollup", labels)
         reference = [label for label in labels if group[label] == "Reference"]
         self.assertEqual(reference[-2:], ["Theme", "Help"])
         self.assertNotIn("Doctor", reference)
 
-    def test_the_rows_open(self):
+    def test_the_rollup_command_opens(self):
         from cs import cli
 
-        items = {item[1]: item for item in cli._home_items(7)}
         with mock.patch.object(cli, "_page", return_value=True) as page:
-            self.assertTrue(items["Team rollup"][3](7))
+            self.assertTrue(cli.cmd_rollup(7))
         self.assertNotIn('"view": "rollup"', page.call_args.args[0])
         self.assertIn("Team rollup", page.call_args.args[0])
         self.assertIn("session", page.call_args.args[0])

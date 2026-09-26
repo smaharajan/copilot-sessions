@@ -232,21 +232,18 @@ class AnalysisHomeTest(StoreTest):
         asks = {item[1]: item[4] for item in items}
         self.assertNotIn("Replay", labels)
         self.assertNotIn("Compare sessions", labels)
-        self.assertEqual((group["Spend anomalies"], asks["Spend anomalies"]),
-                         ("Measure", "period"))
+        self.assertNotIn("Spend anomalies", labels)
         self.assertNotIn("Similar work", labels)
-        improve = [label for label in labels if group[label] == "Improve"]
-        self.assertEqual(improve, ["Context", "Repo health", "Prompt patterns",
-                                   "Clean-up"])
+        self.assertNotIn("Improve", set(group.values()))
+        self.assertEqual(asks["AI spend"], "period")
 
-    def test_every_new_row_opens(self):
+    def test_the_commands_off_the_menu_still_open(self):
         from cs import cli
 
-        items = {item[1]: item for item in cli._home_items(7)}
         with mock.patch.object(cli, "_page", return_value=True), \
                 redirect_stdout(io.StringIO()):
-            for label, given in (("Spend anomalies", 7), ("Repo health", None),
-                                 ("Prompt patterns", 7)):
-                with self.subTest(row=label):
-                    action = items[label][3]
-                    action(given) if given is not None else action()
+            for name, action in (("anomalies", lambda: cli.cmd_anomalies(7)),
+                                 ("health", cli.cmd_health),
+                                 ("patterns", lambda: cli.cmd_patterns(7))):
+                with self.subTest(command=name):
+                    action()

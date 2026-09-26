@@ -36,7 +36,6 @@ single line:
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-     🔖  Saved searches    pick one and run it live
     MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
      📊  Stats             commits, PRs, files and what they cost · last 30 days
@@ -45,20 +44,12 @@ single line:
      👥  Delegation        you vs the main agent vs sub-agents · last 30 days
      🐝  Sub-agents        which agents ran, on which models, how long · last 30 days
      🔀  Model switches    model or effort changed mid-run, cost either side · last 30 days
-     📈  Spend anomalies   days and sessions over 2× their usual, and why · last 30 days
-     📤  Team rollup       counts and rates to share, repos hashed · last 30 days
     GOVERN  ─────────────────────────────────────────────────────────────
      🚀  Autonomy          which sessions ran unattended · YOLO
      🔗  Handoffs          work passed from one session to the next
      🔐  Security          credentials found in session text · last 30 days
      💥  Tool failures     which tools fail, where, worst sessions · last 30 days
      🌀  Stuck loops       one tool failing again and again, with turns · last 30 days
-     🏁  Unclean endings   sessions cut off by an error, length or filter · last 30 days
-    IMPROVE  ────────────────────────────────────────────────────────────
-     📍  Context           instruction files, skills and hooks the next session is handed
-     🏥  Repo health       a verdict on this repo, and the few things worth doing
-     🔣  Prompt patterns   which ways of opening a session line up with shipping · last 30 days
-     🚮  Clean-up          stale pins, quiet work, handoffs waiting — commands to copy
     REFERENCE  ──────────────────────────────────────────────────────────
      🎓  Skills            what Copilot can load here, what was used, when last
      🤖  Agents            the same for your agents, and whether their model held
@@ -495,7 +486,8 @@ cs search three.js              # punctuation FTS5 rejects — retried for you
 `cs search --save weekly-infra terraform AND drift` runs the search and keeps
 it; `cs saved` lists what you have kept and `cs saved weekly-infra` runs it
 again, live. They are stored under `saved_searches` in
-`~/.config/cs/settings.json`. The home row opens a picker.
+`~/.config/cs/settings.json`. It is a command only; the home screen has no
+row for it.
 
 ### 📁 `cs files` — from a file back to the work
 
@@ -929,8 +921,8 @@ here starts a server or writes to a config file.
 
 Every other view answers *what happened*. These answer **how the work is being
 done** — and they are the only views in `cs` that will tell you something about
-yourself rather than about a session. They sit under **Improve** on the landing
-screen.
+yourself rather than about a session. They are commands only; the landing
+screen no longer has an **Improve** group.
 
 ### `cs standup` — today's brief, offline
 
@@ -1686,18 +1678,19 @@ because removing a working view is a decision that is hard to reverse and easy
 to regret.
 
 Most of them earned their way back. `cs timeline` stayed off the menu (Stats and
-AI spend already cover its ground); `cs hooks` and the **Improve** group are on
-it. Improve was restored with `cs standup` as the daily entry point, then
-Practice / Rhythm / Context.
+AI spend already cover its ground); `cs hooks` is on it. The **Improve** group
+was restored for a while, then came off whole — Context, Repo health, Prompt
+patterns and Clean-up with it — along with Saved searches, Spend anomalies,
+Team rollup and Unclean endings. Every one of them still runs when typed.
 
 | Command | Where it stands |
 |---------|------------------|
 | `cs timeline` | **Off the menu, still runs.** It charted sessions per day; Stats and AI spend already carry the window's totals and per-day bars, so a third counting view mostly asks the room to hold one more shape. Typed as `cs timeline`. |
 | `cs hooks` | **On the menu.** It lists configuration, not history, and `copilot plugins list --json` enumerates the same declarations first-hand. What that missed is the thing reading the config cannot do: `cs hooks` **resolves every hook command against the disk** and names the ones whose script is gone. Copilot will still run those, and the shell will still fail. |
-| `cs standup` | **On the menu (Improve).** Offline daily brief — activity, what moved, handoffs, light risks. |
-| `cs coach` | **On the menu (Improve).** Habits scored and ranked. |
-| `cs rhythm` | **On the menu (Improve).** When the work happens; below 25 turns it reports counts and says so. |
-| `cs context` | **On the menu (Improve).** The only view that reads the setup your **next** session starts from rather than what a past one did. |
+| `cs standup` | **Off the menu, still runs; Today covers it.** Offline daily brief — activity, what moved, handoffs, light risks. |
+| `cs coach` | **Off the menu, still runs.** Habits scored and ranked. |
+| `cs rhythm` | **Off the menu, still runs.** When the work happens; below 25 turns it reports counts and says so. |
+| `cs context` | **Off the menu, still runs.** The only view that reads the setup your **next** session starts from rather than what a past one did. |
 
 Hiding a group is two edits — the rows in `_home_items` and the group's anchor
 in `_HOME_GROUP_STARTS` — and `cs` **refuses to start** if you do one without

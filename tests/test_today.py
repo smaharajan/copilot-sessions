@@ -302,12 +302,11 @@ class TodayHomeTest(StoreTest):
         for index, label in enumerate(labels):
             by_group.setdefault(cli._home_group(index), []).append(label)
         self.assertEqual(by_group["Today"], ["Today"])
-        self.assertIn("Saved searches", by_group["Find"])
+        self.assertNotIn("Saved searches", labels)
         self.assertNotIn("Similar work", labels)
         self.assertNotIn("My asks", labels)
         self.assertNotIn("File history", labels)
-        self.assertEqual(by_group["Improve"][0], "Context")
-        self.assertIn("Clean-up", by_group["Improve"])
+        self.assertNotIn("Improve", by_group)
         self.assertEqual(labels[0], "Today")
 
     def test_every_new_row_opens(self):
@@ -317,12 +316,11 @@ class TodayHomeTest(StoreTest):
         with mock.patch.object(cli, "_page", return_value=True) as page, \
                 mock.patch.object(cli, "_interactive_listing", return_value=True), \
                 redirect_stdout(io.StringIO()):
-            for label, given in (("Today", None), ("Clean-up", None),
-                                 ("Saved searches", None)):
+            # Clean-up is off the menu but still `cs cleanup`.
+            for label, action in (("Today", items["Today"][3]),
+                                  ("Clean-up", cli.cmd_cleanup)):
                 with self.subTest(row=label):
-                    action = items[label][3]
-                    result = action(given) if given is not None else action()
-                    self.assertIsNotNone(result)
+                    self.assertIsNotNone(action())
         self.assertGreaterEqual(page.call_count, 2)
 
     def test_now_leads_with_the_session_its_burn_and_the_budget(self):

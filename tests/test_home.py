@@ -16,16 +16,21 @@ class HomeMenuTest(StoreTest):
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
         for wanted in ("Today", "Autonomy", "Handoffs", "Security",
-                       "Efficiency", "Hooks", "Theme", "Context"):
+                       "Efficiency", "Hooks", "Theme"):
             self.assertIn(wanted, labels)
         # Practice, Rhythm, Standup and Working days are commands, not rows.
         # Asserting both halves keeps a restored view from quietly rotting
         # and a retired command from disappearing.
         for wanted in ("Practice", "Rhythm", "Standup", "Working days",
-                       "Watch live", "Doctor"):
+                       "Watch live", "Doctor", "Saved searches",
+                       "Spend anomalies", "Team rollup", "Unclean endings",
+                       "Context", "Repo health", "Prompt patterns",
+                       "Clean-up"):
             self.assertNotIn(wanted, labels)
+        self.assertNotIn("Improve", set(cli._home_groups().values()))
         for command in ("standup", "coach", "rhythm", "context", "timeline",
-                        "hooks", "doctor", "next"):
+                        "hooks", "doctor", "next", "saved", "anomalies",
+                        "rollup", "endings", "health", "patterns", "cleanup"):
             self.assertEqual(self._run(command)[0], 0, command)
 
     def test_group_headings_follow_their_rows(self):

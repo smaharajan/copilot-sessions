@@ -160,7 +160,7 @@ used by `--json` through `export.py`) and a renderer.
 |---|---|---|
 | `cs failures [N\|all]` | Tool failures → Govern (period) | by tool, by repo, worst sessions numbered for `cs show N` |
 | `cs failures --loops` / `cs loops` | Stuck loops → Govern (period) | tool, run length, turn range, main or sub-agent |
-| `cs endings [N\|all]` | Unclean endings → Govern (period) | finish reason and turn of the last billed call (store only) |
+| `cs endings [N\|all]` | off the menu (was Govern) | finish reason and turn of the last billed call (store only) |
 | `cs subagents [N\|all]` | Sub-agents → Measure (period) | declared `model:` vs overrides and models actually used |
 | `cs switches [N\|all]` | Model switches → Measure (period) | from → to, effort, source, AIU before and after |
 | `cs hooks` (extended) | Hooks → Reference | `ran`, `failed`, `last failure` per event, last 30 days |
@@ -232,9 +232,9 @@ All in `cs/cli/today.py`, readings as `_*_data` shared with `--json`.
 | `cs budget --check` | Budget → Today | ←/→ on the row steps `ui.BUDGET_STEPS` |
 | `cs similar <words>` | Similar work → Find (term) | `db.search`, shipped first, stable |
 | `cs asks [--repo .] [N\|all]` | My asks → Find (period) | `c` copies in the listing |
-| `cs search --save`, `cs saved [name]` | Saved searches → Find | picker; settings key `saved_searches` |
+| `cs search --save`, `cs saved [name]` | off the menu (was Find) | picker; settings key `saved_searches` |
 | `cs files <path> --history` | File history → Find (term) | agent read from the log on demand, never cached |
-| `cs cleanup [N]` | Clean-up → Improve | suggests commands; removes nothing |
+| `cs cleanup [N]` | off the menu (was Improve) | suggests commands; removes nothing |
 
 Decisions worth knowing:
 
@@ -276,9 +276,9 @@ All in `cs/cli/analysis.py`.
 |---|---|---|
 | `cs diff <a> <b>` | Compare sessions → Measure (pair) | stacks below 64 columns; listing `d` … `d` |
 | `cs replay <ref>` | Replay → Find (ref) | reuses `_transcript_turn` from `cs read`; listing `e` |
-| `cs anomalies [N\|all]` | Spend anomalies → Measure (period) | `ANOMALY_FACTOR = 2.0`, `BASELINE_DAYS = 14`, needs 3 comparable points |
-| `cs health [--repo .]` | Repo health → Improve | instructions and skills only for the checkout you are in |
-| `cs patterns [N\|all]` | Prompt patterns → Improve (period) | five features, `n` per side, correlation note |
+| `cs anomalies [N\|all]` | off the menu (was Measure) | `ANOMALY_FACTOR = 2.0`, `BASELINE_DAYS = 14`, needs 3 comparable points |
+| `cs health [--repo .]` | off the menu (was Improve) | instructions and skills only for the checkout you are in |
+| `cs patterns [N\|all]` | off the menu (was Improve) | five features, `n` per side, correlation note |
 | `cs skills`, `cs profiles` (extended) | Skills, Agents → Reference | invoked, last used, model kept |
 
 Decisions and fixes worth knowing:
@@ -344,7 +344,7 @@ All in `cs/cli/ops.py`, plus `db.EXPECTED_SCHEMA` / `db.schema_drift`.
 | `cs watch` | Watch live → Today (last row) | `WATCH_SECONDS = 5`; tail from the last offset, first look reads the last 256 KB, at most 4 MB a tick |
 | `cs doctor [--json]` | Doctor → Reference | nine checks, pass/warn/fail with a fix; writes nothing (`os.access` only) |
 | schema drift guard | home status line; Doctor | `KNOWN_SCHEMA_VERSIONS = (8,)`; no `schema_version` = older store, not drift |
-| `cs rollup [N\|all] --json` | Team rollup → Measure (period) | counts and rates; repos as `sha256(salt\0name)[:12]`; salt in settings |
+| `cs rollup [N\|all] --json` | off the menu (was Measure) | counts and rates; repos as `sha256(salt\0name)[:12]`; salt in settings |
 
 Decisions worth knowing:
 

@@ -27,35 +27,25 @@ from ._common import (
     _prompt,
     _window_label,
 )
-from .analysis import (
-    cmd_anomalies,
-    cmd_health,
-    cmd_patterns,
-)
-from .evidence import cmd_endings, cmd_failures, cmd_subagents, cmd_switches
+from .evidence import cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
     _asset_names,
     cmd_agents,
     cmd_assets,
-    cmd_context,
     cmd_hooks,
     cmd_instructions,
     cmd_mcp,
 )
 from .listing import cmd_recent, cmd_search
-from .ops import WATCH_SECONDS, _live_lines, _watch_read, cmd_rollup, schema_notice
+from .ops import WATCH_SECONDS, _live_lines, _watch_read, schema_notice
 from .reports import (
     cmd_cost,
     cmd_efficiency,
     cmd_repos,
     cmd_stats,
 )
-from .today import (
-    cmd_cleanup,
-    cmd_saved_menu,
-    cmd_today,
-)
+from .today import cmd_today
 from .workflow import cmd_pins
 
 
@@ -106,9 +96,8 @@ def _home_items(period: int = 30,
          lambda: cmd_recent(0, show_all=True), ""),
         (ui.menu_icon("search"), "Search", "full text across every turn and checkpoint",
          cmd_search, "term"),
-        (ui.menu_icon("saved"), "Saved searches",
-         "pick one and run it live",
-         cmd_saved_menu, ""),
+        # Saved searches stays `cs saved` and `cs search --save`; the row
+        # came off the menu.
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
         (ui.menu_icon("stats"), "Stats",
@@ -139,12 +128,8 @@ def _home_items(period: int = 30,
         (ui.menu_icon("switches"), "Model switches",
          f"model or effort changed mid-run, cost either side · {window}",
          cmd_switches, "period"),
-        (ui.menu_icon("anomalies"), "Spend anomalies",
-         f"days and sessions over 2× their usual, and why · {window}",
-         cmd_anomalies, "period"),
-        (ui.menu_icon("rollup"), "Team rollup",
-         f"counts and rates to share, repos hashed · {window}",
-         cmd_rollup, "period"),
+        # Spend anomalies and Team rollup stay `cs anomalies` and
+        # `cs rollup`; the rows came off the menu.
         (ui.menu_icon("autonomy"), "Autonomy",
          "which sessions ran unattended · YOLO", cmd_yolo, ""),
         (ui.menu_icon("handoff"), "Handoffs",
@@ -159,26 +144,10 @@ def _home_items(period: int = 30,
         (ui.menu_icon("loops"), "Stuck loops",
          f"one tool failing again and again, with turns · {window}",
          lambda days=30: cmd_failures(days, loops=True), "period"),
-        (ui.menu_icon("endings"), "Unclean endings",
-         f"sessions cut off by an error, length or filter · {window}",
-         cmd_endings, "period"),
-        # Practice and Rhythm stay available as `cs coach` and `cs rhythm`.
-        # They came off the menu: the habits and the clock were the rows
-        # nobody opened, and Improve reads better as four things to do.
-        # (ui.menu_icon("practice"), "Practice", ... cmd_coach, "period"),
-        # (ui.menu_icon("rhythm"), "Rhythm", ... cmd_rhythm, "period"),
-        (ui.menu_icon("context"), "Context",
-         "instruction files, skills and hooks the next session will be handed",
-         cmd_context, ""),
-        (ui.menu_icon("health"), "Repo health",
-         "a verdict on this repo — spend, failures — and the few things worth doing",
-         cmd_health, ""),
-        (ui.menu_icon("patterns"), "Prompt patterns",
-         f"which ways of opening a session line up with shipping · {window}",
-         cmd_patterns, "period"),
-        (ui.menu_icon("cleanup"), "Clean-up",
-         "stale pins, quiet work and handoffs left waiting — commands to copy",
-         cmd_cleanup, ""),
+        # Unclean endings stays `cs endings`; the row came off the menu.
+        # The Improve group came off whole. Its views stay commands:
+        # `cs context`, `cs health`, `cs patterns`, `cs cleanup`, and
+        # `cs coach` and `cs rhythm` before them.
         (ui.menu_icon("skills"), "Skills",
          "what Copilot can load here, what was used, when last",
          lambda: cmd_assets("skills"), ""),
@@ -233,7 +202,6 @@ _HOME_GROUP_TONE = {
     "Find": "title",        # 39  — the product blue
     "Measure": "credits",   # 177 — violet, as spend is everywhere else
     "Govern": "warn",       # 214 — amber: this group is the bad news
-    "Improve": "credits",
     "Reference": "active",  # 49  — mint: present, and nothing to answer for
 }
 
@@ -243,7 +211,6 @@ _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
     ("Recent sessions", "Find"),
     ("Repositories", "Measure"),
     ("Autonomy", "Govern"),
-    ("Context", "Improve"),
     ("Skills", "Reference"),
 )
 
