@@ -269,7 +269,13 @@ class TodayTest(StoreTest):
         ui.pin_session("old-pin")
         ui.pin_session("gone-from-the-store")
         ui.pin_session("sess-alpha")                # active today: not stale
-        ui.add_tag(CALM, "wip")                     # quiet 7 days
+        # The fixture puts CALM at 09:20 UTC seven days ago, which is under
+        # seven whole days before 09:20 — half a day more holds at any hour.
+        self.conn.execute(
+            "UPDATE sessions SET created_at = ?, updated_at = ? WHERE id = ?",
+            (_ago(7.6), _ago(7.5), CALM))
+        self.conn.commit()
+        ui.add_tag(CALM, "wip")                     # quiet 7+ days
         self._session("stale-handoff", "Notes left behind", _ago(10),
                       ["create a handoff doc for the next person"])
         data = self._json("cleanup")

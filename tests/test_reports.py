@@ -8,7 +8,7 @@ import os
 import re
 import sqlite3
 from contextlib import redirect_stderr
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from support import CALM, PARENT, StoreTest, _add_governance_rows
@@ -459,7 +459,7 @@ class CostPerDayTest(StoreTest):
         fortnight."""
         code, out = self._run("cost", "all", "--sort", "spend", "--desc")
         self.assertEqual(code, 0)
-        oldest = (datetime.now() - timedelta(days=self.DAYS - 1)).strftime("%d %b")
+        oldest = (datetime.now(timezone.utc) - timedelta(days=self.DAYS - 1)).strftime("%d %b")
         rows = [line for line in self._per_day(out).splitlines() if "9.0k" in line]
         self.assertTrue(rows, "the dearest day is missing from a spend sort")
         self.assertIn(oldest.lstrip("0"), rows[0])
@@ -486,7 +486,7 @@ class CostPerDayTest(StoreTest):
         window was unreachable however the report was sorted."""
         code, out = self._run("cost", "all", "--sort", "name", "--asc")
         self.assertEqual(code, 0)
-        oldest = (datetime.now() - timedelta(days=self.DAYS - 1)).strftime("%d %b")
+        oldest = (datetime.now(timezone.utc) - timedelta(days=self.DAYS - 1)).strftime("%d %b")
         first = next(line for line in self._per_day(out).splitlines()
                      if re.search(r"\d\d \w\w\w", line))
         self.assertIn(oldest.lstrip("0"), first)
