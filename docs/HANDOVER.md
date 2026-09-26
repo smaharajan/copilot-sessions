@@ -17,7 +17,7 @@ round; they shipped, and this round took several of them back off the menu.
 | Practice, Rhythm, Doctor, and the old Today rows off the menu; CLI commands kept where noted | **done** |
 | One Today page and a live strip on the home screen | **done** |
 | Switches, anomalies, rollup, health, patterns, clean-up redrawn | **done** |
-| Similar work starts from a session and shows the overlap | **done** |
+| Similar work | **removed** — it stayed a search with a different sort |
 | Home paints before the skill/agent turn scan; counts cached | **done** |
 
 ### Replay and compare
@@ -32,12 +32,9 @@ the step mode are gone.
 
 ### Similar work
 
-The old view was `db.search` with shipped sessions first. On a real store a
-common word returned well over a hundred sessions, which is search with a
-different sort. It now starts from a chosen session and keeps at most ten
-others that share its repository, its files, or the distinctive words of
-its opening ask. Each row prints that overlap. Terms are taken from the
-masked ask, so a credential cannot become a term.
+Removed. Starting from a session and scoring shared files and opening words
+still returned neighbours of a busy repository, which is what "not working"
+was. `cs search` is the way to find past work.
 
 ### Speed
 

@@ -48,7 +48,6 @@ needs nothing beyond Python itself.
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-     🔭  Similar work      sessions sharing one's files, repository and opening ask
      🔖  Saved searches    pick one and run it live
     MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
@@ -188,17 +187,16 @@ health**, **Prompt patterns** and **Clean-up** are the Improve rows.
 ### ☀️ Today, and finding the work again
 
 The home screen opens on one **Today** row. **`cs today`** is that page: the
-session running now, the top sessions to pick up (each with its reason and
-`cs resume N`), what happened since midnight, and this week against the week
-before. Empty sections are left off the page. **`cs next`**, **`cs eod`** and
+session running now (its name, the last ten minutes, and today's budget), the
+top sessions to pick up (each with its reason and `cs resume`), what happened
+since midnight, and this week against the week before. Empty sections are
+left off the page. **`cs next`**, **`cs eod`** and
 **`cs weekly`** (both of the last two take `--md`) are still the separate
 commands. `cs budget --check` prints one line and exits 1 when over, for
 hooks and scripts; the home header shows the same limit.
 
-Finding past work: **`cs similar <N|id>`** returns at most ten sessions that
-share that session's files, repository or the distinctive words of its
-opening ask, and says which overlap it was. **`cs search --save`** and
-**`cs saved`** keep the searches you run every week. **`cs files <path>`**
+Finding past work: **`cs search --save`** and **`cs saved`** keep the
+searches you run every week. **`cs files <path>`**
 lists sessions that touched a file. **`cs cleanup`** lists stale pins, quiet
 `wip` tags and abandoned handoffs, and ends with the commands that would tidy
 them — it never removes anything itself.

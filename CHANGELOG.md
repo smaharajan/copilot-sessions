@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Next up, Standup, End of day, Weekly review and Budget leave the menu
   (`cs next`, `cs standup`, `cs eod`, `cs weekly` and `cs budget` stay) and
   are replaced by one **Today** page.
-- **`cs watch`, `cs asks`, `cs files --history`, `cs replay` and `cs diff`.**
+- **`cs watch`, `cs asks`, `cs files --history`, `cs replay`, `cs diff`
+  and `cs similar`.**
   The live reading moved onto the home screen. My asks and file history did
   not earn a row. Replay and compare hung on a bare session prompt and
   duplicated `cs read`; the listing keys `d` and `e`, the reader's step mode,
@@ -22,9 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Today is one page.** It shows the session running now, the top sessions
-  to pick up (each with its reason and `cs resume`), what happened since
-  midnight, and this week against last week. Empty sections are omitted.
+- **Today is one page.** The session running now leads: its name, `cs resume`
+  and the id, a ten-minute burn track and today's budget in one column.
+  Then the top sessions to pick up (each with its reason and `cs resume`),
+  what happened since midnight, and this week against last week. Empty
+  sections are omitted.
 - **The home screen shows the session running now.** Title, burn rate,
   budget left, last tool, last failure and a ten-minute sparkline. One line
   below 100 columns, a small panel at 100 and wider. It ticks about every
@@ -38,9 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   short verdict and the commands worth running. Patterns is one comparison,
   hiding habits with fewer than five sessions on a side. Clean-up ends in
   one copyable block of commands.
-- **Similar work starts from a session.** `cs similar <N|id>` returns at
-  most ten sessions that share its repository, files or the distinctive
-  words of its opening ask, and each row says which overlap that was.
 - **The first home frame does not wait for the skill scan.** Asset reference
   counts are cached under `$XDG_CACHE_HOME/cs/asset-counts.json` (names and
   counts only). A cold cache paints the cheap facts and fills the rest on
@@ -99,8 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   habits); `--md` prints masked Markdown to paste. Standup moved into Today.
 - **The Budget row changes the limit with ←/→**, and `cs budget --check`
   prints one line and exits 1 when over, for hooks and scripts.
-- **Finding past work.** `cs similar <words>` ranks sessions that shipped a
-  commit or PR first and shows the outcome; `cs asks [--repo .] [N|all]`
+- **Finding past work.** `cs asks [--repo .] [N|all]`
   lists your opening requests (and the first after a handoff) with outcome
   and cost, and `c` copies one, masked, where a clipboard tool exists;
   `cs search --save <name> <words>` and `cs saved [name]` keep searches, with

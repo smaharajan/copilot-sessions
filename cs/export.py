@@ -39,7 +39,7 @@ VIEWS = (
     "sessions", "search", "stats", "cost", "efficiency",
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
     "standup", "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "today", "similar", "saved",
+    "next", "eod", "weekly", "today", "saved",
     "cleanup", "budget", "anomalies", "health", "patterns",
     "doctor", "rollup",
 )
@@ -53,7 +53,7 @@ DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "today", "similar", "saved", "cleanup", "budget",
+    "next", "eod", "weekly", "today", "saved", "cleanup", "budget",
     "anomalies", "health", "patterns", "doctor", "rollup",
 )
 
@@ -445,11 +445,6 @@ def weekly() -> dict:
 def today() -> dict:
     from .cli.today import _today_data
     return {"view": "today", **_today_data()}
-
-
-def similar(ref: str) -> dict:
-    from .cli.today import _similar_data
-    return {"view": "similar", **_similar_data(ref)}
 
 
 def saved() -> dict:

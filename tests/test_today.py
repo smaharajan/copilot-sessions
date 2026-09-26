@@ -1,5 +1,5 @@
-"""Day-to-day views: next up, end of day, weekly review, similar work, my asks,
-saved searches, file history, the budget check and clean-up.
+"""Day-to-day views: next up, end of day, weekly review, saved searches,
+the budget check and clean-up.
 
 Each reason a session is put in front of you must be printed with it, every
 stored string is masked on its way to the page and to `--json`, and nothing
@@ -179,29 +179,6 @@ class TodayTest(StoreTest):
         self.assertTrue(out.startswith("## Weekly review"))
         self.assertIn("`bash`", out)
 
-    # ── Similar work ─────────────────────────────────────────────────
-
-    def test_similar_starts_from_a_session_and_shows_the_overlap(self):
-        later = datetime.now(timezone.utc) + timedelta(minutes=5)
-        self._session("sess-newer", "Another portal attempt",
-                      later.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                      ["rebuild the portal charts"])
-        self._session("sess-other", "Unrelated notes",
-                      later.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-                      ["write a grocery list"], repo="elsewhere/notes")
-        data = self._json("similar", "sess-alpha")
-        ids = [session["id"] for session in data["sessions"]]
-        self.assertNotIn("sess-alpha", ids)
-        self.assertIn("sess-newer", ids)
-        self.assertLessEqual(len(ids), 10)
-        newer = next(session for session in data["sessions"]
-                     if session["id"] == "sess-newer")
-        self.assertIn("same repository", newer["evidence"])
-        code, out = self._run("similar", "sess-alpha")
-        self.assertEqual(code, 0)
-        self.assertIn("same repository", out)
-        self.assertNotIn(SECRET, out)
-
     # ── Saved searches ───────────────────────────────────────────────
 
     def test_a_search_is_saved_listed_and_run_by_name(self):
@@ -319,8 +296,8 @@ class TodayHomeTest(StoreTest):
         for index, label in enumerate(labels):
             by_group.setdefault(cli._home_group(index), []).append(label)
         self.assertEqual(by_group["Today"], ["Today"])
-        for label in ("Similar work", "Saved searches"):
-            self.assertIn(label, by_group["Find"])
+        self.assertIn("Saved searches", by_group["Find"])
+        self.assertNotIn("Similar work", labels)
         self.assertNotIn("My asks", labels)
         self.assertNotIn("File history", labels)
         self.assertEqual(by_group["Improve"][0], "Context")
@@ -335,25 +312,106 @@ class TodayHomeTest(StoreTest):
                 mock.patch.object(cli, "_interactive_listing", return_value=True), \
                 redirect_stdout(io.StringIO()):
             for label, given in (("Today", None), ("Clean-up", None),
-                                 ("Saved searches", None),
-                                 ("Similar work", "sess-alpha")):
+                                 ("Saved searches", None)):
                 with self.subTest(row=label):
                     action = items[label][3]
                     result = action(given) if given is not None else action()
                     self.assertIsNotNone(result)
         self.assertGreaterEqual(page.call_count, 2)
 
+    def test_now_leads_with_the_session_its_burn_and_the_budget(self):
+        from cs import cli
+
+        data = cli._today_data()
+        self.assertIn("now", data)
+        now = data["now"]
+        self.assertEqual(now["summary"], "Build Three.js portal")
+        self.assertIn("burn", now)
+        text = cli._capture(lambda: cli._render_today(data))
+        plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", text)
+        self.assertIn("Build Three.js portal", plain)
+        self.assertIn("AIU/min", plain)
+        self.assertIn(f"cs resume {now['id'][:8]}", plain)
+        self.assertIn("live", plain)
+        burn = next(line for line in plain.splitlines() if "AIU/min" in line)
+        self.assertIn("·", burn)
+        # A session with no failure does not grow a fail row.
+        quiet = {**now, "last_failure": None, "last_tool": "view",
+                 "last_tool_at": "12:01:00"}
+        card = cli._capture(lambda: cli._render_now(quiet, 80, 76))
+        card_plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", card)
+        self.assertNotIn("fail", card_plain)
+        self.assertIn("view", card_plain)
+
+    def test_the_now_card_keeps_its_column_and_its_command(self):
+        from cs import cli
+
+        now = {
+            "id": "sess-alpha", "summary": "Build Three.js portal",
+            "repo": "acme/portal", "turns": 2, "nano_aiu": 4_000_000_000,
+            "burn_per_minute": 0.4,
+            "burn": [0, 0, 0, 0, 0, 0, 0, 1, 4, 9],
+            "today_nano_aiu": 4_000_000_000, "budget_aiu": 20, "left_aiu": 16,
+            "last_tool": "view", "last_tool_at": "12:01:00",
+            "last_failure": None,
+        }
+        over = {**now, "today_nano_aiu": 25_000_000_000, "left_aiu": -5}
+        for columns in (40, 60, 80, 100):
+            card = cli._capture(lambda c=columns: cli._render_now(now, c, c - 4))
+            plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", card)
+            self.assertIn("cs resume sess-alp", plain)
+            self.assertIn("left", plain)
+            self.assertNotIn("fail", plain)
+            burn = next(line for line in plain.splitlines() if "AIU/min" in line)
+            budget = next(line for line in plain.splitlines() if "left" in line)
+            self.assertEqual(burn.index("0.40"), budget.index("4.00"))
+            for line in plain.splitlines():
+                self.assertLessEqual(cli.ui.cells(line), columns, line)
+            hot = cli._capture(lambda c=columns: cli._render_now(over, c, c - 4))
+            hot_plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", hot)
+            self.assertIn("over", hot_plain)
+            self.assertIn("cs resume sess-alp", hot_plain)
+            for line in hot_plain.splitlines():
+                self.assertLessEqual(cli.ui.cells(line), columns, line)
+
+    def test_a_pick_up_reason_too_long_to_keep_stays_under_its_title(self):
+        from cs import cli
+
+        def reason(why: str, sid: str) -> dict:
+            return {"id": sid, "summary": "Prepare the handoff",
+                    "resume": f"cs resume {sid[:8]}",
+                    "reasons": [{"kind": "handoff", "why": why}]}
+
+        sessions = [reason("wrote " + ", ".join(f"HANDOFF-{n}.md" for n in range(20)),
+                           "c5c88889-long"),
+                    reason("asked for a handoff; no one picked it up", "51b00f8a-short")]
+        for columns in (40, 80, 120):
+            text = cli._capture(lambda c=columns: cli._render_pickup(sessions, c, c - 4))
+            plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", text)
+            details = [line for line in plain.splitlines()
+                       if line.lstrip().startswith(("wrote", "asked"))]
+            self.assertTrue(details, plain)
+            for line in details:
+                self.assertTrue(line.startswith(" " * 7), line)
+            self.assertIn("cs resume c5c88889", plain)
+            for line in plain.splitlines():
+                self.assertLessEqual(cli.ui.cells(line), columns, line)
+
     def test_today_page_fits_a_short_window(self):
         import shutil
 
         from cs import cli
 
+        data = cli._today_data()
+        resume = f"cs resume {data['now']['id'][:8]}" if data.get("now") else ""
         for columns in (40, 100):
             size = os.terminal_size((columns, 24))
             with mock.patch.object(shutil, "get_terminal_size", return_value=size):
-                text = cli._capture(lambda: cli._render_today(cli._today_data()))
+                text = cli._capture(lambda: cli._render_today(data))
             plain = __import__("re").sub(r"\x1b\[[0-9;]*m", "", text)
             lines = [line for line in plain.splitlines() if line.strip()]
             self.assertLessEqual(len(lines), 22, plain)
+            if resume:
+                self.assertIn(resume, plain)
             for line in plain.splitlines():
                 self.assertLessEqual(cli.ui.cells(line), columns, line)

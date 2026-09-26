@@ -36,7 +36,6 @@ single line:
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
-     🔭  Similar work      sessions sharing one's files, repository and opening ask
      🔖  Saved searches    pick one and run it live
     MEASURE  ────────────────────────────────────────────────────────────
      📦  Repositories      sessions grouped by repository
@@ -290,9 +289,10 @@ minutes, budget left today, the last tool and the last failure, and a
 sparkline of that burn. Below 100 columns it is one line; at 100 and wider
 it is a small panel. It ticks about every five seconds from one indexed
 query and a bounded tail of that session's event log, and it does not move
-the 60-second refresh. A quiet store shows nothing. `cs today` puts the same
-reading at the top of one page, with what to pick up, since midnight, and
-this week.
+the 60-second refresh. A quiet store shows nothing. `cs today` opens on the same reading: the
+session's name, `cs resume` with its id, a ten-minute burn track and today's
+budget sharing one column, then up to three sessions to pick up, since
+midnight, and this week. A section with nothing to say is left off.
 
 ## 🔎 Reading a session
 
@@ -489,14 +489,6 @@ cs search three.js              # punctuation FTS5 rejects — retried for you
     2  03-05T19:31   23     4.4k   Refactor cart service   #acme/webshop
        turn …each `assistant` message carries a `usage` block…
 ```
-
-### 🔭 `cs similar <N|id>` — sessions that share this one
-
-Starts from a session, not from a search. It keeps at most ten others that
-share its repository, its files, or the distinctive words of its opening
-ask, and each row says which of those overlaps put it there. A word that
-shows up in a third of the store is not distinctive. Terms are taken from
-the masked ask.
 
 ### 🔖 Saved searches
 

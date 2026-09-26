@@ -262,8 +262,6 @@ class GovernanceTest(StoreTest):
             "cleanup": lambda: cli._render_cleanup(cli._cleanup_data(1)),
             "saved": lambda: cli._render_saved({"a-long-saved-name": "three.js "
                                                 "portal charts globe live data"}),
-            "similar": lambda: cli._render_similar(
-                cli._similar_data("sess-alpha")),
             "anomalies": lambda: cli._render_anomalies(cli._anomalies_data(3650)),
             "health": lambda: cli._render_health(cli._health_data("portal")),
             "patterns": lambda: cli._render_patterns(cli._patterns_data(3650)),

@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from support import Screen, StoreTest, _alpha_events, _event, _write_events
+from support import StoreTest, _alpha_events, _event, _write_events
 
 SECRET = "ghp_" + "M" * 36  # gitleaks:allow
 
@@ -92,6 +92,35 @@ class AnalysisTest(StoreTest):
         self.assertIn("big-model", out)
         self.assertIn("cache 75%", out)
         self.assertNotIn("calm-3", [s["id"] for s in data["sessions"]])
+
+    def test_a_day_and_its_session_are_one_card_and_the_rest_are_counted(self):
+        from cs import cli
+
+        def turn(sid, nano):
+            return {"id": sid, "summary": sid, "turn": 1, "nano_aiu": nano,
+                    "models": ["m"], "effort": None, "cache_hit": 0.5}
+
+        def day(n, sid, nano):
+            return {"day": f"2026-01-{n:02d}", "nano_aiu": nano,
+                    "baseline_nano_aiu": nano // 4, "factor": 4.0,
+                    "turns": [turn(sid, nano)]}
+
+        def session(n, sid):
+            return {"id": sid, "summary": sid, "n": n, "day": f"2026-01-{n:02d}",
+                    "session_nano_aiu": 4_000, "baseline_nano_aiu": 1_000,
+                    "factor": 4.0, "turns": [turn(sid, 4_000)]}
+
+        days = [day(i, f"s{i}", 4_000) for i in range(1, 8)]
+        sessions = [session(i, f"s{i}") for i in range(1, 8)]
+        data = {"window_days": 30, "factor": 2.0, "baseline_days": 14,
+                "series": [{"day": d["day"], "nano_aiu": d["nano_aiu"]} for d in days],
+                "days": days, "sessions": sessions}
+        text = cli._capture(lambda: cli._render_anomalies(data))
+        # The first five days each merge with their session, so those ids
+        # appear once. The other two are the "+2 more", not a second card.
+        self.assertEqual(text.count("s1"), 1)
+        self.assertNotIn("s6", text.split("+2 more")[0])
+        self.assertIn("+2 more", text)
 
     def test_no_baseline_means_no_flag(self):
         self._spend("lonely", date.today(), 50_000_000_000)
@@ -205,22 +234,10 @@ class AnalysisHomeTest(StoreTest):
         self.assertNotIn("Compare sessions", labels)
         self.assertEqual((group["Spend anomalies"], asks["Spend anomalies"]),
                          ("Measure", "period"))
-        self.assertEqual((group["Similar work"], asks["Similar work"]),
-                         ("Find", "ref"))
+        self.assertNotIn("Similar work", labels)
         improve = [label for label in labels if group[label] == "Improve"]
         self.assertEqual(improve, ["Context", "Repo health", "Prompt patterns",
                                    "Clean-up"])
-
-    def test_similar_asks_for_a_session_then_opens(self):
-        import curses
-
-        from cs import cli
-
-        labels = [item[1] for item in cli._home_items()]
-        at = labels.index("Similar work")
-        screen = Screen([curses.KEY_DOWN] * at + [10, *map(ord, "sess-alpha"), 10])
-        self.assertEqual(cli._home_tui(screen, {"revealed": True}),
-                         (at, "sess-alpha"))
 
     def test_every_new_row_opens(self):
         from cs import cli
@@ -229,8 +246,7 @@ class AnalysisHomeTest(StoreTest):
         with mock.patch.object(cli, "_page", return_value=True), \
                 redirect_stdout(io.StringIO()):
             for label, given in (("Spend anomalies", 7), ("Repo health", None),
-                                 ("Prompt patterns", 7),
-                                 ("Similar work", "sess-alpha")):
+                                 ("Prompt patterns", 7)):
                 with self.subTest(row=label):
                     action = items[label][3]
                     action(given) if given is not None else action()

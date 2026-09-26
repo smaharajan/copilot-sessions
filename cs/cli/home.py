@@ -54,7 +54,6 @@ from .reports import (
 from .today import (
     cmd_cleanup,
     cmd_saved_menu,
-    cmd_similar,
     cmd_today,
 )
 from .workflow import cmd_pins
@@ -107,9 +106,6 @@ def _home_items(period: int = 30,
          lambda: cmd_recent(0, show_all=True), ""),
         (ui.menu_icon("search"), "Search", "full text across every turn and checkpoint",
          cmd_search, "term"),
-        (ui.menu_icon("similar"), "Similar work",
-         "sessions sharing a session's files, repository and opening ask",
-         cmd_similar, "ref"),
         (ui.menu_icon("saved"), "Saved searches",
          "pick one and run it live",
          cmd_saved_menu, ""),
@@ -912,9 +908,6 @@ def _home_tui(screen, state: dict):
             term = _prompt(screen, theme, height - 1, width,
                            _TERM_PROMPTS.get(items[index][1], " search: "), "")
             return (index, term) if term else None
-        if asks == "ref":
-            ref = _prompt(screen, theme, height - 1, width, " session (#N or id): ", "")
-            return (index, ref.strip()) if ref and ref.strip() else None
         return (index, state.get("period", 30))
 
     try:
@@ -1326,9 +1319,6 @@ def cmd_help() -> None:
                           session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
     cs search --save <name> <words>   Save a search under a name, and run it
     cs saved [name]       List saved searches, or run one
-    cs similar <N|id>     Up to ten sessions that share that session's files,
-                          its repository, or the distinctive words of its
-                          opening ask — each row says which overlap it was
 
   {ui.BOLD}Inspect & resume{ui.RST}
     {ui.DIM}Two views of one session: show is the page, read is the words.{ui.RST}
@@ -1348,7 +1338,7 @@ def cmd_help() -> None:
                           {ui.DIM}recent, all, search, stats, timeline, cost, efficiency,
                           agents, repos, skills, profiles, standup, failures,
                           loops, subagents, switches, endings, today, next, eod,
-                          weekly, similar, saved, cleanup, budget,
+                          weekly, saved, cleanup, budget,
                           anomalies, health, patterns, doctor, rollup{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)

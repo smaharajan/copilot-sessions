@@ -1207,7 +1207,6 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "switches": ("🔀", "w"),
     # The one Today row, and the Find row that starts from a session.
     "today": ("🌅", "n"),
-    "similar": ("🔭", "s"),
     "saved": ("🔖", "v"),
     "cleanup": ("🚮", "c"),
     # Analysis that stayed on the menu.

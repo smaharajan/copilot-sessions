@@ -163,7 +163,6 @@ class DataFormatTest(StoreTest):
         # command of its own.
         reach = {"sessions": ("recent",), "search": ("search", "portal"),
                  "skills-by-repo": ("skills", "--by-repo"),
-                 "similar": ("similar", "sess-alpha"),
                  "today": ("today",)}
         for view in export.VIEWS:
             args = reach.get(view, (view,))
@@ -266,7 +265,7 @@ class DataFormatTest(StoreTest):
         self.assertEqual(code, 0)
         for cmd in export.DATA_COMMANDS:
             self.assertIn(cmd, out, cmd)
-            if cmd in ("export", "search", "similar", "diff"):
+            if cmd in ("export", "search", "diff"):
                 continue
             self.assertEqual(self._run(cmd, "--json")[0], 0, cmd)
 

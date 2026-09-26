@@ -1698,7 +1698,7 @@ class CSTest(StoreTest):
             self.assertTrue(label and description, f"unlabelled entry: {label!r}")
             self.assertTrue(callable(action), f"{label} has nothing to run")
             self.assertIn(
-                asks, ("", "term", "period", "theme", "ref"),
+                asks, ("", "term", "period", "theme"),
                 f"{label}: odd ask {asks!r}",
             )
             # Two cells, so the label column starts in the same place on
@@ -1709,8 +1709,7 @@ class CSTest(StoreTest):
         self.assertEqual([item[1] for item in items if item[4] == "term"],
                          ["Search"],
                          "only search asks for text")
-        self.assertEqual([item[1] for item in items if item[4] == "ref"],
-                         ["Similar work"])
+        self.assertEqual([item[1] for item in items if item[4] == "ref"], [])
         self.assertEqual([item[1] for item in items if item[4] == "theme"],
                          ["Theme"], "only Theme changes appearance")
         self.assertTrue([item for item in items if item[4] == "period"],

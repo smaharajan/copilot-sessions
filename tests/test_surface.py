@@ -77,7 +77,6 @@ ARGUMENTS = {
     "export": ["sess-alpha"],
     "resume": ["sess-alpha"], "r": ["sess-alpha"],
     "search": ["portal"], "find": ["portal"], "grep": ["portal"],
-    "similar": ["sess-alpha"], "like": ["sess-alpha"],
     "files": ["globe.js"],
     "completion": ["bash"],
     "pin": ["sess-alpha"], "unpin": ["sess-alpha"],
@@ -94,7 +93,7 @@ SKIP = {"-h", "--help", "-v", "--version"}
 NEEDS_A_SESSION = {
     "show", "view", "info", "brief", "digest", "summary", "read",
     "transcript", "export", "resume", "r",
-    "pin", "unpin", "note", "tag", "untag", "similar", "like",
+    "pin", "unpin", "note", "tag", "untag",
 }
 
 

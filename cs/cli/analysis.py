@@ -176,39 +176,32 @@ def _render_anomalies(data: dict) -> None:
           f"{data['baseline_days']} days before. ▴ marks a flagged day.",
           inner, indent=4)
     print()
-    # A day whose spend is one session is one story. Say it once.
-    owned = {}
-    for day in data["days"]:
+    # Top five days and top five sessions. A day that is mostly one flagged
+    # session is one card, so the same spend is not told twice.
+    ranked_days = sorted(data["days"], key=lambda item: -item["factor"])
+    sessions_by_id = {session["id"]: session for session in data["sessions"]}
+    paired = []
+    merged = set()
+    for day in ranked_days:
         by_session: dict[str, int] = {}
         for turn in day["turns"]:
-            by_session[turn["id"]] = by_session.get(turn["id"], 0) + turn["nano_aiu"]
-        if by_session:
+            by_session[turn["id"]] = (
+                by_session.get(turn["id"], 0) + turn["nano_aiu"])
+        twin = None
+        if by_session and day["nano_aiu"]:
             owner = max(by_session, key=by_session.get)
             if by_session[owner] >= day["nano_aiu"] * 0.6:
-                owned[day["day"]] = owner
-    sessions = {session["id"]: session for session in data["sessions"]}
-    cards = []
-    seen_sessions = set()
-    for day in sorted(data["days"], key=lambda item: -item["factor"])[:5]:
-        owner = owned.get(day["day"])
-        twin = sessions.get(owner) if owner else None
-        if twin and twin["day"] == day["day"]:
-            seen_sessions.add(owner)
-            cards.append(("day", day, twin))
-        else:
-            cards.append(("day", day, None))
-    for session in data["sessions"]:
-        if session["id"] in seen_sessions:
-            continue
-        if len([card for card in cards if card[0] == "session" or card[2]]) >= 5:
-            break
+                candidate = sessions_by_id.get(owner)
+                if candidate and candidate.get("day") == day["day"]:
+                    twin = candidate
+                    merged.add(owner)
+        paired.append(("day", day, twin))
+    cards = list(paired[:5])
+    session_cards = [session for session in data["sessions"]
+                     if session["id"] not in merged]
+    for session in session_cards[:5]:
         cards.append(("session", None, session))
-        if sum(1 for kind, _day, twin in cards if kind == "session" or twin) >= 5 \
-                and len(cards) >= 5:
-            break
-    cards = cards[:5]
-    extra = max(0, len(data["days"]) + len(data["sessions"]) - len(cards)
-                - len(seen_sessions))
+    extra = (max(0, len(paired) - 5) + max(0, len(session_cards) - 5))
     for _kind, day, session in cards:
         if day and session:
             title = (f"{day['day']} · {session['summary'] or session['id'][:8]}")

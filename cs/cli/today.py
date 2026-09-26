@@ -1,6 +1,5 @@
-"""Day-to-day views: what to pick up, what the day and week came to, and finding
-past work — next up, end of day, weekly review, similar work, my asks, saved
-searches, file history and clean-up.
+"""Day-to-day views: what to pick up, what the day and week came to, saved
+searches and clean-up.
 
 As in `evidence.py`, each reading is a `_*_data` function returning plain,
 already-masked data (what `--json` hands back) and the page draws that same
@@ -10,11 +9,10 @@ data. Every reason a session is put in front of you is printed with it.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sqlite3
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from .. import (
@@ -35,9 +33,7 @@ from ._common import (
     _mouse_event,
     _note,
     _page,
-    _resolve_ref,
     _save_index,
-    _user_text,
     _visible,
     _with_assets,
 )
@@ -461,13 +457,16 @@ def _today_data() -> dict:
         reading["now"] = {
             "id": session["id"],
             "summary": session["summary"],
+            "repo": session["repo"] or None,
             "turns": session["turns"],
             "nano_aiu": session["nano_aiu"],
             "burn_per_minute": round(session["burn_per_minute"], 4),
+            "burn": list(session.get("burn") or []),
             "today_nano_aiu": session["today_nano_aiu"],
             "budget_aiu": session["budget"],
             "left_aiu": None if session["left"] is None else round(session["left"], 4),
             "last_tool": session["last_tool"] or None,
+            "last_tool_at": session["last_tool_at"] or None,
             "last_failure": (
                 {"tool": session["last_failure"][0], "at": session["last_failure"][1]}
                 if session["last_failure"] else None),
@@ -512,176 +511,363 @@ def cmd_today() -> bool:
     return _page(_capture(lambda: _render_today(_today_data())))
 
 
+# Ten one-minute bins. The burn track and the budget bar are this wide so
+# their captions start in the same column.
+_BINS = 10
+_LABEL = 5
+
+
+def _line(indent: int, text: str, width: int, colour: str = "") -> None:
+    """One indented line, clipped to the window. Empty text draws nothing."""
+    if not text:
+        return
+    shown = ui._fit(text, max(_edge(width) - indent, 1))
+    if colour:
+        shown = f"{colour}{shown}{ui.RST}"
+    print(f"{' ' * indent}{shown}")
+
+
+def _choose(options: list[str], room: int) -> str:
+    """The first phrase that fits, else the last one clipped to `room`."""
+    for option in options:
+        if ui.cells(option) <= room:
+            return option
+    return ui._fit(options[-1] if options else "", max(room, 1))
+
+
+def _session_facts(now: dict, room: int) -> str:
+    """Repo, turns, this session's spend — dropping the spend, then the repo,
+    before the line is allowed to run past `room`."""
+    turns = _plural(now.get("turns") or 0, "turn")
+    aiu = f"{(now.get('nano_aiu') or 0) / 1e9:,.2f} AIU"
+    repo = now.get("repo") or ""
+    full = [part for part in (repo, turns, aiu) if part]
+    if ui.cells(" · ".join(full)) <= room:
+        return " · ".join(full)
+    shorter = [part for part in (repo, turns) if part]
+    if shorter and ui.cells(" · ".join(shorter)) <= room:
+        return " · ".join(shorter)
+    tail = f" · {turns}"
+    if repo and room > ui.cells(tail) + 4:
+        return ui._fit(repo, room - ui.cells(tail)) + tail
+    return ui._fit(turns, max(room, 1))
+
+
+def _edge(width: int) -> int:
+    """The column a full line ends on. The page rule stops two short of the
+    window, and a line that runs past it looks longer than the page."""
+    return max(width - 2, 16)
+
+
+def _masthead(left: str, right: str, width: int) -> None:
+    """Facts on the left, the resume command on the right, one line.
+
+    When the window cannot hold both with a gap between them, the command
+    takes the next line whole. It is the thing on the page you copy.
+    """
+    room = max(_edge(width) - 4, 1)
+    if left and right and ui.cells(left) + 3 + ui.cells(right) <= room:
+        gap = room - ui.cells(left) - ui.cells(right)
+        print(f"    {ui.MUTED}{left}{ui.RST}{' ' * gap}{ui.CODE}{right}{ui.RST}")
+        return
+    _line(4, left, width, ui.MUTED)
+    _line(4, right, width, ui.CODE)
+
+
+def _clock(stamp: str) -> str:
+    """HH:MM from a tool stamp. Anything else is returned as it arrived."""
+    text = (stamp or "").strip()
+    if len(text) >= 8 and text[2] == ":" and text[5] == ":":
+        return text[:5]
+    return text
+
+
+def _resample(values: list, count: int) -> list:
+    """`count` buckets. A bucket keeps its peak, so a spike stays visible."""
+    if count <= 0:
+        return []
+    if not values:
+        return [0] * count
+    if len(values) == count:
+        return list(values)
+    out = []
+    last = len(values)
+    for index in range(count):
+        start = index * last // count
+        end = max((index + 1) * last // count, start + 1)
+        out.append(max(values[start:min(end, last)]))
+    return out
+
+
+def _paint_track(raw: str, hot: str) -> str:
+    """A sparkline whose quiet minutes are a visible dot, not a blank."""
+    parts: list[str] = []
+    buf = ""
+    colour: str | None = None
+
+    def flush() -> None:
+        nonlocal buf, colour
+        if not buf:
+            return
+        parts.append(f"{colour}{buf}{ui.RST}" if colour else buf)
+        buf = ""
+
+    for char in raw:
+        glyph, col = ("·", ui.SLATE) if char == " " else (char, hot)
+        if col != colour:
+            flush()
+            colour = col
+        buf += glyph
+    flush()
+    return "".join(parts)
+
+
+def _meter_span(width: int) -> int:
+    """How wide the shared graphic column is at this window.
+
+    Seventeen cells stay free for the caption, which is what "4.00/20 · 16
+    left" needs, and the row still ends on the rule.
+    """
+    return max(4, min(_BINS, _edge(width) - 4 - _LABEL - 2 - 2 - 17))
+
+
+def _meter(label: str, graphic: str, span: int, options: list[str],
+           width: int, colour: str = "") -> None:
+    """Label, a fixed graphic, then the first caption that fits beside it."""
+    room = max(_edge(width) - (4 + _LABEL + 2 + span + 2), 1)
+    shown = _choose(options, room)
+    if colour:
+        shown = f"{colour}{shown}{ui.RST}"
+    print(f"    {ui.MUTED}{label:<{_LABEL}}{ui.RST}  {graphic}  {shown}")
+
+
+def _render_now(now: dict, width: int, inner: int) -> None:
+    """The session running now: who it is, then what the last ten minutes
+    and today's budget look like, on one shared column."""
+    width = min(width, max(inner + 4, 16))
+    title = now.get("summary") or now["id"][:8]
+    print(f"  {ui.MINT}●{ui.RST} {ui.BOLD}"
+          f"{ui._fit(title, max(_edge(width) - 4, 1))}{ui.RST}")
+    command = f"cs resume {now['id'][:8]}"
+    room = max(_edge(width) - 4, 1)
+    # Share the line only when the facts are whole. A clipped repo with the
+    # command jammed against it reads as a broken row, so the command drops
+    # to the next line and the facts keep the width.
+    facts = _session_facts(now, 10_000)
+    if room - ui.cells(command) - 3 >= ui.cells(facts):
+        _masthead(facts, command, width)
+    else:
+        _line(4, _session_facts(now, max(width - 4, 1)), width, ui.MUTED)
+        _line(4, command, width, ui.CODE)
+    room = max(width - 4, 1)
+    failure = now.get("last_failure") or {}
+    tool = now.get("last_tool") or ""
+    tool_clock = _clock(now.get("last_tool_at") or "")
+    fail_clock = _clock(failure.get("at") or "") if failure else ""
+    same = bool(tool and failure.get("tool") == tool and fail_clock == tool_clock)
+    if tool and not same:
+        plain = f"{tool} · {tool_clock}" if tool_clock else tool
+        if ui.cells(plain) <= room:
+            tail = f"{ui.MUTED} · {tool_clock}{ui.RST}" if tool_clock else ""
+            print(f"    {ui.CODE}{tool}{ui.RST}{tail}")
+        else:
+            _line(4, plain, width, ui.MUTED)
+    if failure.get("tool"):
+        detail = f"{failure['tool']} · {fail_clock}" if fail_clock else failure["tool"]
+        _line(4, f"failed · {detail}", width, ui.ROSE)
+    print()
+    span = _meter_span(width)
+    bins = _resample(list(now.get("burn") or []), span)
+    rate = f"{now.get('burn_per_minute') or 0:,.2f} AIU/min"
+    _meter("burn", _paint_track(ui.sparkline(bins) or (" " * span), ui.VIOLET),
+           span, [f"{rate} · last 10 min", rate], width)
+    spent = (now.get("today_nano_aiu") or 0) / 1e9
+    limit = now.get("budget_aiu")
+    if limit:
+        colour = ui.budget_colour(spent, limit)
+        bar = ui.bar(min(spent, limit), limit, span, colour=colour, track=True)
+        if spent > limit:
+            over = spent - limit
+            options = [f"over {over:,.2f} AIU", f"over {over:,.2f}"]
+        else:
+            left = max(limit - spent, 0)
+            options = [
+                f"{spent:,.2f} of {limit:g} · {left:,.2f} left",
+                f"{spent:,.2f}/{limit:g} · {left:,.0f} left",
+                f"{spent:,.2f}/{limit:g}",
+            ]
+        _meter("today", bar, span, options, width, colour)
+    else:
+        # No limit means no share to draw. A hairline keeps the caption in
+        # the same column as the burn rate, without looking like an empty bar.
+        track = f"{ui.SLATE}{'─' * span}{ui.RST}"
+        _meter("today", track, span, [
+            f"{spent:,.2f} AIU · no limit",
+            f"{spent:,.2f} · no limit",
+            f"{spent:,.2f} AIU",
+        ], width)
+
+
+def _keep_command(why: str, command: str, room: int) -> str:
+    """The reason, then the command. The command survives a narrow window."""
+    if not why:
+        return ui._fit(command, room)
+    both = f"{why} · {command}"
+    if ui.cells(both) <= room:
+        return both
+    glue = f" · {command}"
+    if ui.cells(command) >= room or ui.cells(glue) > room:
+        return ui._fit(command, room)
+    return ui._fit(why, room - ui.cells(glue)) + glue
+
+
+def _render_pickup(sessions: list, width: int, inner: int) -> None:
+    """Up to three sessions worth going back to, each with why and how.
+
+    One line when the title, the reason and the command all fit. Otherwise
+    the reason keeps a line of its own and the command follows it, so a
+    narrow window never cuts the evidence off mid-word.
+    """
+    show = sessions[:3]
+    print(ui.heading(f"Pick up · {len(show)}", ui.SKY, inner))
+    # 7 columns of "    N  " tuck the detail under the title. On a window
+    # where that tuck would cut the reason, the detail moves out to the
+    # card's own inset so the sentence stays whole and still ends on the rule.
+    tucked = max(_edge(width) - 7, 1)
+    inset = max(_edge(width) - 4, 1)
+    for number, session in enumerate(show, 1):
+        title = session.get("summary") or "(untitled)"
+        reasons = session.get("reasons") or []
+        why = reasons[0]["why"] if reasons else ""
+        command = session.get("resume") or f"cs resume {session['id'][:8]}"
+        tail = f"{why} · {command}" if why else command
+        if ui.cells(title) + 2 + ui.cells(tail) <= tucked:
+            print(f"    {ui.SKY}{number}{ui.RST}  {title}  {ui.MUTED}{tail}{ui.RST}")
+            continue
+        print(f"    {ui.SKY}{number}{ui.RST}  {ui._fit(title, tucked)}")
+        if why and ui.cells(f"{why} · {command}") <= tucked:
+            print(f"       {ui.MUTED}{why} · {command}{ui.RST}")
+        elif why and ui.cells(why) <= inset:
+            indent = next(n for n in (7, 6, 5, 4)
+                          if ui.cells(why) <= _edge(width) - n)
+            pad = " " * indent
+            print(f"{pad}{ui.MUTED}{why}{ui.RST}")
+            _line(indent, command, width, ui.CODE)
+        else:
+            # Cut at any inset, so moving out saves nothing and breaks the
+            # column the other cards' details sit in.
+            _line(7, _keep_command(why, command, tucked), width, ui.MUTED)
+
+
+def _coloured_bits(bits: list[tuple[str, str]], width: int) -> None:
+    """One line of ` · `-joined facts. A warm clause keeps its colour when
+    the whole line fits; otherwise the line is muted and clipped."""
+    plain = " · ".join(text for text, _colour in bits)
+    room = max(_edge(width) - 4, 1)
+    if ui.cells(plain) > room or not any(colour for _text, colour in bits):
+        _line(4, plain, width, ui.MUTED)
+        return
+    parts = []
+    for index, (text, colour) in enumerate(bits):
+        if index:
+            parts.append(f"{ui.MUTED} · {ui.RST}")
+        parts.append(f"{colour}{text}{ui.RST}" if colour else text)
+    print("    " + "".join(parts))
+
+
+def _clauses(parts: list[str], room: int) -> list[str]:
+    """As many clauses as fit, dropped from the end, never cut mid-phrase."""
+    chosen = list(parts)
+    while chosen and ui.cells(" · ".join(chosen)) > room:
+        chosen.pop()
+    return chosen
+
+
+def _render_since(since: dict, width: int, inner: int, show_spend: bool) -> None:
+    work: list[str] = []
+    findings: list[tuple[str, str]] = []
+    if "sessions" in since:
+        work.append(_plural(since["sessions"], "session"))
+    if show_spend and since.get("nano_aiu"):
+        work.append(f"{since['nano_aiu'] / 1e9:,.2f} AIU")
+    if "commits" in since or "prs" in since:
+        work.append(f"{_plural(since.get('commits', 0), 'commit')} · "
+                    f"{_plural(since.get('prs', 0), 'PR')}")
+    if "handoffs" in since:
+        work.append(_plural(since["handoffs"], "handoff"))
+    if "tool_failures" in since:
+        findings.append((_plural(since["tool_failures"], "tool failure"), ui.ROSE))
+    if "stuck_loops" in since:
+        findings.append((_plural(since["stuck_loops"], "stuck loop"), ui.ROSE))
+    if not work and not findings:
+        return
+    print(ui.heading("Since midnight", ui.VIOLET, inner))
+    room = max(_edge(width) - 4, 1)
+    one = work + [text for text, _colour in findings]
+    if ui.cells(" · ".join(one)) <= room:
+        _coloured_bits([(text, "") for text in work] + findings, width)
+        return
+    kept = _clauses(work, room)
+    if kept:
+        _line(4, " · ".join(kept), width, ui.MUTED)
+    kept_findings = []
+    for text, colour in findings:
+        trial = kept_findings + [(text, colour)]
+        if ui.cells(" · ".join(item for item, _c in trial)) <= room:
+            kept_findings = trial
+    if kept_findings:
+        _coloured_bits(kept_findings, width)
+
+
+def _render_week(week: dict, width: int, inner: int) -> None:
+    print(ui.heading("This week", ui.ACCENT, inner))
+    change = week.get("change")
+    if change is None:
+        trend = "no earlier week"
+    elif change == 0:
+        trend = "level with last week"
+    else:
+        trend = f"{'up' if change > 0 else 'down'} {abs(change):.0%}"
+    nano = week.get("nano_aiu") or 0
+    spend = f"{nano / 1e9:,.2f} AIU · {trend}"
+    days = [day["nano_aiu"] for day in week.get("by_day") or []]
+    # One day has no shape. The sentence is the whole story.
+    if len(days) < 2:
+        _line(4, spend, width)
+        return
+    span = min(len(days), max(4, width - 4 - 2 - 18))
+    values = days if len(days) == span else _resample(days, span)
+    graphic = _paint_track(ui.sparkline(values) or (" " * span), ui.VIOLET)
+    caption = ui._fit(spend, max(_edge(width) - 4 - span - 2, 1))
+    print(f"    {graphic}  {caption}")
+
+
 def _render_today(data: dict) -> None:
-    """One screenful. Sections with nothing to say are not drawn."""
+    """One screen. The live session is the page; the day and the week follow
+    only when they have something to say."""
     width = min(shutil.get_terminal_size().columns, 100)
     inner = max(width - 4, 16)
     print()
-    print(ui.rule(inner, "Today"))
+    print(ui.rule(inner, "Today", note="live" if data.get("now") else ""))
+    print()
     if not data:
         _note("Nothing recorded yet, and nothing waiting.", inner)
         print()
         return
     if "now" in data:
-        now = data["now"]
-        title = now["summary"] or now["id"][:8]
-        print(ui.heading("Now", ui.MINT, inner))
-        print(f"    {ui.BOLD}{ui._fit(title, inner - 4)}{ui.RST}")
-        bits = [f"{now['burn_per_minute']:,.2f} AIU/min",
-                _spend_line(now["today_nano_aiu"], now["budget_aiu"]) + " today"]
-        if now.get("last_tool"):
-            bits.append(now["last_tool"])
-        _note(" · ".join(bits), inner, indent=4)
+        _render_now(data["now"], width, inner)
+    else:
+        _line(4, "Nothing running.", width, ui.MUTED)
+    print()
     pickup = data.get("pick_up") or []
     if pickup:
-        show = pickup[:3]
-        print(ui.heading(f"Pick up · {len(show)}", ui.SKY, inner))
-        for index, session in enumerate(show, 1):
-            why = session["reasons"][0]["why"] if session["reasons"] else ""
-            print(f"    {ui.SKY}{index}{ui.RST}  "
-                  f"{ui._fit(session['summary'] or '(untitled)', inner - 8)}")
-            if why:
-                _note(why, inner, indent=7)
-            print(f"       {ui.MUTED}cs resume {index}{ui.RST}")
-    since = data.get("since_midnight")
-    if since:
-        bits = []
-        if "sessions" in since:
-            bits.append(_plural(since["sessions"], "session"))
-        if "commits" in since or "prs" in since:
-            bits.append(f"{_plural(since.get('commits', 0), 'commit')} · "
-                        f"{_plural(since.get('prs', 0), 'PR')}")
-        if "handoffs" in since:
-            bits.append(_plural(since["handoffs"], "handoff"))
-        if "tool_failures" in since:
-            bits.append(_plural(since["tool_failures"], "tool failure"))
-        print(ui.heading("Since midnight", ui.VIOLET, inner))
-        _note(" · ".join(bits), inner, indent=4)
-    week = data.get("this_week")
-    if week and (week["sessions"] or week["nano_aiu"] or week["by_day"]):
-        print(ui.heading("This week", ui.ACCENT, inner))
-        change = week["change"]
-        trend = ("no earlier week to compare" if change is None else
-                 f"{'up' if change > 0 else 'down'} {abs(change):.0%}")
-        spend = f"{week['nano_aiu'] / 1e9:,.2f} AIU · {trend}"
-        spark = ui.sparkline([day["nano_aiu"] for day in week["by_day"]]).rstrip()
-        if spark and inner >= 28:
-            room = max(6, min(len(spark), inner - 6 - len(spend)))
-            print(f"    {ui.VIOLET}{spark[-room:]}{ui.RST}  "
-                  f"{ui._fit(spend, inner - room - 6)}")
-        else:
-            _note(spend, inner, indent=4)
-    print()
-
-
-# ── Similar work ─────────────────────────────────────────────────────
-
-_SIMILAR_STOP = frozenset(
-    "a an the and or to of for in on with from this that your you we our it is "
-    "are was were be as at by if then else not into over about just like make "
-    "using use can will would should could please also than them they their "
-    "its have has had but not for all any out get got let".split()
-)
-
-
-def _opening_terms(text: str) -> set[str]:
-    """Distinctive words of an ask, after masking. Secrets do not become terms."""
-    cleaned = _user_text(text).lower()
-    return {word for word in re.findall(r"[a-z][a-z0-9_-]{3,}", cleaned)
-            if word not in _SIMILAR_STOP and "redact" not in word}
-
-
-def _similar_data(ref: str) -> dict:
-    """Up to ten sessions that share files, repository or opening terms.
-
-    The evidence on each row is the overlap that put it here. A session that
-    shares none of those is not similar, however many times the words appear
-    in a search.
-    """
-    source = _resolve_ref(ref)
-    conn = db.connect()
-    try:
-        rows = {row[0]: row for row in db.recent_sessions(conn, 0)}
-        mine = rows.get(source)
-        if mine is None:
-            return {"session": source, "count": 0, "sessions": []}
-        files = [path for path, _tool in db.session_files(conn, source)]
-        prompts = db.opening_prompts(conn, list(rows), first_only=True)
-        shared: dict[str, set[str]] = defaultdict(set)
-        if files and db.has_files(conn):
-            for chunk in db._chunks(files):
-                marks = ",".join("?" * len(chunk))
-                for sid, path in conn.execute(
-                        f"SELECT session_id, file_path FROM session_files "
-                        f"WHERE file_path IN ({marks})", chunk):
-                    if sid != source and isinstance(path, str):
-                        shared[sid].add(path)
-    finally:
-        conn.close()
-    openings = {sid: _opening_terms(pairs[0][1]) if pairs else set()
-                for sid, pairs in prompts.items()}
-    frequency: Counter = Counter()
-    for terms in openings.values():
-        frequency.update(terms)
-    ceiling = max(3, len(rows) // 3)
-    distinctive = {term for term in openings.get(source, set())
-                   if frequency[term] <= ceiling}
-    repo = mine[3] or ""
-    scored = []
-    for sid, row in rows.items():
-        if sid == source:
-            continue
-        reasons = []
-        score = 0
-        if repo and row[3] == repo:
-            score += 4
-            reasons.append("same repository")
-        overlap = shared.get(sid) or set()
-        if overlap:
-            score += min(9, 3 * len(overlap))
-            reasons.append(_plural(len(overlap), "shared file"))
-        words = sorted(distinctive & openings.get(sid, set()))
-        if words:
-            score += min(6, len(words))
-            reasons.append("opening: " + ", ".join(words[:4]))
-        if score <= 0:
-            continue
-        scored.append({**_session_fields(row), "score": score,
-                       "evidence": " · ".join(reasons)})
-    scored.sort(key=lambda item: (-item["score"], item["last_active"]), reverse=False)
-    scored.sort(key=lambda item: -item["score"])
-    top = scored[:10]
-    return {"session": source, "count": len(top), "sessions": top}
-
-
-def cmd_similar(ref: str) -> bool:
-    """Sessions that share a chosen session's files, repository or opening ask."""
-    return _page(_capture(lambda: _render_similar(_similar_data(ref))))
-
-
-def _render_similar(data: dict) -> None:
-    width = min(shutil.get_terminal_size().columns, 96)
-    inner = width - 4
-    print()
-    print(ui.rule(inner, "Similar work"))
-    print()
-    sessions = data["sessions"]
-    if not sessions:
-        _note("Nothing else shares that session's repository, files or the "
-              "distinctive words of its opening ask.", inner)
-        print()
-        return
-    _headline(f"{_plural(len(sessions), 'session')} like "
-              f"{data['session'][:8]}, closest first", inner)
-    print()
-    index = {}
-    for number, session in enumerate(sessions, 1):
-        index[number] = session["id"]
-        print(f"  {ui.SKY}{number:>3}{ui.RST}  {ui.BOLD}"
-              f"{ui._fit(session['summary'] or '(untitled)', inner - 8)}{ui.RST}")
-        _note(session["evidence"], inner, indent=7)
-        print(f"       {ui.MUTED}cs resume {number}{ui.RST}")
-    _save_index(index)
+        _render_pickup(pickup, width, inner)
+    if data.get("since_midnight"):
+        _render_since(data["since_midnight"], width, inner, "now" not in data)
+    if data.get("this_week"):
+        week = data["this_week"]
+        if week.get("sessions") or week.get("nano_aiu") or week.get("by_day"):
+            _render_week(week, width, inner)
     print()
 
 

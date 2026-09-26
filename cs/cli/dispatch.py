@@ -64,7 +64,6 @@ from .today import (
     cmd_eod,
     cmd_next,
     cmd_saved,
-    cmd_similar,
     cmd_today,
     cmd_weekly,
 )
@@ -85,7 +84,7 @@ _COMPLETION_COMMANDS = (
     "instructions", "hooks", "mcp", "standup", "daily", "coach", "rhythm",
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "today", "similar", "saved", "cleanup",
+    "next", "eod", "weekly", "today", "saved", "cleanup",
     "anomalies", "health", "patterns",
     "doctor", "rollup",
     "show", "brief", "read",
@@ -490,13 +489,6 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
                     "today": export.today,
                     "cleanup": lambda: export.cleanup(14 if days is None else days)}
         export.emit(builders[cmd](), fmt)
-        return 0
-
-    if cmd == "similar":
-        if len(rest) != 1:
-            print("error: similar <#N|id> — which session", file=sys.stderr)
-            return 1
-        export.emit(export.similar(rest[0]), fmt)
         return 0
 
     if cmd == "saved":
@@ -907,12 +899,6 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
             return 1
         cmd_today()
-    elif cmd in ("similar", "like"):
-        if len(rest) != 1:
-            print("error: missing argument — usage: cs similar <#N|id>",
-                  file=sys.stderr)
-            return 1
-        cmd_similar(rest[0])
     elif cmd == "saved":
         if len(rest) > 1:
             print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
