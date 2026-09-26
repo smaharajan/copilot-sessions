@@ -161,7 +161,8 @@ class EvidenceTest(StoreTest):
         code, out = self._run("switches")
         self.assertEqual(code, 0)
         self.assertIn("gpt-5.5 → claude-opus-4.8", out)
-        self.assertIn("model_picker", out)
+        self.assertIn("effort medium → high", out)
+        self.assertIn("picker", out)
         session = self._json("switches")["sessions"][0]
         switch = session["switches"][0]
         self.assertEqual((switch["from"], switch["to"], switch["source"]),

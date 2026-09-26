@@ -120,8 +120,10 @@ def _next_data(days: int = _NEXT_DAYS) -> dict:
         loop = digests[sid]["loops"][0]
         turns = _turn_range(events.turn_of(loop["start"], times[sid]),
                             events.turn_of(loop["end"], times[sid]))
+        where = ("" if turns == "—" else
+                 f" · turns {turns}" if "–" in turns else f" · turn {turns}")
         reasons[sid].append(("stuck", f"stuck: {_clean(loop['tool'])} failed "
-                                      f"{loop['run']}× in a row · turns {turns}"))
+                                      f"{loop['run']}× in a row{where}"))
     for sid in _tagged(_WIP):
         reasons[sid].append(("wip", "tagged wip"))
     for sid in ui.pinned_ids():
@@ -175,12 +177,24 @@ def _render_next(data: dict) -> None:
     index = {}
     for n, session in enumerate(sessions[:_TOP * 2], 1):
         index[n] = session["id"]
-        print(f"  {ui.SKY}{n:>3}{ui.RST}  {ui.BOLD}"
-              f"{ui._fit(session['summary'] or '(untitled)', inner - 8)}{ui.RST}")
+        # The command rides the title line, right-aligned, so each session
+        # costs its reasons and nothing more.
+        command = f"cs resume {n}"
+        title = session["summary"] or "(untitled)"
+        room = inner - 7 - len(command) - 2
+        if room >= 16:
+            title = ui._fit(title, room)
+            gap = " " * (room - ui.cells(title) + 2)
+            print(f"  {ui.SKY}{n:>3}{ui.RST}  {ui.BOLD}{title}{ui.RST}"
+                  f"{gap}{ui.MUTED}{command}{ui.RST}")
+        else:
+            print(f"  {ui.SKY}{n:>3}{ui.RST}  {ui.BOLD}"
+                  f"{ui._fit(title, inner - 7)}{ui.RST}")
         for reason in session["reasons"]:
             colour = ui.ROSE if reason["kind"] in ("ended", "stuck") else ui.AMBER
             print(f"       {colour}·{ui.RST} {ui._fit(reason['why'], inner - 9)}")
-        print(f"       {ui.MUTED}cs resume {n}{ui.RST}")
+        if room < 16:
+            print(f"       {ui.MUTED}{command}{ui.RST}")
     _save_index(index)
     print()
     _hint("Enter on the home row opens these as a listing, where r resumes", inner)
@@ -277,16 +291,31 @@ def _render_eod(data: dict) -> None:
     print()
     print(ui.rule(inner, "End of day · since midnight"))
     print()
-    print(ui.field("sessions", f"{len(data['sessions']):,}"))
+    if not (data["sessions"] or data["nano_aiu"] or data["commits"] or data["prs"]
+            or data["handoffs"]):
+        _note("Nothing yet today: no session has run since midnight.", inner,
+              indent=4)
+        print()
+        _hint("cs weekly — the last 7 days · cs next — what to pick up", inner)
+        print()
+        return
+    # The day in one bold line, and the tool calls muted under it.
     colour = ui.ROSE if data["over_budget"] else ""
-    print(ui.field("spend", f"{colour}{_spend_line(data['nano_aiu'], data['budget_aiu'])}"
-                            f"{ui.RST if colour else ''}"))
-    print(ui.field("shipped", f"{_plural(len(data['commits']), 'commit')} · "
-                              f"{_plural(len(data['prs']), 'PR')}"))
+    parts = [(_plural(len(data["sessions"]), "session"), ""),
+             (_spend_line(data["nano_aiu"], data["budget_aiu"]), colour),
+             (f"{_plural(len(data['commits']), 'commit')} · "
+              f"{_plural(len(data['prs']), 'PR')}", "")]
+    # One line when it fits; otherwise the shipped count takes the next.
+    lines = [parts]
+    if ui.cells(" · ".join(text for text, _c in parts)) > inner - 4:
+        lines = [parts[:2], parts[2:]]
+    for line in lines:
+        print("    " + f"{ui.MUTED} · {ui.RST}".join(
+            f"{colour}{ui.BOLD}{ui._fit(text, inner - 4)}{ui.RST}"
+            for text, colour in line))
     if data["tool_calls"]:
-        print(ui.field("tools", f"{data['tool_calls']:,} calls · "
-                                f"{data['tool_failures']} failed · "
-                                f"{_plural(data['stuck_loops'], 'stuck loop')}"))
+        _note(f"{data['tool_calls']:,} tool calls · {data['tool_failures']:,} failed · "
+              f"{_plural(data['stuck_loops'], 'stuck loop')}", inner, indent=4)
     print()
     if data["sessions"]:
         print(ui.heading("What moved", ui.MINT, inner))
@@ -307,8 +336,7 @@ def _render_eod(data: dict) -> None:
             print(f"    {ui.SKY}{handoff['id'][:8]}{ui.RST}  "
                   f"{ui._fit(handoff['summary'] or '(untitled)', inner - 14)}")
         print()
-    _hint("cs eod --md — the same as Markdown to paste · cs next — what to pick "
-          "up tomorrow", inner)
+    _hint("cs eod --md — as Markdown to paste · cs next — what to pick up", inner)
     print()
 
 
@@ -823,14 +851,18 @@ def _render_week(week: dict, width: int, inner: int) -> None:
     print(ui.heading("This week", ui.ACCENT, inner))
     change = week.get("change")
     if change is None:
-        trend = "no earlier week"
+        trend = "no earlier week to compare"
     elif change == 0:
-        trend = "level with last week"
+        trend = "level with the week before"
     else:
-        trend = f"{'up' if change > 0 else 'down'} {abs(change):.0%}"
+        trend = f"{'up' if change > 0 else 'down'} {abs(change):.0%} on the week before"
     nano = week.get("nano_aiu") or 0
-    spend = f"{nano / 1e9:,.2f} AIU · {trend}"
-    days = [day["nano_aiu"] for day in week.get("by_day") or []]
+    spend = f"{ui.fmt_aiu(nano)} AIU"
+    if week.get("sessions"):
+        spend += f" over {_plural(week['sessions'], 'session')}"
+    spend += f" · {trend}"
+    by_day = week.get("by_day") or []
+    days = [day["nano_aiu"] for day in by_day]
     # One day has no shape. The sentence is the whole story.
     if len(days) < 2:
         _line(4, spend, width)
@@ -838,8 +870,20 @@ def _render_week(week: dict, width: int, inner: int) -> None:
     span = min(len(days), max(4, width - 4 - 2 - 18))
     values = days if len(days) == span else _resample(days, span)
     graphic = _paint_track(ui.sparkline(values) or (" " * span), ui.VIOLET)
-    caption = ui._fit(spend, max(_edge(width) - 4 - span - 2, 1))
-    print(f"    {graphic}  {caption}")
+    caption = _clauses(spend.split(" · "), max(_edge(width) - 4 - span - 3, 1))
+    print(f"    {graphic}   {' · '.join(caption) or ''}")
+    # A letter under each bar says which day it is — only when every day has
+    # a bar of its own, since a resampled track has no one day under a cell.
+    if span == len(days):
+        letters = "".join(_weekday_letter(day.get("day", "")) for day in by_day)
+        print(f"    {ui.MUTED}{letters}{ui.RST}")
+
+
+def _weekday_letter(day: str) -> str:
+    try:
+        return datetime.fromisoformat(day).strftime("%a")[0]
+    except ValueError:
+        return " "
 
 
 def _render_today(data: dict) -> None:
@@ -862,13 +906,15 @@ def _render_today(data: dict) -> None:
     pickup = data.get("pick_up") or []
     if pickup:
         _render_pickup(pickup, width, inner)
+        print()
     if data.get("since_midnight"):
         _render_since(data["since_midnight"], width, inner, "now" not in data)
+        print()
     if data.get("this_week"):
         week = data["this_week"]
         if week.get("sessions") or week.get("nano_aiu") or week.get("by_day"):
             _render_week(week, width, inner)
-    print()
+            print()
 
 
 def _repo_match(row: tuple, repo: str) -> bool:
@@ -1078,21 +1124,52 @@ def _render_cleanup(data: dict) -> None:
               f"quiet {data['wip_days']}+ days, no handoff left waiting.", inner)
         print()
         return
-    _note("Suggestions only. cs never unpins, untags or deletes anything on its "
-          "own. The commands are together at the end, to copy.", inner)
+    # Only unpin and untag change anything. A handoff has nothing to remove,
+    # so its row is something to look at, not a command to copy.
+    commands = [item["command"] for item in data["pins"] + data["wip"]]
+    lead = "Suggestions only. cs never unpins, untags or deletes anything on its own."
+    if commands:
+        lead += " The commands are together at the end, to copy."
+    _note(lead, inner, indent=4)
     print()
-    commands = []
     for title, items, colour in groups:
         if not items:
             continue
         print(ui.heading(f"{title} · {len(items)}", colour, inner))
-        for item in items:
-            print(f"    {ui._fit(item['summary'] or item['id'][:8], inner - 4)}")
-            print(f"      {ui.MUTED}{ui._fit(item['why'], inner - 6)}{ui.RST}")
-            commands.append(item["command"])
-        print()
+        _table(
+            [("id", "session", "<"), ("quiet", "quiet", ">"),
+             ("summary", "summary", "<"), ("why", "why", "<")],
+            [{"id": (item["id"][:8], ui.SKY),
+              "quiet": (_quiet(item.get("quiet_days")), ui.MUTED),
+              "summary": (item["summary"] or "(no longer in the store)", ""),
+              "why": (_cleanup_why(item["why"]), ui.MUTED)}
+             for item in items[:_CLEANUP_ROWS]],
+            inner, {"quiet": 5}, [("why", 30), ("id", 8)], least=20)
+        if len(items) > _CLEANUP_ROWS:
+            _note(f"+{len(items) - _CLEANUP_ROWS} more · cs cleanup --json lists "
+                  "every one", inner, indent=4)
+            print()
+    if data["handoffs"]:
+        _hint("cs handoff <session> — the chain a handoff belongs to", inner)
     if commands:
+        print()
         print(ui.heading("Commands", ui.CODE, inner))
         for command in commands:
             print(f"    {ui.CODE}{ui._fit(command, inner - 4)}{ui.RST}")
-        print()
+    print()
+
+
+# Rows per clean-up group. Past this the page is a scroll, not a suggestion.
+_CLEANUP_ROWS = 10
+
+
+def _quiet(days: int | None) -> str:
+    return "—" if days is None else f"{days}d"
+
+
+def _cleanup_why(why: str) -> str:
+    """The reason without the part the group's heading already says."""
+    for tail in ("; no later session picked it up", "; no later session opened it"):
+        if why.endswith(tail):
+            return why[: -len(tail)]
+    return why

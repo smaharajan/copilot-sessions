@@ -34,8 +34,9 @@ from ._common import (
     _note,
     _page,
     _visible,
+    _window_label,
 )
-from .evidence import _UNCLEAN, _clean
+from .evidence import _UNCLEAN, _clean, _headline
 
 # How often the home screen re-reads the live strip.
 WATCH_SECONDS = 5
@@ -455,47 +456,78 @@ def _render_rollup(data: dict) -> None:
     width = min(shutil.get_terminal_size().columns, 96)
     inner = max(width - 4, 20)
     print()
-    print(ui.rule(inner, "Team rollup"))
+    print(ui.rule(inner, f"Team rollup · {_window_label(data['window_days'])}"))
     print()
     rate = data["tool_failure_rate"]
     rate_text = "no tool calls" if rate is None else f"{rate:.1%} tool failures"
     session_word = "session" if data["sessions"] == 1 else "sessions"
     bits = [f"{data['sessions']:,} {session_word}",
-            f"{data['nano_aiu'] / 1e9:,.0f} AIU", rate_text]
+            f"{ui.fmt_aiu(data['nano_aiu'])} AIU", rate_text]
     if data["stuck_loops"]:
-        bits.append(f"{data['stuck_loops']} stuck loops")
-    print(f"  {ui.BOLD}{ui._fit(' · '.join(bits), inner)}{ui.RST}")
+        bits.append(f"{data['stuck_loops']:,} stuck loops")
+    _headline(" · ".join(bits), inner)
+    shipped = [f"{data['sessions_shipped']:,} shipped",
+               f"{data['commits']:,} commits", f"{data['prs']:,} PRs"]
+    if data["cache_hit_rate"] is not None:
+        shipped.append(f"cache hit {data['cache_hit_rate']:.0%}")
+    if data["subagent_runs"]:
+        shipped.append(f"{data['subagent_runs']:,} sub-agent runs")
+    _note(" · ".join(shipped), inner, indent=4)
     series = [day["nano_aiu"] for day in data["days"]]
     spark = ui.sparkline(series).rstrip()
     if spark:
-        label = "spend "
-        room = max(4, inner - len(label) - 2)
-        print(f"  {ui.MUTED}{label}{ui.RST}{ui.VIOLET}{spark[-room:]}{ui.RST}")
+        room = max(4, inner - 12)
+        print(f"    {ui.MUTED}spend/day{ui.RST}  {ui.VIOLET}{spark[-room:]}{ui.RST}")
     print()
     repos = data["repos"]
     if repos:
-        peak = max(repo["nano_aiu"] for repo in repos) or 1
         print(ui.heading(f"Repositories · {len(repos)}", ui.VIOLET, inner))
-        shown = repos[:8]
-        for repo in shown:
-            calls = repo["tool_calls"]
-            fail = repo["tool_failures"] / calls if calls else 0
-            plain = (f"{repo['repo']}  {repo['sessions']}  "
-                     f"{repo['nano_aiu'] / 1e9:,.1f} AIU  {fail:.0%}")
-            bar_room = inner - 4 - ui.cells(plain) - 1
-            if bar_room >= 6:
-                print(f"    {plain} {ui.bar(repo['nano_aiu'], peak, bar_room)}")
-            else:
-                print(f"    {ui._fit(plain, inner - 4)}")
-        extra = len(repos) - len(shown)
-        if extra:
-            _note(f"+{extra} more", inner, indent=4)
+        _rollup_repos(repos[:8], inner)
+        extra = len(repos) - 8
+        if extra > 0:
+            _note(f"+{extra} more in --json", inner, indent=4)
         print()
     endings = data["unclean_endings"]
     if endings:
         print(ui.heading("Unclean endings", ui.AMBER, inner))
-        _note(" · ".join(f"{count} {reason.replace('_', ' ')}"
-                         for reason, count in endings.items()), inner, indent=4)
+        for reason, count in sorted(endings.items(), key=lambda kv: -kv[1]):
+            label = ("no reason recorded" if reason == "unknown"
+                     else reason.replace("_", " "))
+            print(f"    {ui.AMBER}{count:>5,}{ui.RST}  {label}")
         print()
-    _note(data["privacy"], inner)
+    _note(data["privacy"].capitalize() + ".", inner)
     print()
+
+
+def _rollup_repos(repos: list[dict], inner: int) -> None:
+    """Hashed repositories as a table: sessions, spend, failure rate, share."""
+    peak = max(repo["nano_aiu"] for repo in repos) or 1
+    rows = []
+    for repo in repos:
+        calls = repo["tool_calls"]
+        rows.append((repo["repo"], f"{repo['sessions']:,}",
+                     f"{ui.fmt_aiu(repo['nano_aiu'])}",
+                     f"{repo['tool_failures'] / calls:.1%}" if calls else "—",
+                     repo["nano_aiu"]))
+    heads = ["repository", "sessions", "AIU", "failed"]
+    spans = [max(len(head), *(ui.cells(row[i]) for row in rows))
+             for i, head in enumerate(heads)]
+    # The failure rate is the first to go on a narrow window: the hash, the
+    # count and the spend are what a reader lines up against another report.
+    if 4 + sum(spans) + 2 * (len(spans) - 1) > inner:
+        heads, spans = heads[:3], spans[:3]
+    used = sum(spans) + 2 * len(spans)
+    bar_w = max(0, min(30, inner - 4 - used))
+    aligns = ["<", ">", ">", ">"]
+    head = "  ".join(f"{h:{a}{w}}" for h, a, w in zip(heads, aligns, spans, strict=False))
+    head += f"  {'share of spend':<{bar_w}}" if bar_w >= 8 else ""
+    print(f"    {ui.MUTED}{head.rstrip()}{ui.RST}")
+    print(f"    {ui.MUTED}{'─' * ui.cells(head)}{ui.RST}")
+    styles = [ui.CODE, "", ui.BOLD, ui.MUTED]
+    for *values, nano in rows:
+        line = "  ".join(f"{style}{value:{a}{w}}{ui.RST}" if style else f"{value:{a}{w}}"
+                         for value, a, w, style
+                         in zip(values, aligns, spans, styles, strict=False))
+        if bar_w >= 8:
+            line += f"  {ui.bar(nano, peak, bar_w, colour=ui.VIOLET, track=True)}"
+        print(f"    {line}")

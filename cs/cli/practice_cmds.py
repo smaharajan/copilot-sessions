@@ -17,11 +17,14 @@ from ._common import (
     _PERIODS,
     _capture,
     _cell,
+    _extra_gaps,
     _fit_columns,
+    _head_rule,
     _item,
     _note,
     _page,
     _page_report,
+    _row,
     _sort_note,
     _sort_report,
     _visible,
@@ -86,15 +89,16 @@ def _render_standup(days: int) -> None:
         print()
         return
 
-    # Activity — omit empty lines rather than printing zeros as findings.
-    print(ui.heading("Activity", ui.ACCENT, inner))
-    print(ui.field("sessions", f"{session_count:,}"))
+    # Activity is one line: the counts that are not zero, in bold, as the
+    # page's headline. Omit a zero rather than print it as a finding.
+    activity = [f"{session_count:,} session{'' if session_count == 1 else 's'}"]
     if turns:
-        print(ui.field("turns", f"{turns:,}"))
+        activity.append(f"{turns:,} turns")
     if spend:
-        print(ui.field("spend", f"{ui.fmt_aiu(spend)} AIU"))
+        activity.append(f"{ui.fmt_aiu(spend)} AIU")
+    print(f"    {ui.BOLD}{ui._fit(' · '.join(activity), inner - 4)}{ui.RST}")
     if not turns and not spend:
-        print(f"  {ui.MUTED}No turns or spend in this window.{ui.RST}")
+        _note("No turns or spend in this window.", inner, indent=4)
     print()
 
     moved = [
@@ -102,51 +106,61 @@ def _render_standup(days: int) -> None:
         if (row[2] or "").strip()
     ][:_STANDUP_MOVED]
     if moved:
-        print(ui.heading("What moved", ui.MINT, inner))
-        for row in moved:
-            sid, active, summary, repo, _cwd, turns_n, nano = row[:7]
-            title = redact.one_line(redact.redact(summary or "")) or "(untitled)"
-            bits = []
-            if repo:
-                bits.append(redact.one_line(redact.redact(repo)))
-            if turns_n:
-                bits.append(f"{turns_n} turns")
-            if nano:
-                bits.append(f"{ui.fmt_aiu(nano)} AIU")
-            if not bits:
-                bits.append(active)
-            print(f"    {ui.SKY}{sid[:8]}{ui.RST}  "
-                  f"{ui.trunc(title, max(18, inner - 12))}")
-            print(f"      {ui.MUTED}{ui.trunc(' · '.join(bits), inner - 6)}"
-                  f"{ui.RST}")
-        print()
+        print(ui.heading(f"What moved · {len(moved)}", ui.MINT, inner))
+        _standup_table(moved, inner)
 
     if handoffs_in:
-        print(ui.heading("Handoffs", ui.SKY, inner))
+        print(ui.heading(f"Handoffs · {len(handoffs_in)}", ui.SKY, inner))
         for row in handoffs_in[:_STANDUP_HANDOFFS]:
             title = redact.one_line(redact.redact(row["summary"] or "")) or "(untitled)"
-            role = row["role"]
-            print(f"    {ui.SKY}{row['id'][:8]}{ui.RST}  {role:<9} "
-                  f"{ui.trunc(title, max(16, inner - 22))}")
+            print(f"    {ui.SKY}{row['id'][:8]}{ui.RST}  "
+                  f"{ui.MUTED}{row['role']:<9}{ui.RST} "
+                  f"{ui._fit(title, max(16, inner - 24))}")
         if len(handoffs_in) > _STANDUP_HANDOFFS:
             extra = len(handoffs_in) - _STANDUP_HANDOFFS
-            print(f"    {ui.MUTED}+{extra} more · cs handoff{ui.RST}")
+            _note(f"+{extra} more · cs handoff", inner, indent=4)
         print()
 
     if risk_rows:
-        print(ui.heading("Risks", ui.AMBER, inner))
-        print(ui.field(
-            "yolo",
-            f"{len(risk_rows):,} session"
-            f"{'' if len(risk_rows) == 1 else 's'} ran unattended",
-        ))
+        print(ui.heading(f"Ran unattended · {len(risk_rows)}", ui.AMBER, inner))
         for row in risk_rows[:5]:
             title = redact.one_line(redact.redact(row["summary"] or "")) or "(untitled)"
             print(f"    {ui.AMBER}{row['id'][:8]}{ui.RST}  "
-                  f"{ui.trunc(title, max(16, inner - 14))}")
+                  f"{ui._fit(title, max(16, inner - 14))}")
+        if len(risk_rows) > 5:
+            _note(f"+{len(risk_rows) - 5} more · cs yolo", inner, indent=4)
         print()
 
     _standup_footer(inner)
+    print()
+
+
+def _standup_table(rows: list[tuple], inner: int) -> None:
+    """One session per line: id, title, and its size, right-aligned.
+
+    Each session used to take two lines — the title, then its repo, turns
+    and spend strung together under it — so eight sessions filled the page.
+    """
+    shown = [("id", "session", "<"), ("summary", "summary", "<"),
+             ("repo", "repository", "<"), ("turns", "turns", ">"),
+             ("aiu", "AIU", ">")]
+    fixed = {"id": 8, "turns": 5, "aiu": 6}
+    cost = sum(span + 1 for span in fixed.values())
+    spans = _fit_columns(inner - 4, cost, [("repo", 28)], least=24,
+                         gaps=_extra_gaps(shown))
+    spans.update(fixed)
+    shown = [spec for spec in shown if spans.get(spec[0])]
+    _head_rule(_row(shown, spans), 4)
+    for row in rows:
+        sid, _active, summary, repo, _cwd, turns_n, nano = row[:7]
+        values = {
+            "id": (sid[:8], ui.SKY),
+            "summary": (redact.one_line(redact.redact(summary or "")) or "(untitled)", ""),
+            "repo": (redact.one_line(redact.redact(repo or "")), ui.MUTED),
+            "turns": (f"{turns_n:,}" if turns_n else "", ui.MUTED),
+            "aiu": (ui.fmt_aiu(nano), ui.MUTED),
+        }
+        print("    " + _row(shown, spans, values).rstrip())
     print()
 
 

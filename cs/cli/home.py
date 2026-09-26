@@ -1229,10 +1229,19 @@ def cmd_help() -> None:
                           {ui.DIM}--md prints Markdown ready to paste; text is masked.
                           next, eod, weekly and standup stay commands; the home
                           screen opens them together as Today.{ui.RST}
+    cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
+                          {ui.DIM}'daily' is an alias · default is the last day{ui.RST}
 
-  {ui.BOLD}List{ui.RST}
+  {ui.BOLD}Find{ui.RST}
     cs recent [N|all]     Interactive sessions, last N days (default 7)
     cs all [N|all]        All sessions incl. quiet/automated (default: all time)
+    cs search <words>     Full-text search, best match first
+                          {ui.DIM}Searches names, summaries, repos, both sides of every turn and
+                          session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
+    cs search --save <name> <words>   Save a search under a name, and run it
+    cs saved [name]       List saved searches, or run one
+
+  {ui.BOLD}Measure{ui.RST}
     cs repos              Sessions grouped by repository
     cs stats [N|all]      Output ledger: commits, PRs, files, cost, delegation
     cs timeline [N|all]   Working days: sessions, turns and spend per day
@@ -1242,20 +1251,6 @@ def cmd_help() -> None:
     cs agents [N|all]     Delegation: you vs main agent vs sub-agents
                           {ui.DIM}N is a number of days; 'all' is every record, however
                           old. Every title says which window it counted.{ui.RST}
-    cs skills             Skills Copilot can load here vs referenced in
-                          sessions — yours, this repo's, the enabled plugins'
-                          '--by-repo' regroups it by where each one was run
-    cs profiles           The same for the agents you have defined
-    cs instructions       Instruction files every session here starts with,
-                          and which are past the length Copilot reads
-    cs mcp [name]         MCP servers wired up — local, remote, and what they
-                          may call
-    cs doctor             Can cs see the store, its schema, the event logs, the
-                          config and cache dirs and the terminal? Each check
-                          says pass, warn or fail, with the fix
-    cs hooks [event]      Commands Copilot runs on the session lifecycle, how
-                          often each event ran and failed, and which point at
-                          a script that is gone
     cs subagents [N|all]  Sub-agents run: models, overrides, tools, tokens, time
     cs switches [N|all]   Model or effort changed mid-run: one line per switch,
                           spend before and after, and whether it paid off
@@ -1265,24 +1260,6 @@ def cmd_help() -> None:
                           the page, and the same reading as JSON with --json.
                           No text, ids, paths or names; repositories are
                           salted hashes
-
-  {ui.BOLD}Improve{ui.RST}
-    cs standup [N|all]    Today's brief: activity, what moved, handoffs, risks
-                          {ui.DIM}'daily' is an alias · default is the last day{ui.RST}
-    cs coach [N|all]      Habits the record shows, scored and worst first
-    cs rhythm [N|all]     When the work happens: hours, days, streaks
-    cs context            What this repo hands the agent before you type
-    cs cleanup [N]        Stale pins (quiet N days, default 14), wip quiet 7+
-                          days, handoffs nobody took — suggests, never removes
-    cs health [--repo .]  One card for this repo: spend, failure rate, busiest
-                          files, long instructions, unused skills, failing
-                          hooks, open handoffs
-    cs patterns [N|all]   How opening requests (length, a named file, criteria
-                          or a test command, a skill) line up with outcomes —
-                          with sample sizes; correlation, not causation
-                          {ui.DIM}standup, coach and rhythm read the sessions; context and
-                          hooks read disk. Scheduled runs hidden by
-                          .cs-ignore are left out.{ui.RST}
 
   {ui.BOLD}Govern{ui.RST}
     cs yolo [--all]       Which sessions ran unattended, and on what evidence
@@ -1300,6 +1277,37 @@ def cmd_help() -> None:
                           read session-state/*/events.jsonl; endings read the
                           store. Default last 30 days.{ui.RST}
 
+  {ui.BOLD}Improve{ui.RST}
+    cs coach [N|all]      Habits the record shows, scored and worst first
+    cs rhythm [N|all]     When the work happens: hours, days, streaks
+    cs context            What this repo hands the agent before you type
+    cs health [--repo .]  One card for this repo: spend, failure rate, busiest
+                          files, long instructions, unused skills, failing
+                          hooks, open handoffs
+    cs patterns [N|all]   How opening requests (length, a named file, criteria
+                          or a test command, a skill) line up with outcomes —
+                          with sample sizes; correlation, not causation
+    cs cleanup [N]        Stale pins (quiet N days, default 14), wip quiet 7+
+                          days, handoffs nobody took — suggests, never removes
+                          {ui.DIM}coach and rhythm read the sessions; context reads disk.
+                          Scheduled runs hidden by .cs-ignore are left out.{ui.RST}
+
+  {ui.BOLD}Reference{ui.RST}
+    cs skills             Skills Copilot can load here vs referenced in
+                          sessions — yours, this repo's, the enabled plugins'
+                          '--by-repo' regroups it by where each one was run
+    cs profiles           The same for the agents you have defined
+    cs instructions       Instruction files every session here starts with,
+                          and which are past the length Copilot reads
+    cs hooks [event]      Commands Copilot runs on the session lifecycle, how
+                          often each event ran and failed, and which point at
+                          a script that is gone
+    cs mcp [name]         MCP servers wired up — local, remote, and what they
+                          may call
+    cs doctor             Can cs see the store, its schema, the event logs, the
+                          config and cache dirs and the terminal? Each check
+                          says pass, warn or fail, with the fix
+
   {ui.BOLD}Pins & budget{ui.RST}
     cs pin <ref>          Keep a session handy on the home screen
     cs unpin <ref>        Drop a pin
@@ -1312,13 +1320,6 @@ def cmd_help() -> None:
                           {ui.DIM}Stored in ~/.config/cs/settings.json · home header
                           colours amber at 70% and rose when over. The live
                           strip on the home screen shows what is left today.{ui.RST}
-
-  {ui.BOLD}Find{ui.RST}
-    cs search <words>     Full-text search, best match first
-                          {ui.DIM}Searches names, summaries, repos, both sides of every turn and
-                          session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
-    cs search --save <name> <words>   Save a search under a name, and run it
-    cs saved [name]       List saved searches, or run one
 
   {ui.BOLD}Inspect & resume{ui.RST}
     {ui.DIM}Two views of one session: show is the page, read is the words.{ui.RST}

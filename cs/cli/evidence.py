@@ -253,11 +253,14 @@ def _render_failures(days: int) -> None:
          ("rate", "rate", ">"), ("tool", "mostly", "<"), ("summary", "summary", "<")],
         [{"n": (str(r["n"]), ui.SKY), "session": (r["id"][:8], ui.SKY),
           "failures": (str(r["failures"]), ui.ROSE),
-          "rate": (f"{r['rate'] * 100:.0f}%", ""),
+          "rate": (f"{r['rate'] * 100:.1f}%", ""),
           "tool": (r["top_tool"], ui.CODE),
           "summary": (r["summary"] or "(untitled)", "")}
          for r in worst],
-        inner, {"n": 3, "failures": 6}, [("session", 8), ("rate", 5), ("tool", 10)])
+        inner, {"n": 3, "failures": 6},
+        [("session", 8), ("rate", 6),
+         ("tool", max(6, min(14, max((ui.cells(r["top_tool"]) for r in data["worst"]),
+                                     default=6))))])
     _hint("cs show N — the failures turn by turn · cs failures --loops — "
           "stuck loops", inner)
     print()
@@ -312,21 +315,38 @@ def _render_loops(days: int) -> None:
           "by one agent, with no success of that tool between them. The turns "
           "are the store's, joined on time.", inner, indent=4)
     print()
-    seen = [{"id": sid} for sid in dict.fromkeys(loop["id"] for loop in loops)]
+    # One session's loops sit together, worst session first, and the session
+    # is named once. Sorted by run alone, one session's four loops were
+    # scattered down the table as four rows all numbered 3.
+    worst: dict[str, int] = {}
+    for loop in loops:
+        worst[loop["id"]] = max(worst.get(loop["id"], 0), loop["run"])
+    order = sorted(worst, key=lambda sid: -worst[sid])
+    rank = {sid: index for index, sid in enumerate(order)}
+    grouped = sorted(loops[:_TOP * 3], key=lambda r: (rank[r["id"]], -r["run"]))
+    seen = [{"id": sid} for sid in dict.fromkeys(r["id"] for r in grouped)]
     _number(seen)
     numbers = {row["id"]: row["n"] for row in seen}
+    tool_w = min(18, max(4, *(ui.cells(r["tool"]) for r in grouped)))
+    rows = []
+    previous = None
+    for r in grouped:
+        first = r["id"] != previous
+        previous = r["id"]
+        rows.append({
+            "n": (str(numbers[r["id"]]) if first else "", ui.SKY),
+            "session": (r["id"][:8] if first else "", ui.SKY),
+            "tool": (r["tool"], ui.CODE), "run": (f"×{r['run']}", ui.ROSE),
+            "turns": (_turn_range(r["first_turn"], r["last_turn"])
+                      .replace("—", ""), ""),
+            "agent": (r["agent"], ui.MUTED),
+            "summary": ((r["summary"] or "(untitled)") if first else "", "")})
     _table(
         [("n", "#", ">"), ("session", "session", "<"), ("tool", "tool", "<"),
          ("run", "run", ">"), ("turns", "turns", "<"), ("agent", "by", "<"),
          ("summary", "summary", "<")],
-        [{"n": (str(numbers[r["id"]]), ui.SKY), "session": (r["id"][:8], ui.SKY),
-          "tool": (r["tool"], ui.CODE), "run": (f"×{r['run']}", ui.ROSE),
-          "turns": (_turn_range(r["first_turn"], r["last_turn"]), ""),
-          "agent": (r["agent"], ui.MUTED),
-          "summary": (r["summary"] or "(untitled)", "")}
-         for r in loops[:_TOP * 3]],
-        inner, {"n": 3, "tool": 10, "run": 4}, [("agent", 9), ("session", 8),
-                                               ("turns", 7)])
+        rows, inner, {"n": 3, "tool": tool_w, "run": 4},
+        [("agent", 9), ("session", 8), ("turns", 7)])
     _hint("cs show N — the failing turns · cs read N --turn T — the turn itself",
           inner)
     print()
@@ -390,6 +410,13 @@ def _seconds(ms: int) -> str:
     return f"{seconds:.0f}s"
 
 
+def _models_cell(models: list[str]) -> str:
+    """The most-used model whole, then how many others — never half a name."""
+    if not models:
+        return "—"
+    return models[0] + (f" +{len(models) - 1}" if len(models) > 1 else "")
+
+
 def _render_subagents(days: int) -> None:
     data = _subagents_data(days)
     inner = _frame("Sub-agents", days)
@@ -412,12 +439,16 @@ def _render_subagents(days: int) -> None:
           "tokens": (_thousands(a["tokens"]), ui.MUTED),
           "total": (_seconds(a["duration_ms"]), ""),
           "median": (_seconds(a["median_ms"]), ""),
-          "models": (", ".join(a["models"]) or "—", ui.CODE)}
+          "models": (_models_cell(a["models"]), ui.CODE)}
          for a in agents[:_TOP * 2]],
-        inner, {"runs": 5, "name": 14}, [("tokens", 7), ("calls", 6),
-                                        ("total", 6), ("override", 8),
-                                        ("median", 6)],
-        flex="models", least=10)
+        # The agent's name is what the row is about; it gets its full width
+        # up to a point, and a narrow window takes it back before the models.
+        inner, {"runs": 5, "name": max(10, min(
+            24, max(ui.cells(a["name"]) for a in agents[:_TOP * 2]),
+            inner // 4))},
+        [("tokens", 7), ("calls", 6), ("total", 6), ("override", 8),
+         ("median", 6)],
+        flex="models", least=14)
     ignored = [a for a in agents if a["override_ignored"]]
     if ignored:
         print(ui.heading(f"Declared model not applied · {len(ignored)}",
@@ -481,38 +512,37 @@ def cmd_switches(days: int = 30) -> bool:
     return _page(_capture(lambda: _render_switches(days)))
 
 
-def _switch_line(switch: dict) -> str:
-    """One switch, as a sentence rather than a row of columns."""
-    turn = "turn —" if switch["turn"] is None else f"turn {switch['turn']}"
+def _switch_change(switch: dict) -> str:
+    """What changed, in the fewest words: the model move, then the effort one.
+
+    An effort nobody set is the model's default, and says so — the old "—"
+    read as a value that had failed to load.
+    """
     if switch["from"] != switch["to"]:
         move = f"{switch['from']} → {switch['to']}"
     else:
         move = switch["to"]
     if switch["effort_from"] != switch["effort_to"]:
-        move += (f" (effort {switch['effort_from'] or '—'} → "
-                 f"{switch['effort_to'] or '—'})")
-    source = switch["source"]
-    by = f" · by {source}" if source and source != "unrecorded" else ""
-    return f"{turn} · {move}{by}"
+        move += (f" · {switch['effort_from'] or 'default'} → "
+                 f"{switch['effort_to'] or 'default'}")
+    return move
 
 
-def _paired_spend(before: int, after: int, inner: int) -> str:
-    """Spend either side of a switch, as two short bars and the ratio."""
-    peak = max(before, after, 1)
-    width = 4 if inner < 56 else 8
-    bars = (f"{ui.bar(before, peak, width, colour=ui.VIOLET)} "
-            f"{ui.bar(after, peak, width, colour=ui.MINT)}")
-    if before:
+# Copilot's own names for who made a switch, in the words a reader uses.
+_SWITCH_SOURCES = {"model_picker": "picker", "managed_settings": "settings"}
+
+
+def _switch_effect(before: int, after: int) -> tuple[str, str]:
+    """(text, colour) for how spend moved across a switch."""
+    if before and after:
         ratio = after / before
-        delta = f"{ratio:.1f}× after"
-    elif after:
-        delta = "spend started after"
-    else:
-        delta = "no spend either side"
-    text = f"{ui.fmt_aiu(before)} → {ui.fmt_aiu(after)}  {delta}"
-    if inner >= 72:
-        return f"{bars}  {text}"
-    return text
+        colour = ui.MINT if ratio < 0.9 else ui.ROSE if ratio > 1.5 else ui.MUTED
+        return f"{ratio:.1f}× after", colour
+    if after:
+        return "spend after", ui.MUTED
+    if before:
+        return "none after", ui.MUTED
+    return "", ""
 
 
 def _render_switches(days: int) -> None:
@@ -531,40 +561,77 @@ def _render_switches(days: int) -> None:
             after += switch["nano_aiu_after"]
             if switch["source"] and switch["source"] != "unrecorded":
                 sources.append(switch["source"])
-    if before:
-        rose = after / before
-        change = f"spend per switch rose {rose:.1f}× after switching" if rose >= 1 \
-            else f"spend per switch fell to {rose:.1f}× after switching"
-    elif after:
-        change = "the spend landed after the switch"
-    else:
-        change = "no spend recorded on either side"
-    origin = ""
+    _headline(f"{_plural(data['switches'], 'switch', 'switches')} in "
+              f"{_plural(len(data['sessions']), 'session')}", inner)
+    facts = []
     if sources:
         top = Counter(sources).most_common(1)[0][0]
-        origin = f" · most from {top}"
-    _headline(
-        f"{_plural(data['switches'], 'switch', 'switches')} in "
-        f"{_plural(len(data['sessions']), 'session')}{origin} · {change}",
-        inner)
+        facts.append(f"most made in the {top.replace('_', ' ')}")
+    if before:
+        ratio = after / before
+        facts.append(f"spend after a switch ran {ratio:.1f}× the spend before it")
+    elif after:
+        facts.append("the spend landed after the switch"
+                     + ("es" if data["switches"] > 1 else ""))
+    if facts:
+        _note("; ".join(facts).capitalize() + ".", inner, indent=4)
     print()
+    columns = [("turn", "turn", ">"), ("change", "change", "<"),
+               ("by", "by", "<"), ("before", "before", ">"),
+               ("after", "after", ">"), ("effect", "effect", "<")]
+    fixed = {"turn": 5, "before": 6, "after": 6}
+    cost = sum(span + 1 for span in fixed.values())
+    spans = _fit_columns(inner - 7, cost, [("by", 8), ("effect", 11)],
+                         least=18, flex="change", gaps=_extra_gaps(columns))
+    spans.update(fixed)
+    shown = [spec for spec in columns if spans.get(spec[0])]
+    _head_rule(_row(shown, spans), 7)
     _number(data["sessions"])
     for session in data["sessions"][:_TOP]:
         title = session["summary"] or "(untitled)"
+        count = len(session["switches"])
+        tail = f"  {ui.MUTED}{count} switches{ui.RST}" if count > 1 else ""
+        room = inner - 7 - (ui.cells(f"  {count} switches") if count > 1 else 0)
         print(f"  {ui.SKY}{session['n']:>3}{ui.RST}  "
-              f"{ui.BOLD}{ui._fit(title, inner - 8)}{ui.RST}")
+              f"{ui.BOLD}{ui._fit(title, max(room, 8))}{ui.RST}{tail}")
         for switch in session["switches"][:6]:
-            _note(_switch_line(switch), inner, indent=6)
-            spent = _paired_spend(switch["nano_aiu_before"],
-                                  switch["nano_aiu_after"], inner)
-            if inner < 72:
-                print("      " + ui._fit(spent, max(8, inner - 6)))
-            else:
-                print("      " + spent)
-        extra = len(session["switches"]) - 6
+            spent_before, spent_after = (switch["nano_aiu_before"],
+                                         switch["nano_aiu_after"])
+            effect, colour = _switch_effect(spent_before, spent_after)
+            quiet = not spent_before and not spent_after
+            source = switch["source"]
+            values = {
+                "turn": ("start" if switch["turn"] is None else str(switch["turn"]),
+                         ui.MUTED),
+                "change": (_switch_change(switch), ui.MUTED if quiet else ui.CODE),
+                "by": ("" if source == "unrecorded"
+                       else _SWITCH_SOURCES.get(source, source.replace("_", " ")),
+                       ui.MUTED),
+                "before": (ui.fmt_aiu(spent_before), ui.MUTED),
+                "after": (ui.fmt_aiu(spent_after), "" if spent_after else ui.MUTED),
+                "effect": (effect, colour),
+            }
+            # A change too long for its column breaks at the effort rather
+            # than losing it: the effort move is often the whole story.
+            change = values["change"][0]
+            more = ""
+            if ui.cells(change) > spans["change"] and " · " in change:
+                change, more = change.split(" · ", 1)
+                values["change"] = (change, values["change"][1])
+            print("       " + _row(shown, spans, values).rstrip())
+            if more:
+                lead = spans["turn"] + 2
+                print("       " + " " * lead + f"{ui.MUTED}"
+                      f"{ui._fit('effort ' + more, spans['change'])}{ui.RST}")
+        extra = count - 6
         if extra > 0:
-            _note(f"+{extra} more in this session", inner, indent=6)
+            _note(f"+{extra} more in this session · cs show {session['n']}",
+                  inner, indent=7)
         print()
+    hidden = len(data["sessions"]) - _TOP
+    if hidden > 0:
+        _note(f"+{hidden} more sessions · cs switches --json lists every one",
+              inner)
     _hint("cs show N — the session · cs efficiency — cost by model", inner)
     print()
 
@@ -613,8 +680,10 @@ def _render_endings(days: int) -> None:
         return
     _headline(f"{len(endings)} of {data['checked']:,} sessions ended on a "
               f"call that did not finish", inner)
-    _note(" · ".join(f"{count} {reason}"
-                     for reason, count in data["by_reason"].items()), inner, indent=4)
+    if len(data["by_reason"]) > 1:
+        _note("By reason: " + " · ".join(
+            f"{count} {reason}" for reason, count in data["by_reason"].items()),
+            inner, indent=4)
     _note("Read from each session's last billed call. 'stop' and 'tool_calls' "
           "are clean; error, length and content filter are the model or the "
           "service ending it; unknown means no reason was recorded.",

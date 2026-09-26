@@ -23,6 +23,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The new views read as tables.** Every column is padded to a measured
+  width and holds its shape from 40 to 140 columns.
+  - Prompt patterns lines up its bars, puts the strongest habit first and
+    shows the sessions on each side.
+  - Repo health's tiles form columns.
+  - Team rollup names its window, adds shipped work and cache hit rate, and
+    tables its repositories.
+  - Model switches is one table: turn (`start` before the first), change,
+    who made it, spend before and after, and the effect. An effort move that
+    does not fit wraps instead of being cut.
+  - Spend anomalies splits days from sessions, each with the turn that drove
+    it, and rounds multiples to the precision they deserve (`247×`).
+  - Stuck loops groups a session's loops under one number.
+  - Clean-up is one row per item with how long it has been quiet, stops at
+    ten per group, and lists only the commands that change something.
+  - Standup, End of day and Next up open with one summary line; a quiet day
+    says so instead of printing zeros; loop turns read `turn 44`, not
+    `turns 44` or `turns —`.
+  - Sub-agents shows agent names whole, and help groups its commands the
+    way the home menu does.
 - **Today is one page.** The session running now leads: its name, `cs resume`
   and the id, a ten-minute burn track and today's budget in one column.
   Then the top sessions to pick up (each with its reason and `cs resume`),

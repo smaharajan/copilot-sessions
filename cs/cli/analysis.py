@@ -26,11 +26,13 @@ from .. import (
 )
 from ._common import (
     _capture,
+    _cell,
     _note,
     _page,
     _short_path,
     _user_text,
     _visible,
+    _weekday,
     _when,
 )
 from .evidence import (
@@ -38,6 +40,7 @@ from .evidence import (
     _clean,
     _frame,
     _headline,
+    _number,
     _plural,
     _rate,
     _session_fields,
@@ -142,16 +145,24 @@ def cmd_anomalies(days: int = 30) -> bool:
     return _page(_capture(lambda: _render_anomalies(_anomalies_data(days))))
 
 
-def _evidence_lines(turns: list[dict], inner: int, indent: int = 6) -> None:
-    for turn in turns:
-        where = f"{turn['id'][:8]} turn {turn['turn']}" if turn["turn"] is not None \
-            else turn["id"][:8]
-        bits = [", ".join(turn["models"]) or "model not recorded"]
-        if turn["effort"]:
-            bits.append(f"effort {turn['effort']}")
-        bits.append(f"cache {_cache(turn['cache_hit'])}")
-        text = f"{ui.fmt_aiu(turn['nano_aiu'])} AIU · {where} · {' · '.join(bits)}"
-        _note(text, inner, indent=indent)
+def _times(factor: float) -> str:
+    """A multiple at the precision it deserves: 4.7× but 247×."""
+    return f"{factor:.1f}×" if factor < 10 else f"{factor:,.0f}×"
+
+
+def _driver(turn: dict) -> str:
+    """The costliest turn behind a spike, as one line of evidence."""
+    bits = [f"turn {turn['turn']}" if turn["turn"] is not None else "a turn",
+            f"{ui.fmt_aiu(turn['nano_aiu'])} AIU"]
+    models = turn["models"]
+    if models:
+        bits.append(models[0] + (f" +{len(models) - 1}" if len(models) > 1 else ""))
+    else:
+        bits.append("model not recorded")
+    if turn["effort"]:
+        bits.append(turn["effort"])
+    bits.append(f"cache {_cache(turn['cache_hit'])}")
+    return " · ".join(bits)
 
 
 def _render_anomalies(data: dict) -> None:
@@ -161,12 +172,17 @@ def _render_anomalies(data: dict) -> None:
     series = data.get("series") or []
     if series:
         spark = ui.sparkline([day["nano_aiu"] for day in series])
-        marks = "".join("▴" if day["day"] in flagged else " "
-                        for day in series[-len(spark):])
+        room = inner - 4
+        shown = series[-min(len(spark), room):]
+        marks = "".join("▴" if day["day"] in flagged else " " for day in shown)
         if spark.strip():
-            print(f"    {ui.VIOLET}{ui._fit(spark, inner - 4)}{ui.RST}")
-            if flagged and len(marks.strip()):
-                print(f"    {ui.AMBER}{ui._fit(marks, inner - 4)}{ui.RST}")
+            print(f"    {ui.VIOLET}{spark[-len(shown):]}{ui.RST}")
+            if flagged and marks.strip():
+                print(f"    {ui.AMBER}{marks.rstrip()}{ui.RST}")
+            first, last = shown[0]["day"][5:], shown[-1]["day"][5:]
+            if len(shown) >= 12:
+                gap = len(shown) - len(first) - len(last)
+                print(f"    {ui.MUTED}{first}{' ' * gap}{last}{ui.RST}")
     if not data["days"] and not data["sessions"]:
         _note(f"Nothing over {data['factor']:g}× the median of the "
               f"{data['baseline_days']} days before it.", inner)
@@ -176,79 +192,102 @@ def _render_anomalies(data: dict) -> None:
           f"{data['baseline_days']} days before. ▴ marks a flagged day.",
           inner, indent=4)
     print()
-    # Top five days and top five sessions. A day that is mostly one flagged
-    # session is one card, so the same spend is not told twice.
+    # A day that is mostly one flagged session is told once, on the day's
+    # row, so the same spend is not counted twice down the page.
     ranked_days = sorted(data["days"], key=lambda item: -item["factor"])
     sessions_by_id = {session["id"]: session for session in data["sessions"]}
-    paired = []
+    owners: dict[str, dict | None] = {}
     merged = set()
     for day in ranked_days:
         by_session: dict[str, int] = {}
         for turn in day["turns"]:
-            by_session[turn["id"]] = (
-                by_session.get(turn["id"], 0) + turn["nano_aiu"])
-        twin = None
+            by_session[turn["id"]] = by_session.get(turn["id"], 0) + turn["nano_aiu"]
+        owner = None
         if by_session and day["nano_aiu"]:
-            owner = max(by_session, key=by_session.get)
-            if by_session[owner] >= day["nano_aiu"] * 0.6:
-                candidate = sessions_by_id.get(owner)
+            top = max(by_session, key=by_session.get)
+            if by_session[top] >= day["nano_aiu"] * 0.6:
+                candidate = sessions_by_id.get(top)
                 if candidate and candidate.get("day") == day["day"]:
-                    twin = candidate
-                    merged.add(owner)
-        paired.append(("day", day, twin))
-    cards = list(paired[:5])
-    session_cards = [session for session in data["sessions"]
-                     if session["id"] not in merged]
-    for session in session_cards[:5]:
-        cards.append(("session", None, session))
-    extra = (max(0, len(paired) - 5) + max(0, len(session_cards) - 5))
-    for _kind, day, session in cards:
-        if day and session:
-            title = (f"{day['day']} · {session['summary'] or session['id'][:8]}")
-            multiple = (f"{day['factor']:g}× usual · "
-                        f"{day['nano_aiu'] / 1e9:,.2f} AIU")
-            turns = day["turns"][:4]
-            where = session
-        elif day:
-            title = day["day"]
-            multiple = (f"{day['factor']:g}× usual · "
-                        f"{day['nano_aiu'] / 1e9:,.2f} AIU")
-            turns = day["turns"][:4]
-            where = None
-        else:
-            title = session["summary"] or "(untitled)"
-            multiple = (f"{session['factor']:g}× usual · "
-                        f"{session['session_nano_aiu'] / 1e9:,.2f} AIU")
-            turns = session["turns"][:4]
-            where = session
-        print(ui.heading(ui._fit(f"{title} · {multiple}", inner - 4),
+                    owner = candidate
+                    merged.add(top)
+        owners[day["day"]] = owner
+    extra = 0
+    if ranked_days:
+        print(ui.heading(f"Days over {data['factor']:g}× usual · {len(ranked_days)}",
                          ui.VIOLET, inner))
-        _turn_table(turns, inner)
-        if where and where.get("n"):
-            top = turns[0]["turn"] if turns else None
-            hint = f"cs read {where['n']}"
-            if top is not None:
-                hint += f" --turn {top}"
-            _note(hint, inner, indent=4)
+        rows = []
+        for day in ranked_days[:5]:
+            owner = owners[day["day"]]
+            if owner:
+                driver = owner["summary"] or owner["id"][:8]
+            else:
+                spread = len({turn["id"] for turn in day["turns"]})
+                driver = f"spread over {_plural(spread, 'session')}"
+            rows.append((day, driver))
+        _spike_table(
+            [(_weekday(day["day"]), day["nano_aiu"], day["factor"], driver,
+              day["turns"][:1]) for day, driver in rows],
+            "day", inner)
+        extra += max(0, len(ranked_days) - 5)
+        if len(ranked_days) > 5:
+            _note(f"+{len(ranked_days) - 5} more days", inner, indent=4)
         print()
-    if extra > 0:
-        _note(f"+{extra} more", inner)
-    _note("cs efficiency — cache and effort across the window", inner)
+    rest = [session for session in data["sessions"] if session["id"] not in merged]
+    if rest:
+        print(ui.heading(f"Sessions over {data['factor']:g}× usual · {len(rest)}",
+                         ui.ROSE, inner))
+        shown_sessions = rest[:5]
+        _number(shown_sessions)
+        _spike_table(
+            [(f"{session['n']}  {_weekday(session['day'])}",
+              session["session_nano_aiu"], session["factor"],
+              session["summary"] or "(untitled)", session["turns"][:1])
+             for session in shown_sessions],
+            "#  day", inner)
+        if len(rest) > 5:
+            _note(f"+{len(rest) - 5} more sessions", inner, indent=4)
+        print()
+    _note("cs read N --turn T — the turn itself · cs efficiency — cache and "
+          "effort across the window", inner)
     print()
 
 
-def _turn_table(turns: list[dict], inner: int) -> None:
-    """The turns that drove a spike: model, effort and cache, in one block."""
-    if not turns:
-        return
-    for turn in turns[:5]:
-        where = f"turn {turn['turn']}" if turn["turn"] is not None else "turn"
-        bits = [", ".join(turn["models"]) or "model not recorded"]
-        if turn["effort"]:
-            bits.append(turn["effort"])
-        bits.append(f"cache {_cache(turn['cache_hit'])}")
-        text = f"{ui.fmt_aiu(turn['nano_aiu'])}  {where}  {' · '.join(bits)}"
-        _note(text, inner, indent=4)
+def _spike_table(rows: list[tuple], first: str, inner: int) -> None:
+    """One flagged day or session per row, and the turn that drove it under it.
+
+    (label, nano, factor, what, [turn]) — the label is a date, or a #N and a
+    date. Spend and multiple are right-aligned so they read as columns; the
+    driving turn hangs under the description it explains.
+    """
+    label_w = max(len(first), *(ui.cells(row[0]) for row in rows))
+    aiu = [f"{ui.fmt_aiu(row[1])}" for row in rows]
+    aiu_w = max(len("AIU"), *(len(text) for text in aiu))
+    times = [_times(row[2]) for row in rows]
+    times_w = max(len("usual"), *(len(text) for text in times))
+    lead = label_w + 2 + aiu_w + 2 + times_w + 2
+    what_w = inner - 4 - lead
+    # Under about twenty columns a description is a stub, so it moves under
+    # the numbers and takes the full width instead.
+    stacked = what_w < 20
+    if stacked:
+        lead, what_w = 2, inner - 6
+    head = f"{first:<{label_w}}  {'AIU':>{aiu_w}}  {'usual':>{times_w}}"
+    if not stacked:
+        head += f"  {'what drove it':<{min(what_w, 40)}}"
+    print(f"    {ui.MUTED}{head.rstrip()}{ui.RST}")
+    print(f"    {ui.MUTED}{'─' * min(ui.cells(head), inner - 4)}{ui.RST}")
+    for (label, _nano, _factor, what, turns), spend, multiple in zip(
+            rows, aiu, times, strict=True):
+        numbers = (f"    {ui.SKY}{label:<{label_w}}{ui.RST}  "
+                   f"{ui.BOLD}{spend:>{aiu_w}}{ui.RST}  "
+                   f"{ui.AMBER}{multiple:>{times_w}}{ui.RST}")
+        if stacked:
+            print(numbers)
+            print(f"    {' ' * lead}{ui._fit(what, what_w)}")
+        else:
+            print(f"{numbers}  {ui._fit(what, what_w)}")
+        for turn in turns:
+            print(f"    {' ' * lead}{ui.MUTED}{ui._fit(_driver(turn), what_w)}{ui.RST}")
 
 
 # ── Repo health ──────────────────────────────────────────────────────
@@ -338,7 +377,7 @@ def _render_health(data: dict) -> None:
     rate = data["failure_rate"]
     tiles = []
     tiles.append(("sessions", f"{data['sessions']:,}", "good"))
-    tiles.append(("spend", f"{data['nano_aiu'] / 1e9:,.1f} AIU", "good"))
+    tiles.append(("spend", f"{ui.fmt_aiu(data['nano_aiu'])} AIU", "good"))
     if rate is None:
         tiles.append(("failures", "no logs", "watch"))
     elif rate >= 0.05:
@@ -349,7 +388,7 @@ def _render_health(data: dict) -> None:
         tiles.append(("failures", f"{rate:.1%}", "good"))
     oversized = data["instructions_over_limit"]
     if oversized is not None:
-        tiles.append(("instructions", str(len(oversized)),
+        tiles.append(("long instructions", str(len(oversized)),
                       "act" if oversized else "good"))
     unused = data["skills_unused"]
     if unused is not None and data["skills_available"]:
@@ -360,17 +399,21 @@ def _render_health(data: dict) -> None:
     tiles.append(("hook failures", str(hook_fails), "act" if hook_fails else "good"))
     open_n = len(data["handoffs_open"])
     tiles.append(("open handoffs", str(open_n), "watch" if open_n else "good"))
-    tiles = tiles[:6]
-    # Two columns when the window can hold them, one when it cannot.
-    columns = 2 if inner >= 48 else 1
+    # Label, value, verdict — each padded to the widest of its kind, so the
+    # tiles form columns. They were strung together as they came, and a
+    # longer value on the left pushed the whole right-hand tile out of line.
+    label_w = max(ui.cells(label) for label, _v, _k in tiles)
+    value_w = max(ui.cells(value) for _l, value, _k in tiles)
+    tile_w = label_w + 2 + value_w + 2 + 5
+    columns = 2 if inner - 4 >= 2 * tile_w + 6 else 1
     for start in range(0, len(tiles), columns):
-        row = tiles[start:start + columns]
         parts = []
-        for label, value, kind in row:
+        for label, value, kind in tiles[start:start + columns]:
             word, colour = _judgement(kind)
-            cell = f"{colour}{word:<5}{ui.RST} {value} {ui.MUTED}{label}{ui.RST}"
-            parts.append(cell)
-        print("    " + "    ".join(parts))
+            parts.append(f"{ui.MUTED}{label:<{label_w}}{ui.RST}  "
+                         f"{ui.BOLD}{value:>{value_w}}{ui.RST}  "
+                         f"{colour}{word}{ui.RST}{' ' * (5 - len(word))}")
+        print(("    " + "      ".join(parts)).rstrip())
     print()
     actions = []
     if rate is not None and rate >= 0.02:
@@ -385,8 +428,7 @@ def _render_health(data: dict) -> None:
         actions.append("cs handoff — work passed on and not picked up")
     if actions:
         print(ui.heading("Worth doing", ui.ACCENT, inner))
-        for action in actions[:3]:
-            _note(action, inner, indent=4)
+        _command_list([action.split(" — ", 1) for action in actions[:3]], inner)
         print()
     if data["top_files"]:
         print(ui.heading("Files agents edit most", ui.MINT, inner))
@@ -394,6 +436,23 @@ def _render_health(data: dict) -> None:
             print(f"    {ui.MINT}{item['sessions']:>4}{ui.RST}  "
                   f"{ui._fit(item['path'], inner - 10)}")
         print()
+
+
+def _command_list(pairs: list[list[str]], inner: int) -> None:
+    """Commands in one column and what each is for in the next.
+
+    Written as "cs x — why" sentences, the commands started wherever the
+    previous line's words ended and could not be picked out at a glance.
+    """
+    width = max(ui.cells(pair[0]) for pair in pairs)
+    for command, *why in pairs:
+        reason = why[0] if why else ""
+        room = inner - 4 - width - 3
+        if reason and room >= 12:
+            print(f"    {ui.CODE}{command:<{width}}{ui.RST}   "
+                  f"{ui.MUTED}{ui._fit(reason, room)}{ui.RST}")
+        else:
+            print(f"    {ui.CODE}{ui._fit(command, inner - 4)}{ui.RST}")
 
 
 # ── Prompt patterns ──────────────────────────────────────────────────
@@ -493,33 +552,14 @@ def _render_patterns(data: dict) -> None:
                 return 0.0
             return abs(left - right)
 
-        lead = max(kept, key=gap)
+        kept.sort(key=gap, reverse=True)
+        lead = kept[0]
         left, right = lead["with"]["shipped_rate"], lead["without"]["shipped_rate"]
         if left is not None and right is not None and left != right:
-            higher = "with" if left > right else "without"
-            _note(f"Strongest: {lead['feature']} — shipped {higher} it "
-                  f"{_pct(max(left, right))} against {_pct(min(left, right))}. "
-                  f"Correlation, not causation.", inner, indent=4)
+            _note(f"Strongest: {lead['feature']} — {_pct(left)} shipped with it, "
+                  f"{_pct(right)} without.", inner, indent=4)
         print()
-        # Features down the page, with and without as two shipped bars.
-        if inner < 48:
-            name_w, bar_w = 12, 4
-        elif inner < 64:
-            name_w, bar_w = 18, 6
-        else:
-            name_w, bar_w = 28, 10
-        head = (f"{'feature':<{name_w}} {'with':>{bar_w + 5}}  "
-                f"{'without':>{bar_w + 5}}")
-        print(f"    {ui.MUTED}{ui._fit(head, inner - 4)}{ui.RST}")
-        print(f"    {ui.MUTED}{'─' * min(ui.cells(head), inner - 4)}{ui.RST}")
-        for feature in kept:
-            label = ui._fit(feature["feature"], name_w)
-            cells = []
-            for side in ("with", "without"):
-                reading = feature[side]
-                rate = reading["shipped_rate"] or 0
-                cells.append(f"{ui.meter(rate, bar_w, ui.MINT)} {_pct(reading['shipped_rate']):>4}")
-            print(f"    {label} {'  '.join(cells)}")
+        _patterns_table(kept, inner)
         print()
     else:
         _note("Not enough sessions on both sides of any habit to compare.",
@@ -532,6 +572,65 @@ def _render_patterns(data: dict) -> None:
         _note("Correlation, not causation. Shipped means a commit or a PR.",
               inner)
     print()
+
+
+def _patterns_table(features: list[dict], inner: int) -> None:
+    """Each habit on one row: shipped with it, shipped without, and on how many.
+
+    Every column is padded to a measured span. The label used to be cut but
+    not padded, so each row's bars started wherever its label happened to
+    end and the two sides of the comparison never lined up.
+    """
+    counts = [f"{f['with']['sessions']:,} · {f['without']['sessions']:,}"
+              for f in features]
+    count_w = max(len("sessions"), *(len(text) for text in counts))
+    longest = max(len("opening habit"), *(ui.cells(f["feature"]) for f in features))
+
+    def room(bar_w: int) -> int:
+        side_w = (bar_w + 1 if bar_w else 0) + 4
+        return inner - 4 - (2 * (side_w + 3) + count_w + 3)
+
+    # The habit is the thing being read, so the bars give way before it is
+    # cut. When even bare numbers leave it too little room, each habit takes
+    # a line of its own and its numbers sit under it.
+    bar_w = next((width for width in (10, 6, 0) if room(width) >= longest), None)
+    stacked = bar_w is None
+    if stacked:
+        bar_w = 6 if inner >= 44 else 0
+    side_w = (bar_w + 1 if bar_w else 0) + 4
+
+    def sides_of(feature: dict) -> list[str]:
+        rates = [feature[side]["shipped_rate"] for side in ("with", "without")]
+        best = max((rate for rate in rates if rate is not None), default=None)
+        out = []
+        for rate in rates:
+            colour = ui.MINT if rate is not None and rate == best else ui.MUTED
+            meter = f"{ui.meter(rate or 0, bar_w, colour)} " if bar_w else ""
+            out.append(f"{meter}{colour}{_pct(rate):>4}{ui.RST}")
+        return out
+
+    if stacked:
+        for feature, count in zip(features, counts, strict=True):
+            with_it, without = sides_of(feature)
+            print(f"    {ui._fit(feature['feature'], inner - 4)}")
+            sides = (f"      {ui.MUTED}with{ui.RST} {with_it}   "
+                     f"{ui.MUTED}without{ui.RST} {without}")
+            tail = f"   {ui.MUTED}{count}{ui.RST}"
+            if ui.cells(ui._strip(sides + tail)) <= inner:
+                print(sides + tail)
+            else:
+                print(sides)
+                print(f"      {ui.MUTED}{count} sessions{ui.RST}")
+        return
+    name_w = longest
+    head = (f"{'opening habit':<{name_w}}   {'with it':<{side_w}}   "
+            f"{'without':<{side_w}}   {'sessions':>{count_w}}")
+    print(f"    {ui.MUTED}{head}{ui.RST}")
+    print(f"    {ui.MUTED}{'─' * ui.cells(head)}{ui.RST}")
+    for feature, count in zip(features, counts, strict=True):
+        with_it, without = sides_of(feature)
+        print(f"    {_cell(feature['feature'], name_w)}   "
+              f"{with_it}   {without}   {ui.MUTED}{count:>{count_w}}{ui.RST}")
 
 
 # ── Agent config: how profiles and skills are really used ────────────
