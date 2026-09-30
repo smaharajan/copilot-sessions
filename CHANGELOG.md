@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-09-30
+
 ### Added
 
 - **Reports arrive with motion.** As a report opens, behind the wipe its bars
@@ -620,7 +622,8 @@ only.
   masked at the render edge in `cs/redact.py`, and terminal control sequences
   and row-breaking characters are stripped before anything is drawn.
 
-[Unreleased]: https://github.com/smaharajan/copilot-sessions/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/smaharajan/copilot-sessions/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v2.1.0
 [2.0.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v2.0.0
 [1.1.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.1.0
 [1.0.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v1.0.0
