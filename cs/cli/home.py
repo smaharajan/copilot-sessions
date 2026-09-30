@@ -997,12 +997,12 @@ def _home_tui(screen, state: dict):
     # Once per run, not once per visit: replaying the wipe every time a view
     # hands you back would turn a greeting into a stutter.
     timed = wait_until(ui.REVEAL_MS)
-    reveal = None if state.get("revealed") or not timed else 0
+    reveal = None if state.get("revealed") or not timed or not ui.MOTION else 0
     # The agent's walk. None on a window that cannot time a keypress, where
     # asking for one would block and the screen would simply never redraw.
     # `rested` is how many idle frames it has spent pacing: it stops at
     # ui.PACE_FRAMES while the refresh heartbeat keeps running.
-    pace = 0 if timed else None
+    pace = 0 if timed and ui.MOTION else None
     rested = 0
     next_pace = 0.0
     # The smaller motions, all on the clock rather than the frame count, so
@@ -1134,7 +1134,7 @@ def _home_tui(screen, state: dict):
             for mark, at in list(marks.items()):
                 if now - at >= ui.FLASH_SECONDS:
                     del marks[mark]
-            pulse = (ui.pulse_role(now) if timed and state.get("session")
+            pulse = (ui.pulse_role(now) if timed and ui.MOTION and state.get("session")
                      else None)
             top = _draw_home_header(screen, theme, width, art, facts, sweep,
                                     reveal, pad, activity,
@@ -1346,7 +1346,7 @@ def _home_tui(screen, state: dict):
                     if row[0] == "item":
                         cursor = row[1]
                         if kind == "double":
-                            opening = ui.OPEN_FRAMES if timed else 1
+                            opening = ui.OPEN_FRAMES if timed and ui.MOTION else 1
                 continue
             if key == 27:
                 # Esc clears what you typed before it quits, the same as it
@@ -1361,7 +1361,7 @@ def _home_tui(screen, state: dict):
             elif key in (10, 13, curses.KEY_ENTER):
                 if not shown:
                     continue
-                opening = ui.OPEN_FRAMES if timed else 1
+                opening = ui.OPEN_FRAMES if timed and ui.MOTION else 1
             elif key == curses.KEY_UP:
                 cursor = _home_step(shown, cursor, -1)
             elif key == curses.KEY_DOWN:

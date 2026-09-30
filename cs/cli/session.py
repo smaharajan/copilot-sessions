@@ -566,7 +566,7 @@ def _reader_tui(
     # landing screen opens with, so a view arrives the way the menu that
     # launched it did. Never on a re-sort or a scroll: motion while you are
     # reading is motion that says nothing and never stops saying it.
-    reveal = 0 if wait(ui.REVEAL_MS) else None
+    reveal = 0 if ui.MOTION and wait(ui.REVEAL_MS) else None
 
     # Long lines wrap rather than stopping at the edge. They used to be cut
     # there with no sign that anything was missing — a transcript opened

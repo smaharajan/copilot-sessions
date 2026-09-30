@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`CS_MOTION=off` keeps every screen still.** The launch sequence, wipes,
+  count-ups, growing bars, cursor glide, flashes and the live dot's pulse all
+  draw settled instead; live data still refreshes on its heartbeat.
+
+### Fixed
+
+- **Report bars grew to seven eighths and jumped the rest.** Two tables of
+  block eighths shared a name, so the entrance measured every bar short and
+  let a one-eighth bar vanish mid-animation. Bars now fill smoothly to their
+  length and never draw as nothing.
+
 ## [2.2.0] — 2026-09-30
 
 ### Added

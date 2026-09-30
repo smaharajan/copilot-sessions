@@ -2555,6 +2555,28 @@ class CSTest(StoreTest):
             self.assertEqual(ui.grow(sample, 1), sample)
         self.assertEqual(ui.grow("▌", 0), "▌", "a heading marker is not a bar")
 
+    def test_grow_fills_in_eighths_and_never_shows_nothing(self):
+        from cs import ui
+
+        self.assertEqual(ui.grow("█" * 10 + "·" * 5, 0.99), "█" * 10 + "·" * 5,
+                         "the bar stalled short of its length and jumped at the end")
+        self.assertEqual(ui.grow("█" * 2, 0.5), "█▌")
+        self.assertEqual(ui.grow("▏", 0.1), "▏", "something is never nothing")
+
+    def test_cs_motion_off_settles_every_motion_at_once(self):
+        from unittest import mock
+
+        from cs import ui
+
+        with mock.patch.object(ui, "MOTION", False):
+            self.assertEqual(ui.grow("████", 0), "████")
+            self.assertEqual(ui.count_up("125", 0), "125")
+            self.assertEqual(ui.typed("hello", 0), "hello")
+            self.assertEqual(ui.glide(0, 9), 9)
+            self.assertEqual(ui.launch_progress(0.0, 0.0, 1.0), 1.0)
+            self.assertIsNone(ui.flash_role(0.1))
+            self.assertIsNone(ui.light_role(-1))
+
     def test_the_reader_still_draws_where_a_timeout_is_not_available(self):
         """No timed getch means no wipe — and a fully drawn page anyway."""
         from cs.cli import _reader_tui

@@ -786,6 +786,10 @@ def pace_column(frame: int, span: int) -> int:
 # number arriving, a number changing, the cursor moving, a session running —
 # and each one ends when that thing does, the same rule as the wipe.
 MOTION_MS = 30
+# CS_MOTION=off keeps every screen still: no wipe, launch, count-up, glide,
+# flash or pulse. Each helper below answers "already finished" instead.
+MOTION = os.environ.get("CS_MOTION", "").strip().lower() not in (
+    "0", "off", "no", "false", "none")
 # Counts roll up to themselves the first time they arrive, on the wipe's curve.
 COUNT_SECONDS = 0.7
 # A count a refresh changed is lit, then dimmer, then itself again.
@@ -808,7 +812,7 @@ def count_up(text: str, progress: float) -> str:
     to the finished width so the label beside it never slides.
     """
     found = _COUNT.search(text)
-    if progress >= 1 or not found:
+    if progress >= 1 or not found or not MOTION:
         return text
     raw = found.group()
     places = len(raw.split(".")[1]) if "." in raw else 0
@@ -822,7 +826,10 @@ def count_up(text: str, progress: float) -> str:
 # sparklines rise, starting a little after the row above, then stop.
 GROW_FRAMES = 10
 GROW_STAGGER = 0.2
-_EIGHTHS = " ▏▎▍▌▋▊▉█"
+# Indexed by eighths filled, blank first. Not `_EIGHTHS` below, which starts
+# at one eighth and, sharing the name, used to shadow this one — every bar then
+# grew to seven eighths of its length and jumped the rest on the last frame.
+_FILLS = " ▏▎▍▌▋▊▉█"
 _LEVELS = "▁▂▃▄▅▆▇█"
 _BAR = re.compile(r"([█▉▊▋▌▍▎▏]+)([·░ ]*)")
 
@@ -835,15 +842,15 @@ def grow(text: str, progress: float) -> str:
     not reached yet show the track. A sparkline rises column by column.
     Anything else comes back unchanged.
     """
-    if progress >= 1 or not text:
+    if progress >= 1 or not text or not MOTION:
         return text
     eased = 1 - (1 - max(progress, 0.0)) ** 2
     bar = _BAR.fullmatch(text)
     if bar and text != "▌":
         blocks, track = bar.groups()
-        filled = round(sum(_EIGHTHS.index(ch) for ch in blocks) * eased)
+        filled = max(1, round(sum(_FILLS.index(ch) for ch in blocks) * eased))
         full, part = divmod(filled, 8)
-        drawn = "█" * full + (_EIGHTHS[part] if part else "")
+        drawn = "█" * full + (_FILLS[part] if part else "")
         return drawn + (track[:1] or " ") * (len(blocks) - len(drawn)) + track
     if any(ch in _LEVELS[:-1] for ch in text) and all(
             ch in _LEVELS or ch == " " for ch in text):
@@ -855,7 +862,7 @@ def grow(text: str, progress: float) -> str:
 
 def flash_role(age: float) -> str | None:
     """The style a changed count wears `age` seconds after it changed."""
-    if age < 0 or age >= FLASH_SECONDS:
+    if age < 0 or age >= FLASH_SECONDS or not MOTION:
         return None
     return "cursor" if age < FLASH_SECONDS / 2 else "title"
 
@@ -863,7 +870,7 @@ def flash_role(age: float) -> str | None:
 def glide(at: float, goal: int) -> float:
     """The cursor bar's next row on its way from `at` to `goal`."""
     gap = goal - at
-    if abs(gap) <= 1:
+    if abs(gap) <= 1 or not MOTION:
         return float(goal)
     return at + gap * GLIDE_SHARE
 
@@ -905,6 +912,8 @@ OPEN_FRAMES = 4
 
 def light_role(age: float) -> str | None:
     """A header count `age` seconds after its turn to light: dim, lit, itself."""
+    if not MOTION:
+        return None
     if age < 0:
         return "separator"
     return "title" if age < LIGHT_SECONDS else None
@@ -912,7 +921,7 @@ def light_role(age: float) -> str | None:
 
 def launch_progress(elapsed: float | None, start: float, length: float) -> float:
     """How far one part of the launch is, eased. 1.0 once it has ended."""
-    if elapsed is None:
+    if elapsed is None or not MOTION:
         return 1.0
     progress = min(max((elapsed - start) / length, 0.0), 1.0)
     return 1 - (1 - progress) ** 1.5
@@ -920,6 +929,8 @@ def launch_progress(elapsed: float | None, start: float, length: float) -> float
 
 def typed(text: str, progress: float) -> str:
     """As much of `text` as has been typed at `progress`."""
+    if not MOTION:
+        return text
     return text[:round(len(text) * min(max(progress, 0.0), 1.0))]
 
 
