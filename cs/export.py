@@ -40,7 +40,7 @@ VIEWS = (
     "delegation", "repos", "skills", "skills-by-repo", "profiles",
     "standup", "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "today", "saved",
-    "cleanup", "budget", "anomalies", "health", "patterns", "playbook",
+    "cleanup", "budget", "anomalies", "health", "patterns",
     "doctor", "rollup",
 )
 
@@ -54,7 +54,7 @@ DATA_COMMANDS = (
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "today", "saved", "cleanup", "budget",
-    "anomalies", "health", "patterns", "playbook", "doctor", "rollup",
+    "anomalies", "health", "patterns", "doctor", "rollup",
 )
 
 
@@ -485,12 +485,6 @@ def health(repo: str = ".") -> dict:
 def patterns(days: int) -> dict:
     from .cli.analysis import _patterns_data
     return {"view": "patterns", **_patterns_data(days)}
-
-
-def playbook(days: int | None) -> dict:
-    from .cli.analysis import PLAYBOOK_DAYS, _playbook_data
-    return {"view": "playbook",
-            **_playbook_data(PLAYBOOK_DAYS if days is None else days)}
 
 
 # ── Operations ───────────────────────────────────────────────────────

@@ -28,7 +28,6 @@ from ._common import (
     _visible,
     _window_label,
 )
-from .analysis import cmd_playbook
 from .evidence import _clean, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
@@ -96,12 +95,6 @@ def _home_items(period: int = 30,
         # counting over the window its heading names.
         (ui.menu_icon("repos"), "Repositories",
          "sessions grouped by repository", cmd_repos, ""),
-        # Every other row looks back or counts; this one is for the next
-        # session — the ones that shipped cleanly, with the ask that started
-        # them, so a task done well once can be started the same way again.
-        (ui.menu_icon("playbook"), "Playbook",
-         "what worked before: shipped, clean, with its opening ask",
-         cmd_playbook, ""),
         (ui.menu_icon("stats"), "Stats",
          "commits, PRs, files and what they cost",
          cmd_stats, "period"),
@@ -1344,9 +1337,6 @@ def cmd_help() -> None:
                           session checkpoints. Supports AND / OR / NEAR and "phrases".{ui.RST}
     cs search --save <name> <words>   Save a search under a name, and run it
     cs saved [name]       List saved searches, or run one
-    cs playbook [N|all]   What worked before: sessions that shipped (a commit
-                          or PR), ended cleanly and never got stuck, each
-                          with its opening ask · default the last 90 days
 
   {ui.BOLD}Measure{ui.RST}
     cs repos              Sessions grouped by repository
@@ -1447,8 +1437,7 @@ def cmd_help() -> None:
                           agents, repos, skills, profiles, standup, failures,
                           loops, subagents, switches, endings, today, next, eod,
                           weekly, saved, cleanup, budget,
-                          anomalies, health, patterns, playbook,
-                          doctor, rollup{ui.RST}
+                          anomalies, health, patterns, doctor, rollup{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
     cs completion <shell> Completions for bash, zsh or fish

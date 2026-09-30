@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **Playbook: what worked before.** `cs playbook [N|all]`, and a Playbook
-  row under Find, lists sessions from the last 90 days that shipped a commit
-  or pull request, ended cleanly, never looped and opened with a real ask.
-  Each row shows the kind of work, what it shipped and the opening ask;
-  Enter resumes it. `--json` and `--csv` work too.
-
 ### Fixed
 
 - **Printed listings stay inside the window.** The header and rows ran one

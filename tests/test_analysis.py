@@ -178,74 +178,6 @@ class AnalysisTest(StoreTest):
         self.assertIn("Correlation, not causation", flat)
         self.assertIn("under 5 is too few", flat)
 
-    # ── Playbook ─────────────────────────────────────────────────────
-
-    def _shipped(self, sid: str, ask: str, ending: str = "stop",
-                 ref: str | None = "commit") -> None:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        self.conn.execute("INSERT INTO sessions VALUES (?,?,?,'local','main',?,?,?)",
-                          (sid, "/tmp/g", "acme/app", f"Work {sid}", now, now))
-        self.conn.execute("INSERT INTO turns (session_id, turn_index, user_message, "
-                          "assistant_response) VALUES (?,0,?,'ok')", (sid, ask))
-        self.conn.execute("INSERT INTO assistant_usage_events (session_id, "
-                          "turn_index, model, total_nano_aiu, finish_reason) "
-                          "VALUES (?,0,'gpt-5.5',1000000000,?)", (sid, ending))
-        if ref:
-            self.conn.execute("INSERT INTO session_refs (session_id, ref_type, "
-                              "ref_value) VALUES (?,?,'c0ffee')", (sid, ref))
-
-    def test_playbook_keeps_only_what_shipped_cleanly_and_says_why(self):
-        code, out = self._run("playbook")
-        self.assertEqual(code, 0)
-        self.assertIn("None met all of", " ".join(out.split()))
-        ask = f"fix src/parser.py so that pytest passes, token {SECRET}"
-        self._shipped("good", ask)
-        self._shipped("thin", "resume the work")               # no brief to reuse
-        self._shipped("cut-off", ask, ending="length")          # ended badly
-        self._shipped("unknown", ask, ending="")                # no proof it ended well
-        self._shipped("unshipped", ask, ref=None)               # nothing shipped
-        self.conn.commit()
-        data = self._json("playbook")
-        # sess-alpha shipped too, but a tool got stuck and its last call erred.
-        self.assertEqual([s["id"] for s in data["sessions"]], ["good"])
-        self.assertEqual(data["shipped"], 5)
-        good = data["sessions"][0]
-        self.assertEqual((good["work"], good["commits"], good["prs"], good["ending"]),
-                         ("fix", 1, 0, "stop"))
-        self.assertIn("src/parser.py", good["opening"])
-        code, out = self._run("playbook")
-        self.assertIn("Playbook", out)
-        self.assertIn("1 commit · fix src/parser.py", out)
-        for text in (out, json.dumps(data)):
-            self.assertNotIn(SECRET, text)
-
-    def test_playbook_opens_as_a_listing_in_a_terminal(self):
-        from cs import cli
-
-        self._shipped("good", "add a retry to the SFTP poller with a unit test",
-                      ref="pr")
-        self.conn.commit()
-        seen = []
-        with mock.patch.object(cli, "_interactive_listing",
-                               side_effect=lambda *a, **k: seen.append((a, k)) or True), \
-                mock.patch("sys.stdin", mock.Mock(isatty=lambda: True)), \
-                mock.patch("sys.stdout", mock.Mock(isatty=lambda: True)):
-            self.assertTrue(cli.cmd_playbook())
-        rows, title = seen[0][0][:2]
-        self.assertEqual([row[0] for row in rows], ["good"])
-        self.assertIn("Playbook", title)
-        self.assertEqual(seen[0][1]["hits"]["good"],
-                         ("build", "1 PR · add a retry to the SFTP poller with a "
-                                   "unit test"))
-        # A session that ships while the listing is open arrives on the
-        # heartbeat, and with its line under it.
-        self._shipped("later", "fix the flaky checkout test in the cart module")
-        self.conn.commit()
-        rows, title = seen[0][1]["reload"]()
-        self.assertEqual({row[0] for row in rows}, {"good", "later"})
-        self.assertIn("2 sessions", title)
-        self.assertIn("later", seen[0][1]["hits"])
-
     # ── Agent config ─────────────────────────────────────────────────
 
     def test_skills_and_profiles_gain_invoked_last_used_and_model_kept(self):
@@ -304,7 +236,6 @@ class AnalysisHomeTest(StoreTest):
         self.assertNotIn("Similar work", labels)
         self.assertNotIn("Improve", set(group.values()))
         self.assertEqual(asks["AI spend"], "period")
-        self.assertEqual(group["Playbook"], "Find")
 
     def test_the_commands_off_the_menu_still_open(self):
         from cs import cli

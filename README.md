@@ -187,11 +187,7 @@ hooks and scripts; the home header shows the same limit.
 
 Finding past work: **`cs search --save`** and **`cs saved`** keep the
 searches you run every week. **`cs files <path>`**
-lists sessions that touched a file. **`cs playbook`** (the Playbook row
-under Find) lists what worked before: sessions that shipped a commit or PR,
-ended cleanly with no stuck loop, and opened with a real ask — each shown
-with its work type, what it shipped and that opening ask, ready to resume.
-**`cs cleanup`** lists stale pins, quiet
+lists sessions that touched a file. **`cs cleanup`** lists stale pins, quiet
 `wip` tags and abandoned handoffs, and ends with the commands that would tidy
 them — it never removes anything itself.
 

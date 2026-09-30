@@ -1224,7 +1224,6 @@ _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "anomalies": ("📈", "y"),
     "health": ("🏥", "i"),
     "patterns": ("🔣", "p"),
-    "playbook": ("📘", "b"),
     "rollup": ("📤", "m"),
 }
 # Every icon is drawn from the supplemental pictograph planes (U+1F300 and

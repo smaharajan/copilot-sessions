@@ -13,7 +13,6 @@ import os
 import re
 import shutil
 import statistics
-import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -22,7 +21,6 @@ from .. import (
     context,
     db,
     events,
-    practice,
     signals,
     ui,
 )
@@ -36,8 +34,6 @@ from ._common import (
     _visible,
     _weekday,
     _when,
-    _window_label,
-    _with_assets,
 )
 from .evidence import (
     _TOP,
@@ -51,7 +47,6 @@ from .evidence import (
     _table,
 )
 from .inventory import _asset_inventory
-from .listing import _interactive_listing, _render_listing
 from .today import _repo_match
 
 # A day or a session is a spike when it cost more than this many times the
@@ -636,105 +631,6 @@ def _patterns_table(features: list[dict], inner: int) -> None:
         with_it, without = sides_of(feature)
         print(f"    {_cell(feature['feature'], name_w)}   "
               f"{with_it}   {without}   {ui.MUTED}{count:>{count_w}}{ui.RST}")
-
-
-# ── Playbook: what worked before ─────────────────────────────────────
-
-PLAYBOOK_DAYS = 90
-# How the last billed call reads when the session stopped on its own terms —
-# see `db.last_calls`. An absent reason is not taken for a clean one.
-_CLEAN_STOPS = frozenset({"stop", "tool_calls"})
-
-
-def _playbook_data(days: int = PLAYBOOK_DAYS) -> dict:
-    """Sessions worth starting the next one from, newest first.
-
-    Each one shipped (a commit or a PR), its last call ended cleanly, no tool
-    got stuck failing in a loop, and it opened with a real brief — every one
-    of those is evidence carried on the row. The opening request comes with
-    it, masked, because that is the part worth reusing. Cheapest first was
-    tried and put "resume the previous work" at the top: a session that
-    ships for next to nothing is usually the tail of one that did the work.
-    """
-    conn = db.connect()
-    try:
-        rows = _visible(db.recent_sessions(conn, days), False)
-        refs = db.refs_by_session(conn, [row[0] for row in rows])
-        last = db.last_calls(conn)
-        shipped = [row for row in rows
-                   if (made := refs.get(row[0]) or {}).get("commit") or made.get("pr")]
-        clean = [row for row in shipped
-                 if row[0] in last and last[row[0]][1] in _CLEAN_STOPS]
-        prompts = db.opening_prompts(conn, [row[0] for row in clean],
-                                     first_only=True)
-    finally:
-        conn.close()
-    digests = events.digests([row[0] for row in clean])
-    sessions = []
-    for row in clean:
-        sid = row[0]
-        if (digests.get(sid) or {}).get("loops"):
-            continue
-        opening = next((cleaned for _i, text in prompts[sid]
-                        if (cleaned := _user_text(text)).strip()), "")
-        if len(opening.strip()) < practice.THIN_PROMPT:
-            continue
-        work = practice._work_type(opening)
-        sessions.append({
-            **_session_fields(row),
-            "work": "ask" if work == "other" else work,
-            "commits": refs[sid].get("commit", 0),
-            "prs": refs[sid].get("pr", 0),
-            "ending": last[sid][1],
-            "opening": _clean(opening),
-            "resume": f"cs resume {sid[:8]}",
-        })
-    sessions.sort(key=lambda s: s["last_active"] or "", reverse=True)
-    return {"window_days": days, "shipped": len(shipped),
-            "criteria": ("a commit or PR, a clean last call, no stuck loop, "
-                         f"an opening request of {practice.THIN_PROMPT}+ characters"),
-            "sessions": sessions}
-
-
-def cmd_playbook(days: int = PLAYBOOK_DAYS) -> bool:
-    """What worked before — find the like of today's task, then reuse it."""
-    hits: dict[str, tuple[str, str]] = {}
-    criteria = ""
-
-    def read() -> tuple[list[tuple], str]:
-        # Refills `hits` in place: the open listing holds that dict, so a
-        # session that ships while it is on screen arrives with its line.
-        nonlocal criteria
-        data = _playbook_data(days)
-        criteria = data["criteria"]
-        conn = db.connect()
-        try:
-            by_id = {row[0]: row for row in db.recent_sessions(conn, days)}
-        finally:
-            conn.close()
-        rows = _with_assets([by_id[s["id"]] for s in data["sessions"]
-                             if s["id"] in by_id])
-        hits.clear()
-        for s in data["sessions"]:
-            made = [_plural(n, word) for n, word in
-                    ((s["commits"], "commit"), (s["prs"], "PR")) if n]
-            hits[s["id"]] = (s["work"], f"{', '.join(made)} · {s['opening'] or '—'}")
-        return rows, (f"Playbook · {_window_label(days)} · "
-                      f"{_plural(len(rows), 'session')} that shipped cleanly")
-
-    rows, title = read()
-    if rows and sys.stdin.isatty() and sys.stdout.isatty():
-        return _interactive_listing(rows, title, show_all=True, hits=hits,
-                                    reload=read)
-
-    def render() -> None:
-        _render_listing(rows, title, show_all=True, hits=hits)
-        if not rows:
-            _note(f"None met all of: {criteria}.",
-                  min(shutil.get_terminal_size().columns, 96) - 4)
-            print()
-
-    return _page(_capture(render))
 
 
 # ── Agent config: how profiles and skills are really used ────────────
