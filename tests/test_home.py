@@ -949,6 +949,81 @@ class LandingAnimationTest(StoreTest):
             self.assertEqual(sum(1 for (_y, x), text in screen.frame.items()
                                  if x == 2 and text == "●"), dots)
 
+    def test_the_launch_plays_once_on_the_clock_and_lands_on_the_hints(self):
+        import time as real_time
+
+        from cs import cli, ui
+
+        self.assertEqual(ui.launch_progress(None, 5, 1), 1.0)
+        self.assertEqual(ui.launch_progress(0.0, 0.5, 1), 0.0)
+        self.assertEqual(ui.launch_progress(9.0, 0.5, 1), 1.0)
+        self.assertEqual(ui.typed("hello", 0.4), "he")
+        self.assertEqual([ui.greeting(h) for h in (6, 13, 20, 2)],
+                         ["Good morning", "Good afternoon", "Good evening",
+                          "Good evening"])
+        # The strip rises against its real peak: early, every day is a stub.
+        self.assertEqual(set(ui.sparkline([1, 4, 8], 0.01)), {ui._SPARKS[1]})
+        self.assertEqual(ui.sparkline([1, 4, 8], 1.0), ui.sparkline([1, 4, 8]))
+
+        # The status line greets, holds, then types the hints over it.
+        facts = [("1,258", "sessions")]
+        say = [cli._launch_status(" ↑↓ move · q quit ", at, facts, 100, 20)
+               for at in (0.0, 0.5, 1.2, ui.LAUNCH_HINTS[0], None)]
+        self.assertEqual(say[0], "")
+        self.assertTrue(" Good evening · 1,258 sessions ready ".startswith(say[1]))
+        self.assertEqual(say[2], " Good evening · 1,258 sessions ready ")
+        self.assertEqual(say[3], "")
+        self.assertEqual(say[4], " ↑↓ move · q quit ")
+
+        # On a clock: the divider opens from the centre, rules draw out, and
+        # the launch ends on the ordinary screen by itself.
+        class ClockScreen(Screen):
+            now = 0.0
+            delay = 0
+
+            def timeout(self, milliseconds):
+                super().timeout(milliseconds)
+                self.delay = milliseconds
+
+            def getch(self):
+                key = super().getch()
+                if key == -1:
+                    self.now += self.delay / 1000
+                return key
+
+        screen = ClockScreen([-1] * 200 + [ord("q")])
+        state = {"facts": facts, "activity": [1, 2, 3] * 30}
+        with (
+            patch.object(ui, "PULSE_MS", 10**9),
+            patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
+            patch.object(cli.time, "localtime",
+                         return_value=real_time.localtime(0)),
+        ):
+            cli._home_tui(screen, state)
+
+        def divider(frame):
+            return min((x for (_y, x), text in frame.items()
+                        if text.startswith("──") and text.strip("─") == ""),
+                       default=None)
+
+        def status(frame):
+            return frame.get((23, 0), "")
+
+        early = next(f for f in screen.frames if divider(f) is not None)
+        self.assertGreater(divider(early), 0, "the divider did not open from the centre")
+        self.assertEqual(divider(screen.frames[-1]), 0)
+        self.assertTrue(any("sessions ready" in status(f) for f in screen.frames))
+        self.assertIn("/ search", status(screen.frames[-1]))
+        rules = [sum(len(text) for (_y, x), text in f.items()
+                     if text.startswith(" ─")) for f in screen.frames]
+        self.assertLess(rules[len(rules) // 20], rules[-1],
+                        "the heading rules did not draw out")
+
+        # Back from a view: no launch, the hints on the very first frame.
+        again = Screen([ord("q")])
+        cli._home_tui(again, state)
+        self.assertIn("/ search", status(again.frames[0]))
+
     def test_the_cascade_shares_the_wipes_clock(self):
         """Both halves have to finish together. A menu that settles before
         the wordmark makes the banner look stuck; after it, dropped."""

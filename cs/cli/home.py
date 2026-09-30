@@ -279,6 +279,26 @@ def _home_step(shown: list[int], cursor: int, delta: int) -> int:
     return shown[min(max(at + delta, 0), len(shown) - 1)]
 
 
+def _launch_status(hints: str, launch: float | None, facts: list[tuple],
+                   width: int, hour: int) -> str:
+    """The status line while the launch plays: a greeting, then the hints.
+
+    The greeting is typed, held, and then the hints type over it — so the
+    line people read first on a new screen says hello rather than listing
+    keys, and the keys arrive once there is something to press them on.
+    """
+    if launch is None:
+        return hints
+    if launch >= ui.LAUNCH_HINTS[0]:
+        return ui.typed(hints, (launch - ui.LAUNCH_HINTS[0]) / ui.LAUNCH_HINTS[1])
+    count = next((fact[0] for fact in facts if fact[1] == "sessions"), "")
+    hello = f" {ui.greeting(hour)}"
+    if count and ui.cells(f"{hello} · {count} sessions ready ") <= width:
+        hello = f"{hello} · {count} sessions ready "
+    start, length = ui.LAUNCH_GREET
+    return ui.typed(hello, (launch - start) / length)
+
+
 def _home_status(query: str, matched: int, total: int, width: int,
                  period: int = 30, theme: str = "dark",
                  refresh_error: bool = False, refreshed: str = "",
@@ -623,7 +643,8 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
                       activity: list[int] | None = None,
                       pace: int | None = None,
                       live: list[tuple[str, str]] | None = None,
-                      pulse: str | None = None) -> int:
+                      pulse: str | None = None,
+                      launch: float | None = None) -> int:
     """Draw the banner and the facts above the menu. Returns the first menu row.
 
     `art` is the wordmark _home_plan chose — passed in rather than worked out
@@ -710,8 +731,14 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
         row += 1
     if art and activity:
         row = _draw_home_activity(screen, theme, width, row, activity, sweep,
-                                  swept - len(art) * ui.REVEAL_LAG, widest)
-    _addstr(screen, row, 0, "─" * width, width, theme["separator"])
+                                  swept - len(art) * ui.REVEAL_LAG, widest,
+                                  ui.launch_progress(launch, *ui.LAUNCH_SPARK))
+    # `launch` is the seconds since the launch began, None once it is over:
+    # the divider opens from the centre out to both edges.
+    half = round(width / 2 * ui.launch_progress(launch, *ui.LAUNCH_DIVIDER))
+    left = max(width // 2 - half, 0)
+    _addstr(screen, row, left, "─" * (min(width // 2 + half, width) - left),
+            width - left, theme["separator"])
     if pace is not None:
         # Drawn over the rule rather than on a row of its own: a line that
         # was already there costs nothing, and the walk reads as following
@@ -724,7 +751,7 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
 
 def _draw_home_activity(screen, theme, width: int, row: int,
                         activity: list[int], sweep: list[int] | None,
-                        edge: int, full: int) -> int:
+                        edge: int, full: int, grow: float = 1.0) -> int:
     """One row of sessions-per-day, right-aligned so today is the last cell.
 
     Right-aligned because the newest day is the one you look for, and it
@@ -744,9 +771,9 @@ def _draw_home_activity(screen, theme, width: int, row: int,
     if room < 12:
         return row
     series = _activity_cells(activity, room)
-    spark = ui.sparkline(series)
-    if not spark.strip():
+    if not any(series):
         return row          # nothing recorded: an empty row says less than none
+    spark = ui.sparkline(series, grow)
     # The one wipe drives both, so they finish together whatever their
     # widths — the strip is a fraction of the wordmark's travel, not a
     # column count of its own.
@@ -974,6 +1001,9 @@ def _home_tui(screen, state: dict):
     counting = reveal is not None
     motions: dict[str, tuple[str, float]] = {}
     bar: float | None = None
+    # The launch plays with the wipe, on the clock, and outlasts it.
+    launch_at = time.monotonic() if reveal is not None else None
+    launch: float | None = None
 
     def settle() -> None:
         """End the wipe — because it finished, or because a key arrived."""
@@ -1071,13 +1101,16 @@ def _home_tui(screen, state: dict):
                 width, height, len(layout), bool(activity), len(live_rows))
             pad = (slack - len(layout)) // 2 if slack - len(layout) >= 6 else 0
             now = time.monotonic()
+            if launch_at is not None and now - launch_at >= ui.LAUNCH_SECONDS:
+                launch_at = None
+            launch = None if launch_at is None else now - launch_at
             facts = _moving_facts(state, motions, now, counting, timed)
             pulse = (ui.pulse_role(now) if timed and state.get("session")
                      else None)
             top = _draw_home_header(screen, theme, width, art, facts, sweep,
                                     reveal, pad, activity,
-                                    None if reveal is not None else pace,
-                                    live_rows, pulse)
+                                    None if launch is not None else pace,
+                                    live_rows, pulse, launch)
 
             # The menu scrolls rather than spilling off a short window, so
             # every option stays reachable however small the terminal is.
@@ -1105,6 +1138,7 @@ def _home_tui(screen, state: dict):
             # it would have on the finished screen.
             drawn = (len(layout) if reveal is None
                      else ui.reveal_rows(reveal, len(layout)))
+            heading = 0
             for line, row in enumerate(layout[offset:offset + visible], top):
                 if line - top >= drawn:
                     break
@@ -1127,14 +1161,21 @@ def _home_tui(screen, state: dict):
                     # to stop at column 24, under the labels, which read as an
                     # underline on the word rather than as the top of a block.
                     rule = width - 4 - len(value)
+                    # At launch each rule draws out after its caption, one
+                    # group a beat behind the one above.
+                    start, length = ui.LAUNCH_RULES
+                    drawn_to = ui.launch_progress(
+                        launch, start + heading * ui.LAUNCH_RULE_STAGGER, length)
+                    heading += 1
                     if rule > 2:
-                        _addstr(screen, line, 3 + len(value), " " + "─" * (rule - 1),
+                        _addstr(screen, line, 3 + len(value),
+                                " " + "─" * round((rule - 1) * drawn_to),
                                 width, theme["separator"])
                     # The window, once, at the end of the rule of each group
                     # that counts over it — where each row used to repeat it.
                     note = (f" {_window_label(state.get('period', 30))} "
                             if value in _WINDOWED_GROUPS else "")
-                    if note and rule > len(note) + 6:
+                    if note and rule > len(note) + 6 and drawn_to >= 1:
                         _addstr(screen, line, width - len(note) - 3, note,
                                 width, tone)
                     continue
@@ -1174,12 +1215,14 @@ def _home_tui(screen, state: dict):
                         theme["repo"])
 
             _addstr(screen, height - 1, 0,
-                    _home_status(query, len(shown), len(items), width,
-                                 state.get("period", 30), active_theme,
-                                 state.get("refresh_error", False),
-                                 state.get("refreshed", ""),
-                                 state.get("theme_error", False),
-                                 state.get("schema_drift", False)),
+                    _launch_status(
+                        _home_status(query, len(shown), len(items), width,
+                                     state.get("period", 30), active_theme,
+                                     state.get("refresh_error", False),
+                                     state.get("refreshed", ""),
+                                     state.get("theme_error", False),
+                                     state.get("schema_drift", False)),
+                        launch, facts, width, time.localtime().tm_hour),
                     width, theme["status"])
             screen.refresh()
 
@@ -1195,7 +1238,7 @@ def _home_tui(screen, state: dict):
                         # skipped or held.
                         tick = min(tick, ui.PULSE_MS
                                    - int(now * 1000) % ui.PULSE_MS + 1)
-                    if motions or bar != goal:
+                    if motions or bar != goal or launch is not None:
                         tick = min(tick, ui.MOTION_MS)
                 wait_until(tick)
             try:
@@ -1216,6 +1259,7 @@ def _home_tui(screen, state: dict):
                     next_pace = time.monotonic() + ui.PACE_MS / 1000
                 continue
             settle()  # any key at all lands you on the finished screen
+            launch_at = None
             event = _mouse_event(screen, curses, key, last_click, pending)
             rested = 0
             if event:

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cursor bar glides to the row you moved to, and the live dot breathes while a
   session is running. Each ends when its reason does; the page is otherwise
   still.
+- **Opening `cs` plays a short launch sequence.** The activity strip grows,
+  the divider opens from the centre, the group rules draw out in turn, and the
+  status bar greets you with your session count before the key hints type in.
+  It plays once, and any key skips it.
 
 ### Fixed
 

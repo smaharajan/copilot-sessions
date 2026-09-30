@@ -838,6 +838,39 @@ def pulse_role(now: float) -> str:
     return PULSE_ROLES[int(now * 1000 / PULSE_MS) % len(PULSE_ROLES)]
 
 
+# The launch: the first open of a run is one sequence on the clock, around
+# the wipe. The divider opens from the centre, each group's rule draws out
+# after its caption, the activity strip rises from its baseline, and the
+# status line types a greeting before it becomes the hints. Any key ends it;
+# a view handing you back never replays it. (start, length) in seconds.
+LAUNCH_SPARK = (0.0, 0.8)
+LAUNCH_DIVIDER = (0.1, 0.45)
+LAUNCH_RULES = (0.3, 0.35)
+LAUNCH_RULE_STAGGER = 0.06
+LAUNCH_GREET = (0.35, 0.5)
+LAUNCH_HINTS = (1.6, 0.35)
+LAUNCH_SECONDS = sum(LAUNCH_HINTS)
+
+
+def launch_progress(elapsed: float | None, start: float, length: float) -> float:
+    """How far one part of the launch is, eased. 1.0 once it has ended."""
+    if elapsed is None:
+        return 1.0
+    progress = min(max((elapsed - start) / length, 0.0), 1.0)
+    return 1 - (1 - progress) ** 1.5
+
+
+def typed(text: str, progress: float) -> str:
+    """As much of `text` as has been typed at `progress`."""
+    return text[:round(len(text) * min(max(progress, 0.0), 1.0))]
+
+
+def greeting(hour: int) -> str:
+    """What the launch says first, by the local hour."""
+    return ("Good morning" if 5 <= hour < 12 else
+            "Good afternoon" if 12 <= hour < 18 else "Good evening")
+
+
 def banner_palette(curses) -> list[int]:
     """The gradient as curses attributes, purple first.
 
@@ -866,11 +899,13 @@ def banner_palette(curses) -> list[int]:
 _SPARKS = " ▁▂▃▄▅▆▇█"
 
 
-def sparkline(values: list[int]) -> str:
+def sparkline(values: list[int], grow: float = 1.0) -> str:
     """A row of block characters, scaled to the busiest value in the series.
 
     Scaled to the maximum rather than to a fixed ceiling: the question this
     answers is "what shape has my work been", and that shape is relative.
+    `grow` below 1 draws every bar that share of its height, still against
+    the real peak — the launch raises the strip from its baseline with it.
     """
     if not values:
         return ""
@@ -879,7 +914,7 @@ def sparkline(values: list[int]) -> str:
         return " " * len(values)
     return "".join(
         _SPARKS[0] if value <= 0
-        else _SPARKS[max(1, round(value / peak * (len(_SPARKS) - 1)))]
+        else _SPARKS[max(1, round(value * grow / peak * (len(_SPARKS) - 1)))]
         for value in values
     )
 

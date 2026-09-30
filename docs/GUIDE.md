@@ -116,6 +116,13 @@ happening, and each ends when it does:
 - **The live dot breathes** while a session is running, and is still when
   none is.
 
+**Opening `cs` plays a two-second launch, once.** Under the wipe, the activity
+strip grows from its baseline, the divider opens outward from the centre, and
+each group's rule draws out a beat after the one above it. The status bar
+types a greeting for the time of day with your session count, then the key
+hints type in over it. Any key skips straight to the finished screen, and
+coming back from a view never replays it.
+
 **Each group is drawn in its own hue.** `▌FIND` in the product blue, `▌MEASURE`
 in the violet that spend is drawn in everywhere else, `▌GOVERN` in amber
 because that block exists to tell you something is wrong, and `▌REFERENCE` in
