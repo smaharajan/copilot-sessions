@@ -21,12 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event as it lands. It rereads every two seconds; `cs live --json` gives the
   data and the feed.
 
-- **The home screen lists every running session.** Under the counts, a live
-  roster rereads every two seconds: a summary, then up to four sessions with
-  a spinner, status, ticking timer and what it is doing, using only rows the
-  menu does not need. The rows deal in at launch, and the Live sessions row
-  shows the same counts.
-
 - **The home screen moves when something happens.** The counts roll up to
   their values on first arrival, a count the refresh changed flashes, the
   cursor bar glides to the row you moved to, and the live dot breathes while a
