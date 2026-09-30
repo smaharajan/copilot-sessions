@@ -698,28 +698,39 @@ def _playbook_data(days: int = PLAYBOOK_DAYS) -> dict:
 
 def cmd_playbook(days: int = PLAYBOOK_DAYS) -> bool:
     """What worked before — find the like of today's task, then reuse it."""
-    data = _playbook_data(days)
-    conn = db.connect()
-    try:
-        by_id = {row[0]: row for row in db.recent_sessions(conn, days)}
-    finally:
-        conn.close()
-    rows = _with_assets([by_id[s["id"]] for s in data["sessions"]
-                         if s["id"] in by_id])
-    hits = {}
-    for s in data["sessions"]:
-        made = [_plural(n, word) for n, word in
-                ((s["commits"], "commit"), (s["prs"], "PR")) if n]
-        hits[s["id"]] = (s["work"], f"{', '.join(made)} · {s['opening'] or '—'}")
-    title = (f"Playbook · {_window_label(days)} · {_plural(len(rows), 'session')} "
-             f"that shipped cleanly")
+    hits: dict[str, tuple[str, str]] = {}
+    criteria = ""
+
+    def read() -> tuple[list[tuple], str]:
+        # Refills `hits` in place: the open listing holds that dict, so a
+        # session that ships while it is on screen arrives with its line.
+        nonlocal criteria
+        data = _playbook_data(days)
+        criteria = data["criteria"]
+        conn = db.connect()
+        try:
+            by_id = {row[0]: row for row in db.recent_sessions(conn, days)}
+        finally:
+            conn.close()
+        rows = _with_assets([by_id[s["id"]] for s in data["sessions"]
+                             if s["id"] in by_id])
+        hits.clear()
+        for s in data["sessions"]:
+            made = [_plural(n, word) for n, word in
+                    ((s["commits"], "commit"), (s["prs"], "PR")) if n]
+            hits[s["id"]] = (s["work"], f"{', '.join(made)} · {s['opening'] or '—'}")
+        return rows, (f"Playbook · {_window_label(days)} · "
+                      f"{_plural(len(rows), 'session')} that shipped cleanly")
+
+    rows, title = read()
     if rows and sys.stdin.isatty() and sys.stdout.isatty():
-        return _interactive_listing(rows, title, show_all=True, hits=hits)
+        return _interactive_listing(rows, title, show_all=True, hits=hits,
+                                    reload=read)
 
     def render() -> None:
         _render_listing(rows, title, show_all=True, hits=hits)
         if not rows:
-            _note(f"None met all of: {data['criteria']}.",
+            _note(f"None met all of: {criteria}.",
                   min(shutil.get_terminal_size().columns, 96) - 4)
             print()
 

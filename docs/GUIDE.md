@@ -512,7 +512,8 @@ unrecorded ending does not count), it has no stuck loop, and its opening
 prompt is at least 30 characters. Newest first. Under each row: the kind of
 work, what shipped, and the opening ask, masked like every other view. It is
 an ordinary listing, so `/` filters, Enter resumes, `v` and `t` read the
-session, and `cs show N --asks` prints the full opening. It is the Playbook
+session, and `cs show N --asks` prints the full opening. Like Recent, it
+re-reads the store while open, so a session that ships appears on its own. It is the Playbook
 row under Find on the home screen. An empty Playbook says which test nothing
 passed.
 

@@ -237,6 +237,14 @@ class AnalysisTest(StoreTest):
         self.assertEqual(seen[0][1]["hits"]["good"],
                          ("build", "1 PR · add a retry to the SFTP poller with a "
                                    "unit test"))
+        # A session that ships while the listing is open arrives on the
+        # heartbeat, and with its line under it.
+        self._shipped("later", "fix the flaky checkout test in the cart module")
+        self.conn.commit()
+        rows, title = seen[0][1]["reload"]()
+        self.assertEqual({row[0] for row in rows}, {"good", "later"})
+        self.assertIn("2 sessions", title)
+        self.assertIn("later", seen[0][1]["hits"])
 
     # ── Agent config ─────────────────────────────────────────────────
 
