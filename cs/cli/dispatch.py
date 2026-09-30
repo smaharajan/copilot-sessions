@@ -43,6 +43,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_files, cmd_recent, cmd_search
+from .live import cmd_live
 from .ops import cmd_doctor, cmd_rollup
 from .practice_cmds import cmd_coach, cmd_rhythm, cmd_standup
 from .reports import (
@@ -86,7 +87,7 @@ _COMPLETION_COMMANDS = (
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "today", "saved", "cleanup",
     "anomalies", "health", "patterns",
-    "doctor", "rollup",
+    "doctor", "rollup", "live",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
 )
@@ -505,11 +506,11 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(build(30 if days is None else days), fmt)
         return 0
 
-    if cmd == "doctor":
+    if cmd in ("doctor", "live"):
         if rest:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
             return 1
-        export.emit(export.doctor(), fmt)
+        export.emit(export.doctor() if cmd == "doctor" else export.live(), fmt)
         return 0
 
     if cmd == "rollup":
@@ -924,11 +925,11 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_patterns(30 if days is None else days)
-    elif cmd == "doctor":
+    elif cmd in ("doctor", "live"):
         if rest:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
             return 1
-        cmd_doctor()
+        (cmd_doctor if cmd == "doctor" else cmd_live)()
     elif cmd == "rollup":
         days, _, _, _, _, error = _report_options(rest, None, days=True)
         if error:

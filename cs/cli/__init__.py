@@ -53,6 +53,7 @@ from . import (  # noqa: E402
     home,
     inventory,
     listing,
+    live,
     ops,
     practice_cmds,
     reports,
@@ -76,6 +77,7 @@ _SUBMODULES = (
     listing,
     analysis,
     ops,
+    live,
     home,
     dispatch,
 )

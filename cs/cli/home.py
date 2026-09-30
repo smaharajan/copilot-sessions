@@ -39,6 +39,7 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_recent, cmd_search
+from .live import cmd_live
 from .ops import WATCH_SECONDS, _live_lines, _watch_read, schema_notice
 from .reports import (
     cmd_cost,
@@ -77,6 +78,9 @@ def _home_items(period: int = 30,
         # drawn on this screen rather than opened as its own view, and the
         # last session sits under the counts with Tab to resume it.
         # (ui.menu_icon("today"), "Today", ... cmd_today),
+        (ui.menu_icon("live"), "Live sessions",
+         "every Copilot CLI running now · status, tools, spend",
+         cmd_live, ""),
         (ui.menu_icon("recent"), "Recent sessions",
          "browse, read and resume · last 7 days",
          lambda: cmd_recent(7), ""),
@@ -199,7 +203,7 @@ _WINDOWED_GROUPS = frozenset({"Measure", "Govern"})
 
 
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
-    ("Recent sessions", "Find"),
+    ("Live sessions", "Find"),
     ("Stats", "Measure"),
     ("Autonomy", "Govern"),
     ("Skills", "Reference"),
@@ -1491,9 +1495,14 @@ def cmd_help() -> None:
   {ui.BOLD}Today{ui.RST}
     cs today              Where you are, on one page: the session running now,
                           what to pick up, since midnight, and this week
-                          {ui.DIM}The home screen also draws the live session under the
-                          counts: burn, budget left, last tool. It ticks about
-                          every 5 seconds and does not move the 60-second refresh.{ui.RST}
+                          {ui.DIM}The home screen also draws the live sessions under the
+                          counts: how many, burn, budget left, last tool. It ticks
+                          about every 5 seconds and does not move the 60-second
+                          refresh.{ui.RST}
+    cs live               Every Copilot CLI running now, on one page: asking you,
+                          failing, your turn, working or idle — the tool open now,
+                          what you asked, what it said, its plan, burn and spend
+                          {ui.DIM}re-reads every 2 seconds · ↵ opens a session{ui.RST}
     cs next [N|all]       What to pick up: open handoffs, cut-off endings,
                           stuck loops, wip tags and pins — each with its reason
                           {ui.DIM}default: the last 14 days; pins and wip always{ui.RST}
@@ -1614,7 +1623,7 @@ def cmd_help() -> None:
                           agents, repos, skills, profiles, standup, failures,
                           loops, subagents, switches, endings, today, next, eod,
                           weekly, saved, cleanup, budget,
-                          anomalies, health, patterns, doctor, rollup{ui.RST}
+                          anomalies, health, patterns, doctor, rollup, live{ui.RST}
     cs <view> --csv       The view's main table, as CSV
     cs export <N|id>      One session as Markdown ('--json' for structured turns)
     cs completion <shell> Completions for bash, zsh or fish

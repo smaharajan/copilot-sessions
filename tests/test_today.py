@@ -308,7 +308,7 @@ class TodayHomeTest(StoreTest):
         self.assertNotIn("My asks", labels)
         self.assertNotIn("File history", labels)
         self.assertNotIn("Improve", by_group)
-        self.assertEqual(labels[0], "Recent sessions")
+        self.assertEqual(labels[:2], ["Live sessions", "Recent sessions"])
 
     def test_the_day_commands_off_the_menu_still_open(self):
         from cs import cli

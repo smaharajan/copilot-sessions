@@ -54,7 +54,7 @@ DATA_COMMANDS = (
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "today", "saved", "cleanup", "budget",
-    "anomalies", "health", "patterns", "doctor", "rollup",
+    "anomalies", "health", "patterns", "doctor", "rollup", "live",
 )
 
 
@@ -492,6 +492,12 @@ def patterns(days: int) -> dict:
 def doctor() -> dict:
     from .cli.ops import _doctor_data
     return {"view": "doctor", **_doctor_data()}
+
+
+def live() -> dict:
+    """Every Copilot CLI running now — see `cli.live` for how each is read."""
+    from .cli.live import _live_data
+    return {"view": "live", **_live_data()}
 
 
 def rollup(days: int) -> dict:

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cs live` puts every running session on one page.** The new first row on
+  the home screen finds each running Copilot CLI by its lock file and draws a
+  card per session: whether it is asking you, failing, waiting on you,
+  working, thinking or idle — with the evidence — plus its repository, model,
+  current tool or sub-agents, your last ask, the agent's last reply, todo
+  progress and a burn sparkline. A band on top totals status, burn and spend.
+  It rereads every two seconds; `cs live --json` gives the data.
+
 - **The home screen moves when something happens.** The counts roll up to
   their values on first arrival, a count the refresh changed flashes, the
   cursor bar glides to the row you moved to, and the live dot breathes while a
@@ -25,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   light in turn and the row icons pop in behind the cascade.
 
 ### Fixed
+
+- **The home strip counts every running session.** It followed only the most
+  recent one, so eight CLIs in parallel read as one. It now says how many are
+  live, names the newest and sums their burn.
 
 - **Printed listings stay inside the window.** The header and rows ran one
   cell past the edge at some widths, and one more for each digit past `#999`.

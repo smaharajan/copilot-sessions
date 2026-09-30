@@ -311,10 +311,39 @@ The hook prints the line into the session's hook output and exits 1 once the
 day is over budget. What Copilot does with a failing hook depends on the
 event; `cs hooks` will then count its runs and failures.
 
+### 📡 `cs live` — every session running now, on one page
+
+The first row on the home screen. It finds each running Copilot CLI by the
+lock file it holds in its session folder (`inuse.<pid>.lock`, with the pid
+still alive) and draws a card for each, most urgent first. The status comes
+from the tail of that session's event log:
+
+| Status | Evidence |
+|---|---|
+| ▲ asking you | an open `ask_user` call or a pending permission request |
+| ■ failing | three main-agent tool failures in a row, or a session error last |
+| ◆ your turn | the last turn ended and the log has been quiet for 3 seconds |
+| ● working | a tool or sub-agent is running; the card names it |
+| ◐ thinking | the model is mid-reply |
+| ○ idle | nothing written for thirty minutes |
+
+A card shows the repository, branch, model, effort and pid, what the session
+is doing now, your last ask, the agent's last reply, its todo list as a
+progress bar, and a thirty-minute burn sparkline with credits, turns and the
+tools it called. The band on top totals them: statuses, burn across every
+live session, today's spend, calls and failures. Cards sit two across at 120
+columns and wider.
+
+It rereads every two seconds, reading only the bytes each log gained. A card
+whose status changes flashes once. ↑↓←→ choose, Enter opens the session in
+`cs show` and comes back, `r` rereads now, `q` goes back. `cs live` prints the
+same page as text when piped, and `cs live --json` gives the data.
+
 ### The session running now
 
 There is no `cs watch`. The home screen draws the session that was active in
-the last fifteen minutes under the counts: title, burn rate over ten
+the last fifteen minutes under the counts, and with more than one Copilot CLI
+running it says how many (`● 8 live`), names the newest and sums their burn: title, burn rate over ten
 minutes, budget left today, the last tool and the last failure, and a
 sparkline of that burn. Below 100 columns it is one line; at 100 and wider
 it is a small panel. It ticks about every five seconds from one indexed

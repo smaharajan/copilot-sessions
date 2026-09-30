@@ -1297,6 +1297,8 @@ def pin_cell(session_id: str) -> str:
 # impression by a different route.
 _MENU_GLYPHS: dict[str, tuple[str, str]] = {
     "recent": ("🕒", "~"),
+    # Every Copilot CLI running now.
+    "live": ("📡", "l"),
     "all": ("📚", "="),
     "search": ("🔍", "/"),
     "repos": ("📦", "#"),

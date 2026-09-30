@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 
@@ -199,21 +200,105 @@ def session_names() -> dict[str, tuple[str, bool]]:
 
 def session_name(session_id: str) -> tuple[str, bool] | None:
     """(name, whether you gave it) for one session, or None if it has none."""
+    fields = session_workspace(session_id, ("name", "user_named"))
+    name = fields.get("name", "").strip()
+    return (name, fields.get("user_named") == "true") if name else None
+
+
+def _session_file(session_id: str, name: str) -> Path | None:
+    """A file in one session's folder, or None for an id that would leave it."""
     if not session_id or session_id in (".", "..") or "/" in session_id or "\\" in session_id:
         return None
     try:
         root = _session_state().resolve()
-        path = (root / session_id / "workspace.yaml").resolve()
-        if not path.is_relative_to(root):
-            return None
-        text = path.read_text(
-            encoding="utf-8", errors="replace"
-        )
+        path = (root / session_id / name).resolve()
     except (OSError, ValueError, RuntimeError):
         return None
-    fields = _yaml_fields(text, ("name", "user_named"))
-    name = fields.get("name", "").strip()
-    return (name, fields.get("user_named") == "true") if name else None
+    return path if path.is_relative_to(root) else None
+
+
+def session_workspace(session_id: str, keys: tuple[str, ...]) -> dict[str, str]:
+    """The asked-for fields of one session's workspace.yaml; empty if unreadable."""
+    path = _session_file(session_id, "workspace.yaml")
+    if path is None:
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return {}
+    return _yaml_fields(text, keys)
+
+
+def session_todos(session_id: str) -> list[tuple[str, str]]:
+    """(status, title) for the todos a session keeps, in the order it made them.
+
+    The CLI keeps them in a per-session `session.db`; most sessions have
+    none. Opened read-only, and a file mid-write is just no todos this time.
+    """
+    path = _session_file(session_id, "session.db")
+    if path is None or not path.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            return [(str(status or ""), str(title or "")) for status, title in
+                    conn.execute("SELECT status, title FROM todos ORDER BY rowid")]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+
+
+# A lock is left behind when a CLI is killed rather than closed. Past this,
+# a lock whose log has not moved is not trusted even if its pid is alive:
+# pids are reused.
+_STALE_LOCK_SECONDS = 24 * 3600
+
+
+def running_sessions() -> list[tuple[str, int]]:
+    """(session id, pid) for every Copilot CLI running now, busiest log first.
+
+    A running CLI holds `inuse.<pid>.lock` in its session folder, so this
+    counts processes rather than guessing from how recently the store moved.
+    Where a pid cannot be asked about without harm — `os.kill` ends the
+    process on Windows — a lock only counts while its log is still moving.
+    """
+    try:
+        locks = list(_session_state().glob("*/inuse.*.lock"))
+    except OSError:
+        return []
+    posix = os.name == "posix"
+    stale = _STALE_LOCK_SECONDS if posix else 15 * 60
+    now = time.time()
+    found: dict[str, tuple[float, int]] = {}
+    for lock in locks:
+        try:
+            pid = int(lock.name.split(".")[1])
+        except (IndexError, ValueError):
+            continue
+        try:
+            moved = (lock.parent / "events.jsonl").stat().st_mtime
+        except OSError:
+            try:
+                moved = lock.stat().st_mtime
+            except OSError:
+                continue
+        if pid <= 0 or now - moved > stale or (posix and not _pid_alive(pid)):
+            continue
+        if moved >= found.get(lock.parent.name, (-1.0, 0))[0]:
+            found[lock.parent.name] = (moved, pid)
+    return [(sid, pid) for sid, (_moved, pid) in
+            sorted(found.items(), key=lambda item: -item[1][0])]
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True  # someone else's process, but a process
+    except OSError:
+        return False
+    return True
 
 
 def _session_state() -> Path:
@@ -763,6 +848,35 @@ def sessions_for_file(
     rows = _given_names([found[sid] for sid in ordered if sid in found],
                         session_names())
     return rows, {sid: hits[sid] for sid in ordered if sid in found}
+
+
+def sessions_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, tuple]:
+    """Listing rows for the given sessions, keyed by id; absent ones are left out."""
+    found: dict[str, tuple] = {}
+    for chunk in _chunks(list(ids)):
+        marks = ",".join("?" * len(chunk))
+        for row in conn.execute(
+            f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
+                FROM sessions s WHERE s.id IN ({marks})""",
+            chunk,
+        ):
+            found[row[0]] = row
+    return {row[0]: row for row in _given_names(list(found.values()), session_names())}
+
+
+def last_asks(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
+    """The last thing you asked in each of the given sessions."""
+    found: dict[str, str] = {}
+    for chunk in _chunks(list(ids)):
+        marks = ",".join("?" * len(chunk))
+        for sid, text in conn.execute(
+            f"""SELECT session_id, user_message FROM turns
+                WHERE session_id IN ({marks}) AND COALESCE(user_message, '') <> ''
+                ORDER BY session_id, turn_index""",
+            chunk,
+        ):
+            found[sid] = text
+    return found
 
 
 def repos(conn: sqlite3.Connection, limit: int = 40) -> list[tuple]:

@@ -130,25 +130,40 @@ def _running(stamp: str) -> bool:
 
 
 def _watch_read(state: dict) -> None:
-    """One tick: the session running now, its burn, and the log tail.
+    """One tick: the sessions running now, their burn, and the newest's tail.
 
-    A quiet store is an empty reading, not an error. The tail is bounded:
-    the first look starts 256 KB from the end, and a tick reads at most 4 MB.
+    Running means a Copilot CLI holds the session's lock, so eight CLIs in
+    parallel read as eight. Where no lock can be seen, the most recent
+    session in the store stands in, as long as it moved in the last
+    LIVE_MINUTES. A quiet store is an empty reading, not an error. The tail
+    is bounded: the first look starts 256 KB from the end, and a tick reads
+    at most 4 MB.
     """
+    running = [sid for sid, _pid in db.running_sessions()]
     conn = db.connect(fatal=False)
     try:
-        latest = db.recent_sessions(conn, 1)
-        if not latest or not _running(latest[0][1]):
-            state["session"] = None
-            return
-        row = latest[0]
-        sid = row[0]
+        if running:
+            sid = running[0]
+            row = db.sessions_by_id(conn, [sid]).get(sid)
+            if row is None:
+                fields = db.session_workspace(sid, ("name", "repository", "cwd"))
+                row = (sid, "", fields.get("name", ""),
+                       fields.get("repository", ""), fields.get("cwd", ""), 0, 0)
+        else:
+            latest = db.recent_sessions(conn, 1)
+            if not latest or not _running(latest[0][1]):
+                state["session"] = None
+                return
+            row = latest[0]
+            sid = row[0]
+            running = [sid]
         now = datetime.now(timezone.utc)
         since = time.strftime("%Y-%m-%dT%H:%M:%S",
                               time.gmtime(time.time() - BURN_MINUTES * 60))
         burn = 0
         bins = [0] * BURN_MINUTES
-        for when, nano in db.usage_stamps(conn, [sid])[sid]:
+        spent = db.usage_stamps(conn, running)
+        for when, nano in (stamp for stamps in spent.values() for stamp in stamps):
             if when < since:
                 continue
             burn += nano
@@ -168,7 +183,8 @@ def _watch_read(state: dict) -> None:
     tail.read()
     limit = ui.daily_budget_aiu()
     state["session"] = {
-        "id": sid, "summary": _clean(row[2]), "repo": _clean(row[3]),
+        "id": sid, "live": len(running),
+        "summary": _clean(row[2]), "repo": _clean(row[3]),
         "turns": row[5], "nano_aiu": row[6] or 0,
         "burn_per_minute": burn / 1e9 / BURN_MINUTES,
         "burn": bins,
@@ -201,24 +217,30 @@ def _live_lines(state: dict, width: int) -> list[tuple[str, str]]:
     burn = f"{session['burn_per_minute']:,.2f} AIU/min"
     budget = _budget_text(session)
     title = session["summary"] or session["id"][:8]
+    live = session.get("live", 1)
+    count = f"{live} live" if live > 1 else "live"
     tool = session["last_tool"] or "no tool yet"
     fail = (f" · fail {session['last_failure'][0]}"
             if session["last_failure"] else "")
     spark = ui.sparkline(session.get("burn") or []).rstrip()
     if width >= 100:
         rows = [
-            (f"  ● live  {title}", "active"),
+            (f"  ● {count}  newest {title}" if live > 1 else f"  ● live  {title}",
+             "active"),
             (f"    burn {burn} · {budget}", "credits"),
             (f"    {spark}  {tool}{fail}".rstrip() if spark else f"    {tool}{fail}",
              "summary"),
         ]
     elif width >= 72:
-        rows = [(f"● {title} · {burn} · {budget}", "active")]
+        rows = [(f"● {count} · {title} · {burn} · {budget}"
+                 if live > 1 else f"● {title} · {burn} · {budget}", "active")]
     else:
         left = ""
         if session["budget"] is not None and session["left"] is not None:
             left = f" · {max(session['left'], 0):,.0f} left"
-        rows = [(f"● {title} · {session['burn_per_minute']:,.2f}/min{left}", "active")]
+        rows = [(f"● {count} · {session['burn_per_minute']:,.2f}/min{left} · {title}"
+                 if live > 1 else
+                 f"● {title} · {session['burn_per_minute']:,.2f}/min{left}", "active")]
     return [(ui.trunc(text, width), role) for text, role in rows]
 
 
