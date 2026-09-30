@@ -1086,11 +1086,13 @@ class LandingAnimationTest(StoreTest):
 
         idle = [-1] * 60
         state = {"revealed": True, "period": 30, "theme": "dark"}
-        screen, chosen = run([curses.KEY_END, *idle, curses.KEY_RIGHT, *idle,
-                              10], state)
+        # End lands on Themes; ↑ steps back into Reference, the last row
+        # that opens a view.
+        screen, chosen = run([curses.KEY_END, curses.KEY_UP, *idle,
+                              curses.KEY_RIGHT, *idle, 10], state)
         frames, styles = screen.frames, screen.styles
-        landed = frames[1]
-        settled = frames[len(idle)]
+        landed = frames[2]
+        settled = frames[len(idle) + 1]
         line = cursor_line(settled)
         arrived = next(f for f in frames if cursor_line(f) == line)
         # The bar sweeps across the row it lands on, and the description
@@ -1103,8 +1105,8 @@ class LandingAnimationTest(StoreTest):
         # Entering another group lights its heading, then lets it go.
         head = next(y for (y, x), text in landed.items()
                     if x == 2 and text == "REFERENCE")
-        self.assertEqual(styles[1][(head, 2)], curses.A_REVERSE)
-        self.assertNotEqual(styles[len(idle)][(head, 2)], curses.A_REVERSE)
+        self.assertEqual(styles[2][(head, 2)], curses.A_REVERSE)
+        self.assertNotEqual(styles[len(idle) + 1][(head, 2)], curses.A_REVERSE)
         # ←→ retypes the window notes.
         notes = [text for f in frames for (_y, x), text in f.items()
                  if x > 60 and "days" in text]
@@ -1115,7 +1117,7 @@ class LandingAnimationTest(StoreTest):
                                       in f.items() if x > 60]))
         # Enter blinks the bar off and on, then opens the row.
         self.assertEqual(chosen[0] if isinstance(chosen, tuple) else chosen,
-                         len(cli._home_items()) - 1)
+                         len(cli._home_items()) - 2)
         tail = frames[-4:]
         self.assertEqual([any(x == 0 and text == "▌" for (_y, x), text
                               in f.items()) for f in tail],

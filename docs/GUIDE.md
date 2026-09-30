@@ -53,6 +53,8 @@ single line:
      📋  Instructions      what every session here is told before you type
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
+   ▌SETTINGS  ──────────────────────────────────────────────────────────────────────────────
+     🎨  Themes            Dark · choose from 20 palettes · or press t
    ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · updated 12:00 · / search · q quit
 ```
 
@@ -71,8 +73,8 @@ long ago, and `Tab` resumes it — in a child process, so quitting Copilot comes
 back here. Tab rather than a letter, because every letter types into the
 filter. When a session *is* running, that line is the live strip instead.
 
-**Theme and Help are keys.** `t` opens the theme gallery and `?` the help;
-the status bar says so. **The menu remembers the row you opened last** and
+**Themes is a row and a key.** The Themes row under Settings, or `t` from
+anywhere on the menu, opens the theme gallery; `?` opens the help. **The menu remembers the row you opened last** and
 starts on it next time.
 
 **Type to find.** There is no column of numbers, because a numbered menu only
@@ -1612,7 +1614,7 @@ the same document in the reader.
 | 👁️ **Show everything** | `cs all` drops the date window and your ignore file; sessions that recorded nothing at all are never listed |
 | 🔓 **Show raw secrets** | `CS_REDACT=0` disables credential masking for one command |
 | 🔣 **Plain glyphs** | `CS_GLYPHS=ascii` replaces every emoji — the 👤/🤖 speaker marks *and* the landing screen's icons — with plain markers, for terminals that would draw hollow boxes |
-| 🎨 **Theme** | Press `t` on the home screen for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
+| 🎨 **Theme** | Choose **Themes** under Settings, or press `t` on the home screen, for 20 live-preview palettes; hover/single-click previews, `Enter` or double-click applies and returns home, and `Esc` cancels. The applied theme is remembered in `~/.config/cs/settings.json` and is what the next run starts in; `CS_THEME=<name>` overrides it for one run, and `CS_CONFIG_HOME`/`XDG_CONFIG_HOME` moves the file |
 | 📌 **Pins & budget** | `cs pin` / `unpin` / `pins`, `cs note`, `cs tag` / `untag`, and `cs budget [N|clear]`. Settings in `~/.config/cs/settings.json`. Listings mark pins and keep their own order (`p` toggles); home shows `spent/budget` for the last 24h when a budget is set (amber ≥70%, rose over). |
 | 🔄 **Live data** | The landing page *and* an open session listing are re-read from the read-only session database every 60 seconds, so a session started in another window arrives without reopening the view; a session already listed keeps its `#N` and a new arrival takes the next free number. Search results are not re-read — re-ranking a result set under the reader is not a refresh. The landing page is rebuilt on the same heartbeat; credits show two decimals rather than rounded `k` totals, and returning from a view refreshes immediately if that deadline has passed |
 | 🗃️ **Event-log cache** | Views that read Copilot's per-session `events.jsonl` (tool failures, hooks that ran, sub-agents, model switches) keep a digest of **counts, names and timestamps only** in `~/.cache/cs/events-digest.json`; `XDG_CACHE_HOME` moves it. It is keyed by each log's size and modification time, so a changed log is re-read and an unchanged one never is. Deleting the file is always safe. A first, cold read of a large store reports progress on stderr |

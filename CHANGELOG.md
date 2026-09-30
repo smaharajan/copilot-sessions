@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Themes is back on the home menu.** A 🎨 Themes row under a new Settings
+  heading opens the theme gallery and names the current theme; `t` still
+  works from anywhere on the menu.
+
 - **`cs live` puts every running session on one page.** The new first row on
   the home screen finds each running Copilot CLI by its lock file and shows a
   live dashboard. One-line tiles carry a trend sparkline, count up, and flash

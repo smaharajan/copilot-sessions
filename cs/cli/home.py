@@ -165,9 +165,13 @@ def _home_items(period: int = 30,
         (ui.menu_icon("mcp"), "MCP servers",
          "tool sources wired up, and which were used",
          cmd_mcp, ""),
-        # Theme and Help are keys, not rows: `t` opens the gallery and `?`
-        # the help, and the status bar says so. Doctor stays `cs doctor`;
-        # the status line names it when the schema drifts.
+        # Themes is a row as well as the `t` key: as a key alone, nobody
+        # found it. Help stays the `?` key. Doctor stays `cs doctor`; the
+        # status line names it when the schema drifts.
+        (ui.menu_icon("theme"), "Themes",
+         f"{ui.theme_label(theme or ui.theme_name())} · choose from "
+         f"{len(ui.THEMES)} palettes · or press t",
+         ui.next_theme, "theme"),
     ]
 
 
@@ -193,6 +197,7 @@ _HOME_GROUP_TONE = {
     "Measure": "credits",   # 177 — violet, as spend is everywhere else
     "Govern": "warn",       # 214 — amber: this group is the bad news
     "Reference": "active",  # 49  — mint: present, and nothing to answer for
+    "Settings": "help",
 }
 
 
@@ -207,6 +212,7 @@ _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
     ("Stats", "Measure"),
     ("Autonomy", "Govern"),
     ("Skills", "Reference"),
+    ("Themes", "Settings"),
 )
 
 # What the prompt says on a row that asks for text. Search is the default.
