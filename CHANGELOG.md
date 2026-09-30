@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A listing filter shows the sessions named for the words first.** A
+  session whose title, repository or directory contains them now comes
+  before one that only mentions them in a turn, with the chosen sort
+  applying within each group. Filtering a common word across hundreds of
+  sessions used to bury the few titled for it under newer passing mentions.
+- **A leading `/` no longer breaks a filter or search.** `/` opens the box,
+  so it was often typed into it, and `/dynatrace` then matched no title.
+- **Pins no longer jump the queue.** All sessions, Recent and search
+  results keep their own order; a pinned session is marked, not moved.
+  The Pinned row is where pins come first.
+
 ## [2.0.0] — 2026-09-26
 
 ### Removed

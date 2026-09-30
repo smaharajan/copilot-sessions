@@ -485,6 +485,9 @@ def search(
     by — the one you gave it, and the one Copilot generated — because either
     may be the one you remember it as.
     """
+    # '/' opens the search box, so it gets typed into it; dropping it only
+    # widens the match ('/src/app' still finds '/src/app').
+    term = term.strip().lstrip("/").strip() or term
     like = f"%{term}%"
     # A store missing one of these fields simply has one fewer way to match:
     # NULL LIKE ? is NULL, which never satisfies the WHERE.

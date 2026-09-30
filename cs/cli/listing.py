@@ -66,7 +66,6 @@ def _render_listing(
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return
-    rows = ui.float_pins(rows)
     active_sort = (sort_by or default_sort).lower()
     active_sort = {"time": "active", "aiu": "credits"}.get(active_sort, active_sort)
     default_descending = _SORT_COLUMNS[active_sort][1]
@@ -198,10 +197,22 @@ def _filter_rows(
     if not query:
         return rows
     q = query.lower()
-    return [
-        r for r in rows
-        if r[0] in found or any(q in (r[i] or "").lower() for i in (2, 3, 4))
-    ]
+    return [r for r in rows if r[0] in found or _named_for(r, q)]
+
+
+def _named_for(row: tuple, q: str) -> bool:
+    """Whether the row's summary, repo or directory contain `q` (lowercased)."""
+    return any(q in (row[i] or "").lower() for i in (2, 3, 4))
+
+
+def _filter_term(entered: str) -> str:
+    """The filter as typed, less a leading '/'.
+
+    '/' is the key that opens the box, so it is typed into it by habit, and
+    '/dynatrace' then matched no title. Dropping it only widens a substring
+    match, so a path such as '/src/app' still finds what it did.
+    """
+    return entered.strip().lstrip("/").strip()
 
 
 def _find_sessions(query: str) -> tuple[set[str], dict[str, tuple[str, str]]]:
@@ -405,7 +416,11 @@ def _listing_tui(
             sorted_rows, _ = _sort_rows(
                 _filter_rows(rows, query, found), sort_by, descending, numbers
             )
-            sorted_rows = ui.float_pins(sorted_rows)
+            if query:
+                # A session that names the words outranks one that only
+                # mentions them in a turn; the chosen sort holds within each.
+                q = query.lower()
+                sorted_rows.sort(key=lambda row: not _named_for(row, q))
             if stuck_for is not rows:
                 stuck_for, stuck = rows, loop_ids([row[0] for row in rows])
             if follow is not None:
@@ -687,7 +702,7 @@ def _listing_tui(
                 # heading, and Esc here cancels back to it.
                 entered = _prompt(screen, theme, height - 1, width, " filter: ", "")
                 if entered is not None:
-                    query, cursor, offset = entered, 0, 0
+                    query, cursor, offset = _filter_term(entered), 0, 0
                     refind()
             elif key in (ord("v"), ord("V"), ord("o"), ord("O")) and sorted_rows:
                 return "show", sorted_rows[cursor][0]
@@ -733,7 +748,7 @@ def _listing_tui(
                 entered = _prompt(screen, theme, height - 1, width, " filter: ",
                                   chr(key))
                 if entered is not None:
-                    query, cursor, offset = entered, 0, 0
+                    query, cursor, offset = _filter_term(entered), 0, 0
                     refind()
     finally:
         # Anything that leaves the loop keeps the view it left behind,

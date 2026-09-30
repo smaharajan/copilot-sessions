@@ -50,34 +50,24 @@ class PinTest(StoreTest):
 
 
 class PinSortTest(StoreTest):
-    def test_float_pins_puts_pinned_first_stably(self):
-        from cs import ui
-
-        rows = [
-            ("sess-empty", "t1", "Empty", None, "/tmp/b", 0, 0),
-            ("sess-alpha", "t2", "Portal", "acme/portal", "/tmp/a", 2, 100),
-        ]
-        # Unpinned: order unchanged.
-        self.assertEqual([r[0] for r in ui.float_pins(rows)],
-                         ["sess-empty", "sess-alpha"])
-        ui.pin_session("sess-alpha")
-        floated = ui.float_pins(rows)
-        self.assertEqual(floated[0][0], "sess-alpha")
-        self.assertEqual(floated[1][0], "sess-empty")
-
-    def test_listing_shows_pin_marker_and_order(self):
+    def test_listing_marks_pins_but_keeps_the_chosen_order(self):
+        """Pins floated to the top of every listing and search, so a pinned
+        session sat above the best match. The mark stays; the order is the
+        sort's. The Pinned view is where pins come first."""
         from cs import ui
 
         ui.pin_session("sess-alpha")
         # Force non-TTY render so we get the plain listing.
-        code, out = self._run("all", "--sort", "summary", "--asc")
+        code, out = self._run("all", "--sort", "summary", "--desc")
         self.assertEqual(code, 0)
-        # With pins floated, the portal row (pinned) comes before Empty.
         self.assertIn("*", out)  # one-cell pin marker on the pinned row
-        portal_at = out.lower().find("portal")
-        empty_at = out.lower().find("empty")
-        if portal_at >= 0 and empty_at >= 0:
-            self.assertLess(portal_at, empty_at)
+        # Descending, "Empty session" sorts above "Build Three.js portal";
+        # a floated pin would put the pinned portal first.
+        portal_at = out.find("Build Three.js portal")
+        empty_at = out.find("Empty session")
+        self.assertGreaterEqual(portal_at, 0)
+        self.assertGreaterEqual(empty_at, 0)
+        self.assertLess(empty_at, portal_at)
 
 
 class AnnotationTest(StoreTest):

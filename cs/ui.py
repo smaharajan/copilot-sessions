@@ -1152,14 +1152,6 @@ COPILOT_MARK = "*" if _ASCII_GLYPHS else "🤖"
 PIN_MARK = "*" if _ASCII_GLYPHS else "📌"
 
 
-def float_pins(rows: list[tuple]) -> list[tuple]:
-    """Stable-sort so pinned sessions float first; relative order is kept."""
-    pinned = set(pinned_ids())
-    if not pinned:
-        return rows
-    return sorted(rows, key=lambda row: 0 if row[0] in pinned else 1)
-
-
 def pin_cell(session_id: str) -> str:
     """A fixed-width pin marker (or blanks) for a listing row."""
     width = cells(PIN_MARK)

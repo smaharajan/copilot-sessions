@@ -2911,6 +2911,47 @@ class CSTest(StoreTest):
         _listing_tui(Screen([ord("q")]), rows, "Sessions", state=state, find=find)
         self.assertEqual(asked, ["QRX"])
 
+    def test_a_filter_puts_sessions_named_for_it_first(self):
+        """Filtering 'Dynatrace' matched 141 sessions, newest first, so one
+        that mentioned it once in a turn sat above the one titled for it; and
+        the '/' typed into the box by habit stopped any title matching."""
+        import curses
+
+        from cs.cli import _listing_tui
+
+        rows = [
+            ("id-text", "2026-08-03T12:00", "Deck work", "r/a", "/tmp", 1, 10),
+            ("id-title", "2026-08-01T11:00", "QRX dashboard", "r/b", "/tmp", 2, 20),
+            ("id-none", "2026-08-02T10:00", "Unrelated", "r/c", "/tmp", 3, 30),
+        ]
+        asked: list[str] = []
+
+        def find(query):
+            asked.append(query)
+            return {"id-text"}, {"id-text": ("turn", "a QRX mention")}
+
+        screen = Screen([ord("/"), *map(ord, "/qrx"), 10, curses.KEY_DOWN, ord("q")])
+        _listing_tui(screen, rows, "Sessions", find=find)
+
+        final = screen.frames[-1]
+        at = _column_x(final, "Summary")
+        listed = [final.get((y, at), "").strip() for y in (5, 6, 7)]
+        self.assertEqual(listed, ["QRX dashboard", "Deck work", ""])
+        self.assertEqual(asked, ["qrx"])
+        self.assertIn("filter 'qrx'", final[(0, 0)])
+
+    def test_search_ignores_a_leading_slash(self):
+        from cs import db
+
+        conn = db.connect()
+        try:
+            plain = db.search(conn, "three.js")
+            slashed = db.search(conn, "/three.js")
+        finally:
+            conn.close()
+        self.assertEqual(slashed, plain)
+        self.assertIn("sess-alpha", [row[0] for row in slashed[0]])
+
     def test_typing_in_a_listing_starts_the_filter(self):
         """A letter with no job of its own did nothing, so typing a name into
         a listing looked like a search that found nothing."""

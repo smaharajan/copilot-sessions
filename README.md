@@ -96,13 +96,14 @@ Home credits show two decimal places rather than rounded `k` totals, so small
 new charges remain visible. They stay visible first as the window narrows.
 
 **Pins and a daily budget** live in the same settings file. `cs pin <ref>`
-keeps a session on a Pinned home row (and floats it to the top of listings;
-press `p` in a listing to toggle). `cs budget 5` sets a daily AIU limit. The
-home header shows today's spend against it and turns amber near the limit,
-rose when over. When a session is running, a live strip under the counts
-shows its title, burn rate, budget left, last tool and last failure, and a
-short sparkline of the last ten minutes. It refreshes about every five
-seconds. The 60-second rebuild of the rest of the screen is unchanged.
+keeps a session on a Pinned home row and marks it in listings, which keep
+their own order (press `p` in a listing to toggle). `cs budget 5` sets a
+daily AIU limit. The home header shows today's spend against it and turns
+amber near the limit, rose when over. When a session is running, a live
+strip under the counts shows its title, burn rate, budget left, last tool
+and last failure, and a short sparkline of the last ten minutes. It
+refreshes about every five seconds. The 60-second rebuild of the rest of the
+screen is unchanged.
 
 On legacy ncurses builds, terminals with native SGR mouse reporting (such as
 Ghostty) use xterm-compatible decoding inside `cs`; the original terminal
