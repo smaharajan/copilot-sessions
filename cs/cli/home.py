@@ -39,7 +39,15 @@ from .inventory import (
     cmd_mcp,
 )
 from .listing import cmd_recent, cmd_search
-from .live import cmd_live
+from .live import (
+    _LIVE_SPIN_MS,
+    LIVE_REFRESH_SECONDS,
+    _live_ages,
+    _live_home_rows,
+    _live_read,
+    _live_theme,
+    cmd_live,
+)
 from .ops import WATCH_SECONDS, _live_lines, _watch_read, schema_notice
 from .reports import (
     cmd_cost,
@@ -547,11 +555,37 @@ def _resume_lines(state: dict, width: int) -> list[tuple[str, str]]:
 
 
 def _refresh_live(state: dict) -> None:
-    """One cheap live tick. A failure leaves the previous reading in place."""
+    """One cheap live tick. A failure leaves the previous reading in place.
+
+    Every CLI holding a lock gets a row in the roster; with none, the newest
+    session in the store stands in on the older one-session strip.
+    """
+    live = state.setdefault("live", {})
+    try:
+        _live_read(live)
+        live["at"] = time.monotonic()
+    except (OSError, sqlite3.Error):
+        pass
+    sessions = live.get("snapshot", {}).get("sessions")
+    if sessions:
+        state["session"] = {"id": sessions[0]["id"], "live": len(sessions)}
+        return
     try:
         _watch_read(state)
     except (OSError, sqlite3.Error):
         pass
+
+
+def _roster(state: dict, width: int, height: int, wanted: int, spark: bool,
+            motion: dict) -> list:
+    """The live roster rows this window can spare, after the menu's own."""
+    snap = state.get("live", {}).get("snapshot")
+    if not snap or not snap["sessions"]:
+        return []
+    spare = height - 1 - wanted - _home_header_rows(width, height, wanted, spark)
+    least = 1 if width < 72 else 2 if width < 100 else 3
+    room = min(max(spare, least), len(snap["sessions"]) + 2, 10)
+    return _live_home_rows(snap, width, room, motion)
 
 
 def _refresh_home(state: dict) -> bool:
@@ -646,7 +680,7 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
                       reveal: int | None = None, start: int = 0,
                       activity: list[int] | None = None,
                       pace: int | None = None,
-                      live: list[tuple[str, str]] | None = None,
+                      live: list | None = None,
                       pulse: str | None = None,
                       launch: float | None = None) -> int:
     """Draw the banner and the facts above the menu. Returns the first menu row.
@@ -725,7 +759,14 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
         _addstr(screen, row, column, label, width, theme["repo"])
         column += len(label) + 1
     row += 1
-    for text, role in live or []:
+    for entry in live or []:
+        if isinstance(entry, list):
+            # A roster row: segments, each in its own colour.
+            for x, part, style in entry:
+                _addstr(screen, row, x, part, width, theme.get(style, theme["summary"]))
+            row += 1
+            continue
+        text, role = entry
         _addstr(screen, row, 0, text, width, theme.get(role, theme["summary"]))
         # `pulse` is the live dot's shade this frame: it breathes while a
         # session runs and is simply drawn once nothing is.
@@ -949,7 +990,8 @@ def _home_tui(screen, state: dict):
     active_theme = ui.set_theme(state.get("theme", ui.theme_name()))
     state["theme"] = active_theme
     items = _home_items(state.get("period", 30), active_theme)
-    theme = ui.tui_theme(curses)
+    # The theme plus a gradient and a colour per live session, for the roster.
+    theme, grad, chips = _live_theme(curses)
     try:
         curses.curs_set(0)
     except curses.error:
@@ -1026,7 +1068,7 @@ def _home_tui(screen, state: dict):
             state["revealed"] = True
 
     def activate_theme(name: str) -> None:
-        nonlocal active_theme, theme, sweep
+        nonlocal active_theme, theme, sweep, grad, chips
         chosen = ui.set_theme(name)
         # Written only when the answer actually changed: entering the menu
         # re-applies what is already stored, and Esc out of the gallery
@@ -1037,7 +1079,7 @@ def _home_tui(screen, state: dict):
                 marks["theme"] = time.monotonic()
         active_theme = chosen
         state["theme"] = active_theme
-        theme = ui.tui_theme(curses)
+        theme, grad, chips = _live_theme(curses)
         sweep = ui.banner_palette(curses)
         try:
             screen.bkgd(" ", theme["background"])
@@ -1078,9 +1120,14 @@ def _home_tui(screen, state: dict):
                 state.pop("usage_box", None)
             if time.monotonic() >= next_live:
                 _refresh_live(state)
-                next_live += WATCH_SECONDS
+                # Every two seconds while the roster is up, as on the Live
+                # sessions page; the slower strip keeps its own pace.
+                every = (LIVE_REFRESH_SECONDS
+                         if state.get("live", {}).get("snapshot", {}).get("sessions")
+                         else WATCH_SECONDS)
+                next_live += every
                 if next_live <= time.monotonic():
-                    next_live = time.monotonic() + WATCH_SECONDS
+                    next_live = time.monotonic() + every
             if time.monotonic() >= next_refresh:
                 _refresh_home(state)
                 next_refresh += _REFRESH_SECONDS
@@ -1104,7 +1151,27 @@ def _home_tui(screen, state: dict):
             # have to read every time; four rows of ASCII art is decoration,
             # and the banner already knows how to be smaller.
             activity = state.get("activity") or None
-            live_rows = _live_lines(state, width) or _resume_lines(state, width)
+            now = time.monotonic()
+            if launch_at is not None and now - launch_at >= ui.LAUNCH_SECONDS:
+                launch_at = None
+            launch = None if launch_at is None else now - launch_at
+            pulse = (ui.pulse_role(now) if timed and state.get("session")
+                     else None)
+            live = state.get("live", {})
+            live_marks, arrivals = _live_ages(live, now) if live else ({}, {})
+            roster_motion = {
+                "pulse": pulse, "spin": int(now * 1000 / _LIVE_SPIN_MS) if timed else 0,
+                "since": now - live.get("at", now),
+                "marks": live_marks, "arrivals": arrivals,
+                # At launch the rows deal in once the divider has opened.
+                "open": None if launch is None else launch - 0.3,
+                "grow": ui.launch_progress(launch, *ui.LAUNCH_SPARK),
+                "grad": grad, "chips": chips,
+            }
+            wanted = len(shown) + len({_home_group(index) for index in shown})
+            live_rows = (_roster(state, width, height, wanted, bool(activity),
+                                 roster_motion)
+                         or _live_lines(state, width) or _resume_lines(state, width))
             layout, art = _home_plan(width, height, shown, bool(activity),
                                      len(live_rows))
             # On a tall window everything sat at the top with ten empty rows
@@ -1115,10 +1182,6 @@ def _home_tui(screen, state: dict):
             slack = height - 1 - _home_header_rows(
                 width, height, len(layout), bool(activity), len(live_rows))
             pad = (slack - len(layout)) // 2 if slack - len(layout) >= 6 else 0
-            now = time.monotonic()
-            if launch_at is not None and now - launch_at >= ui.LAUNCH_SECONDS:
-                launch_at = None
-            launch = None if launch_at is None else now - launch_at
             facts = _moving_facts(state, motions, now, counting, timed)
             if launch is not None:
                 start, stagger = ui.LAUNCH_FACTS
@@ -1128,8 +1191,6 @@ def _home_tui(screen, state: dict):
             for mark, at in list(marks.items()):
                 if now - at >= ui.FLASH_SECONDS:
                     del marks[mark]
-            pulse = (ui.pulse_role(now) if timed and state.get("session")
-                     else None)
             top = _draw_home_header(screen, theme, width, art, facts, sweep,
                                     reveal, pad, activity,
                                     None if launch is not None else pace,
@@ -1217,6 +1278,17 @@ def _home_tui(screen, state: dict):
                     continue
                 index = value
                 icon, label, description = items[index][:3]
+                snap = live.get("snapshot")
+                if label == "Live sessions" and snap and snap["sessions"]:
+                    # What is running, not what the row is for.
+                    counts = snap["counts"]
+                    description = " · ".join(filter(None, (
+                        f"{len(snap['sessions'])} running",
+                        f"{counts['asking'] + counts['waiting']} need you"
+                        if counts["asking"] + counts["waiting"] else "",
+                        f"{counts['working'] + counts['thinking']} working"
+                        if counts["working"] + counts["thinking"] else "",
+                        f"{snap['burn_per_minute']:.1f} AIU/min")))
                 # Enter blinks the bar off and on before the view opens.
                 on_cursor = line == lit and not (opening and opening % 2 == 0)
                 style = theme["cursor"] if on_cursor else None
@@ -1292,7 +1364,13 @@ def _home_tui(screen, state: dict):
                         # skipped or held.
                         tick = min(tick, ui.PULSE_MS
                                    - int(now * 1000) % ui.PULSE_MS + 1)
-                    if motions or bar != goal or launch is not None or marks:
+                    roster = live.get("snapshot", {}).get("sessions") or []
+                    if any(item["status"] in ("working", "thinking", "asking", "failing")
+                           for item in roster):
+                        # The roster's spinners and ticking timers.
+                        tick = min(tick, _LIVE_SPIN_MS)
+                    if (motions or bar != goal or launch is not None or marks
+                            or live_marks or arrivals):
                         tick = min(tick, ui.MOTION_MS)
                 wait_until(tick)
             if opening:

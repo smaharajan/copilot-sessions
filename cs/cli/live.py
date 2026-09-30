@@ -42,6 +42,8 @@ _LIVE_BINS = 60
 _LIVE_BIN_SECONDS = 30
 # How many recent events each session keeps for the activity feed.
 _LIVE_FEED = 60
+# Headline readings kept for each tile's trend line: two minutes at 2s.
+_LIVE_TREND = 60
 # Waiting on you for longer than this is idle rather than waiting.
 _LIVE_IDLE_SECONDS = 30 * 60
 # A turn that ended this recently may have another starting behind it.
@@ -478,9 +480,20 @@ def _live_read(state: dict) -> None:
             arrivals[key] = time.monotonic()
     state["feed_keys"] = keys
     limit = ui.daily_budget_aiu()
+    counts = Counter(item["status"] for item in sessions)
+    trend = state.setdefault("trend", {})
+    for key, value in (
+            ("live", len(sessions)),
+            ("need", counts["asking"] + counts["waiting"]),
+            ("busy", counts["working"] + counts["thinking"]),
+            ("failing", counts["failing"]), ("today", today / 1e9),
+            ("calls", sum(item["calls"] for item in sessions)),
+            ("agents", sum(item["agents"] for item in sessions))):
+        trend.setdefault(key, deque(maxlen=_LIVE_TREND)).append(value)
     state["snapshot"] = {
         "sessions": sessions,
-        "counts": Counter(item["status"] for item in sessions),
+        "counts": counts,
+        "trend": {key: list(values) for key, values in trend.items()},
         "burn_per_minute": sum(item["burn_per_minute"] for item in sessions),
         "bins": [sum(column) for column in
                  zip(*(item["bins"] for item in sessions), strict=True)] if sessions else [],
@@ -501,16 +514,6 @@ def _live_read(state: dict) -> None:
 # clock: everything that moves arrives in `motion`, which is what lets the
 # tests play the page frame by frame.
 
-# Headline numbers in block digits, three rows tall.
-_LIVE_BIG = {
-    "0": ("█▀█", "█ █", "▀▀▀"), "1": ("▀█ ", " █ ", "▀▀▀"),
-    "2": ("▀▀█", "█▀▀", "▀▀▀"), "3": ("▀▀█", " ▀█", "▀▀▀"),
-    "4": ("█ █", "▀▀█", "  ▀"), "5": ("█▀▀", "▀▀█", "▀▀▀"),
-    "6": ("█▀▀", "█▀█", "▀▀▀"), "7": ("▀▀█", "  █", "  ▀"),
-    "8": ("█▀█", "█▀█", "▀▀▀"), "9": ("█▀█", "▀▀█", "▀▀▀"),
-    ".": (" ", " ", "▀"), "k": ("█  ", "█▄▀", "▀ ▀"),
-    "M": ("█▄ ▄█", "█ ▀ █", "▀   ▀"),
-}
 _LIVE_SPARKS = " ▁▂▃▄▅▆▇█"
 
 
@@ -579,13 +582,6 @@ def _live_pool(values: list[int], cells: int) -> list[float]:
         return out
     return [sum(values[i * count // cells:(i + 1) * count // cells])
             for i in range(cells)]
-
-
-def _live_big(text: str) -> list[str] | None:
-    glyphs = [_LIVE_BIG.get(ch) for ch in text]
-    if not text or None in glyphs:
-        return None
-    return [" ".join(glyph[row] for glyph in glyphs) for row in range(3)]
 
 
 def _live_wave(values: list[int], cells: int, rows: int = 1,
@@ -925,41 +921,53 @@ def _live_tiles_of(snap: dict) -> list[tuple[str, str, str, str]]:
     return tiles
 
 
-def _live_tiles(snap: dict, usable: int, *, big: bool, motion: dict) -> list[list]:
-    """The headline numbers across the top — in block digits when there is room."""
+def _live_tiles(snap: dict, usable: int, motion: dict) -> list[list]:
+    """The headline numbers: each with its trend and, as it changes, by how much."""
     tiles = _live_tiles_of(snap)
-    per = max(1, min(len(tiles), usable // (18 if big else 13)))
-    if big:
-        tiles = tiles[:per]
+    per = max(1, min(len(tiles), usable // 16))
     progress = motion.get("count", 1.0)
     flashes = motion.get("tile_flash", {})
+    trend = dict(snap.get("trend", {}))
+    trend["burn"] = snap["bins"][-24:]
     out: list[list] = []
     for start in range(0, len(tiles), per):
         group = tiles[start:start + per]
-        each = usable // (len(group) if big else per)
-        block: list[list] = [[] for _ in range(4 if big else 2)]
+        each = usable // per
+        label_row: list = []
+        value_row: list = []
         for n, (key, label, value, role) in enumerate(group):
             x = n * each
             room = each - 3
             if n:
-                for row in block:
-                    row.append((x, "│", "separator"))
-            block[0] += _live_line([(label, "help")], room, x + 2)
+                label_row.append((x, "│", "separator"))
+                value_row.append((x, "│", "separator"))
+            label_row += _live_line([(label, "help")], room, x + 2)
             shown = ui.count_up(value, progress).strip()
             age = flashes.get(key)
-            style = (ui.flash_role(age) if age is not None else None) or role
-            glyphs = _live_big(shown) if big else None
-            if glyphs and max(map(ui.cells, glyphs)) > room and "." in shown:
-                number, suffix = shown[:-1], shown[-1]
-                if suffix.isdigit():
-                    number, suffix = shown, ""
-                glyphs = _live_big(f"{float(number):.0f}{suffix}")
-            if glyphs and max(map(ui.cells, glyphs)) <= room:
-                for row, glyph in enumerate(glyphs, 1):
-                    block[row].append((x + 2, glyph, style))
-            else:
-                block[2 if big else 1] += _live_line([(shown, style)], room, x + 2)
-        out += block
+            lit = ui.flash_role(age) if age is not None else None
+            parts = [(shown, lit or role)]
+            series = trend.get(key) or []
+            spare = room - ui.cells(shown) - 2
+            # Burn's trend is per-minute bins, not the rate on the tile.
+            if (lit and key != "burn" and len(series) >= 2
+                    and series[-1] != series[-2]):
+                delta = series[-1] - series[-2]
+                step = f"{abs(delta):.0f}" if key != "today" else _live_short(abs(delta))
+                arrow = f" {'▲' if delta > 0 else '▼'}{step}"
+                if ui.cells(arrow) + 2 <= spare:
+                    parts.append((arrow, "warn" if delta > 0 else "active"))
+                    spare -= ui.cells(arrow)
+            if spare >= 4 and len(series) >= 2:
+                cells = min(spare, 12, len(series))
+                # Measured from the window's low, so a steady count draws a
+                # flat baseline and any change stands out.
+                low = min(series[-cells:])
+                rise = [value - low for value in series[-cells:]]
+                spark = (_live_wave(rise, cells, 1, motion.get("grow", 1.0))[0][0]
+                         if any(rise) else "▁" * cells)
+                parts += [("  ", "separator"), (spark, role)]
+            value_row += _live_line(parts, room, x + 2)
+        out += [label_row, value_row]
     return out
 
 
@@ -1006,13 +1014,13 @@ def _live_screen(snap: dict, width: int, height: int | None = None,
     motion = motion or {}
     usable = width - 1
     sessions = snap["sessions"]
-    big = height is not None and width >= 100 and height >= 34
+    tall = height is not None and width >= 100 and height >= 34
     rows: list[list] = [_live_header(snap, usable, motion)]
-    if big:
+    if tall:
         rows.append([])
-    rows += _live_tiles(snap, usable, big=big, motion=motion)
+    rows += _live_tiles(snap, usable, motion)
     rows.append([])
-    rows += _live_wave_rows(snap, usable, 2 if big else 1, motion)
+    rows += _live_wave_rows(snap, usable, 2 if tall else 1, motion)
     rows.append([])
     top = len(rows)
     room = None if height is None else max(height - 1 - top, 0)
@@ -1099,6 +1107,93 @@ def _live_screen(snap: dict, width: int, height: int | None = None,
     return rows, hits
 
 
+def _live_ages(state: dict, clock: float) -> tuple[dict, dict]:
+    """Seconds since each status change and each feed arrival, once expired
+    ones are dropped — what the flashes are drawn from."""
+    ages = []
+    for name in ("marks", "arrivals"):
+        table = state.setdefault(name, {})
+        for key in [key for key, at in table.items() if clock - at >= ui.FLASH_SECONDS]:
+            del table[key]
+        ages.append({key: clock - at for key, at in table.items()})
+    return ages[0], ages[1]
+
+
+def _live_home_rows(snap: dict, width: int, room: int, motion: dict) -> list[list]:
+    """The home screen's live roster, at most `room` rows: a summary line,
+    a row for each running session, and the newest event as it lands."""
+    sessions = snap["sessions"]
+    if not sessions or room < 1 or width < 20:
+        return []
+    usable = width - 1
+    counts = snap["counts"]
+    need = counts.get("asking", 0) + counts.get("waiting", 0)
+    busy = counts.get("working", 0) + counts.get("thinking", 0)
+    ticker = room >= 3 and bool(snap.get("feed"))
+    slots = min(len(sessions), room - 1 - ticker)
+    hidden = len(sessions) - slots
+    parts = [("●", motion.get("pulse") or "active"), (f" {len(sessions)} live", "active")]
+    for count, text, role in ((need, "need you", "warn"), (busy, "working", "turns"),
+                              (counts.get("failing", 0), "failing", "danger")):
+        if count:
+            parts += [("  ·  ", "separator"), (f"{count} {text}", role)]
+    parts += [("  ·  ", "separator"),
+              (f"{snap['burn_per_minute']:.1f} AIU/min", "credits")]
+    tail = "↵ Live sessions" if usable >= 90 else "↵"
+    right = [(f"+{hidden} more · {tail}", "help")] if hidden else []
+    right_w = sum(ui.cells(text) for text, _ in right)
+    budget = usable - 2 - (right_w + 2 if right else 0)
+    # Whole readings fall off the end rather than one being cut mid-word.
+    while len(parts) > 2 and sum(ui.cells(text) for text, _ in parts) > budget:
+        parts = parts[:-2]
+    summary = _live_line(parts, budget, 2)
+    wave = _live_wave(snap["bins"][-20:], 20, 1, motion.get("grow", 1.0))[0][0]
+    used = 2 + sum(ui.cells(text) for _x, text, _r in summary)
+    if used + 24 + (right_w + 2 if right else 0) <= usable:
+        summary += _live_tint(wave, motion.get("grad", 1), used + 2)
+    if right and used + right_w + 2 <= usable:
+        summary += _live_right(right, usable)
+    rows = [summary]
+    chips = max(motion.get("chips", 8), 1)
+    marks = motion.get("marks", {})
+    opened = motion.get("open")
+    title_w = max(min(30, usable // 4), 10)
+    for index, item in enumerate(sessions[:slots]):
+        progress = 1.0
+        if opened is not None:
+            progress = (opened - index * _LIVE_DEAL_SECONDS) / _LIVE_ROW_TYPE_SECONDS
+            if progress <= 0:
+                rows.append([])
+                continue
+        mark, mark_role = _live_status_mark(item, motion)
+        _mark, label, role = _LIVE_STATES[item["status"]]
+        age = marks.get(item["id"])
+        lit = ui.flash_role(age) if age is not None else None
+        row = [(2, "▌", f"c{item['chip'] % chips}"), (4, mark, mark_role)]
+        title = ui.trunc(item["title"], title_w if usable >= 60 else usable - 18)
+        row.append((6, ui.typed(title, progress).ljust(title_w)
+                    if usable >= 60 else ui.typed(title, progress),
+                    lit or ("help" if item["status"] == "idle" else "title")))
+        x = 6 + (title_w if usable >= 60 else ui.cells(title)) + 2
+        if usable >= 60 and progress >= 1:
+            row += _live_line([(label.ljust(10), role),
+                               (_live_timer(item, motion).rjust(6), "number")],
+                              usable - x, x)
+            x += 18
+            now, now_role = _live_now(item)
+            if usable - x >= 12:
+                row += _live_line([(ui.trunc(now, usable - x), now_role)],
+                                  usable - x, x)
+        elif progress >= 1 and usable - x >= 6:
+            row.append((usable - 6, _live_timer(item, motion).rjust(6), "number"))
+        rows.append(row)
+    if ticker:
+        line = _live_feed(snap["feed"][:1], usable - 4, 1, motion)[0]
+        rows.append([(2, "↯", motion.get("pulse") or "active"),
+                     *[(x + 4, text, role) for x, text, role in line]])
+    return rows
+
+
 def _live_hint(width: int) -> str:
     for hint in (" ↑↓ choose · ↵ open session · r refresh · q back ",
                  " ↑↓ choose · ↵ open · r refresh · q back ",
@@ -1167,12 +1262,9 @@ def _live_tui(screen, state: dict):
                 key = (chosen["id"], chosen["asked"], chosen["said"])
                 if key != typed_key:
                     typed_key, typed_at = key, clock
-            marks = state.setdefault("marks", {})
-            arrivals = state.setdefault("arrivals", {})
-            for table in (marks, arrivals, lit):
-                for key in [key for key, at in table.items()
-                            if clock - at >= ui.FLASH_SECONDS]:
-                    del table[key]
+            marks, arrivals = _live_ages(state, clock)
+            for key in [key for key, at in lit.items() if clock - at >= ui.FLASH_SECONDS]:
+                del lit[key]
             elapsed = None if opened is None else clock - opened
             if elapsed is not None and elapsed >= _live_open_seconds(len(sessions)):
                 opened = elapsed = None
@@ -1184,8 +1276,7 @@ def _live_tui(screen, state: dict):
                 "cursor": cursor, "since": clock - read_at, "open": elapsed,
                 "count": ui.launch_progress(elapsed, 0.1, ui.COUNT_SECONDS),
                 "grow": ui.launch_progress(elapsed, 0.0, 0.8),
-                "marks": {sid: clock - at for sid, at in marks.items()},
-                "arrivals": {key: clock - at for key, at in arrivals.items()},
+                "marks": marks, "arrivals": arrivals,
                 "tile_flash": {key: clock - at for key, at in lit.items()},
                 "moved": moved, "typed": typed,
                 "spin": int(clock * 1000 / _LIVE_SPIN_MS),
