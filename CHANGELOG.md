@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reports arrive with motion.** As a report opens, behind the wipe its bars
+  fill along their dotted track, sparklines rise and the totals count up, a
+  row at a time. It runs once and then holds still; any key skips it.
+
 - **Themes is back on the home menu.** A 🎨 Themes row under a new Settings
   heading opens the theme gallery and names the current theme; `t` still
   works from anywhere on the menu.

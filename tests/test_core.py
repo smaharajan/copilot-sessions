@@ -2512,6 +2512,49 @@ class CSTest(StoreTest):
         # It takes fewer frames than the wipe has, because a key ends it.
         self.assertLess(len(screen.frames), ui.REVEAL_FRAMES + 3)
 
+    def test_bars_fill_and_totals_count_up_as_a_report_arrives(self):
+        """Behind the wipe, bars fill and summary totals count up — then stop.
+
+        A date is not a total, and a keypress still lands on the whole page.
+        """
+        from cs import ui
+        from cs.cli import _reader_tui
+
+        bar = "\x1b[35m█████▏\x1b[0m\x1b[2m·····\x1b[0m"
+        lines = ["  spend    344.0k AIU", "  range    2026-03-09 → 2026-09-30",
+                 f"      183.7k  model  {bar}"]
+        screen = Screen([-1] * 40 + [ord("q")])
+        _reader_tui(screen, lines, mouse=False)
+        frames = screen.frames
+
+        def text(frame, y):
+            return "".join(t for (row, _x), t in sorted(frame.items()) if row == y)
+
+        spends = [text(f, 0) for f in frames if "AIU" in text(f, 0)]
+        self.assertTrue(any("344.0k" not in line for line in spends), "no count-up")
+        self.assertIn("344.0k", spends[-1])
+        for frame in frames:
+            row = text(frame, 1)
+            if len(row) > 14:
+                self.assertTrue(row.startswith("  range    2026"), row)
+        bars = [text(f, 2) for f in frames if "·" in text(f, 2)]
+        middle = next(line for line in bars if "█████▏" not in line)
+        self.assertNotIn(" ", middle.split("model  ")[1].rstrip(),
+                         "a gap between the bar and its track")
+        self.assertEqual(frames[-1], frames[-2], "the entrance never stopped")
+        self.assertIn("█████▏·····", text(frames[-1], 2))
+        self.assertLess(frames.index(frames[-1]), ui.REVEAL_FRAMES + ui.GROW_FRAMES + 4)
+
+    def test_grow_keeps_the_width_and_ends_where_it_started(self):
+        from cs import ui
+
+        for sample in ("█████▏·····", "▁▃▅█ ▂", "▌", "plain text"):
+            for progress in (0, 0.25, 0.5, 0.9, 1):
+                with self.subTest(sample=sample, progress=progress):
+                    self.assertEqual(len(ui.grow(sample, progress)), len(sample))
+            self.assertEqual(ui.grow(sample, 1), sample)
+        self.assertEqual(ui.grow("▌", 0), "▌", "a heading marker is not a bar")
+
     def test_the_reader_still_draws_where_a_timeout_is_not_available(self):
         """No timed getch means no wipe — and a fully drawn page anyway."""
         from cs.cli import _reader_tui

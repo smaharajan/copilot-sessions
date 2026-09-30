@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 
@@ -612,18 +613,52 @@ def _reader_tui(
         screen.bkgd(" ", theme["background"])
         span = width + ui.REVEAL_LAG * page
         swept = span if reveal is None else ui.reveal_columns(reveal, span)
+        # Whether this frame still differs from the finished page, which is
+        # what ends the entrance once the wipe itself is done.
+        moving = False
         for row, runs in enumerate(rows[offset:offset + page]):
             column = 0
             # Each row trails the one above it, so the edge crossing the page
             # is a slant rather than a shutter.
             edge = width if reveal is None else min(
                 width, max(0, swept - row * ui.REVEAL_LAG))
-            for text, attr in runs:
+            # Behind the wipe, the row's bars fill and a summary line's
+            # number counts up ("spend    344.0k AIU"), a row at a time.
+            grow = (1.0 if reveal is None else
+                    (reveal - 2 - row * ui.GROW_STAGGER) / ui.GROW_FRAMES)
+            counting = grow < 1 and _SUMMARY_ROW.match(
+                "".join(text for text, _ in runs))
+            for at, (text, attr) in enumerate(runs):
                 if column >= edge:
                     break
+                track = None
+                if grow < 1:
+                    shown = ui.grow(text, grow)
+                    follow = runs[at + 1] if at + 1 < len(runs) else ("", 0)
+                    if (shown != text and shown.endswith(" ")
+                            and follow[0].startswith("·")):
+                        # The bar's own track is the next run, in its dimmer
+                        # colour: the cells the bar has not reached yet wear
+                        # that, rather than a gap.
+                        kept = shown.rstrip(" ")
+                        track = (column + ui.cells(kept),
+                                 "·" * (len(shown) - len(kept)), follow[1])
+                        shown = kept
+                    if counting and (found := ui._COUNT.search(shown)):
+                        counting = None
+                        # A date or a time is not a total: 2026-09-30 stays put.
+                        if shown[found.end():found.end() + 1] not in ("-", ":", "/"):
+                            shown = ui.count_up(shown, grow)
+                    moving = moving or shown != text
+                    text = shown
                 _addstr(screen, row, column, text, edge - column,
                         theme["cursor"] if attr == -1 else attr or theme["summary"])
                 column += ui.cells(text)
+                if track:
+                    at_x, dots, style = track
+                    _addstr(screen, row, at_x, dots, max(0, edge - at_x),
+                            style or theme["summary"])
+                    column = at_x + len(dots)
         at_end = offset + page >= len(rows)
         hints = [
             ("↑/↓ scroll", "↑↓", 3),
@@ -680,7 +715,7 @@ def _reader_tui(
             if reveal is None:
                 continue
             reveal += 1
-            if reveal >= ui.REVEAL_FRAMES:
+            if reveal >= ui.REVEAL_FRAMES and not moving:
                 reveal = None
                 wait(-1)
             continue
@@ -747,6 +782,11 @@ def _reader_tui(
             # Re-sorting reorders the whole table, so the row you were looking
             # at is not there any more. The top is the only honest place to be.
             offset = 0
+
+
+# A key-value summary line — "  spend    344.0k AIU" — whose number counts
+# up on arrival. Table rows start with their number and are left alone.
+_SUMMARY_ROW = re.compile(r" {2}[a-z][a-z ]{0,14}? {2,}\d")
 
 
 def _reader_rows(

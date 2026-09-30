@@ -1657,8 +1657,9 @@ report is checked at 40 through 140 columns, and columns are dropped in a
 stated order — what a thing *is* outranks how long its bar is.
 
 **Motion happens on arrival and then stops.** The landing screen and the
-report reader wipe in once, on a slant, and hold still after. Any keypress
-lands you on the finished page. After that the home screen moves only to
+report reader wipe in once, on a slant, and hold still after. Behind the
+wipe a report's bars fill along their dotted track and its totals count up,
+row after row. Any keypress lands you on the finished page. After that the home screen moves only to
 report something: a count arriving or changing, the cursor moving, a session
 running.
 

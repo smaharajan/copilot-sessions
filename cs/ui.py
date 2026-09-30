@@ -818,6 +818,41 @@ def count_up(text: str, progress: float) -> str:
     return f"{text[:found.start()]}{shown}{text[found.end():]}".rjust(len(text))
 
 
+# A report's entrance, after the wipe: each row's bars fill and its
+# sparklines rise, starting a little after the row above, then stop.
+GROW_FRAMES = 10
+GROW_STAGGER = 0.2
+_EIGHTHS = " ▏▎▍▌▋▊▉█"
+_LEVELS = "▁▂▃▄▅▆▇█"
+_BAR = re.compile(r"([█▉▊▋▌▍▎▏]+)([·░ ]*)")
+
+
+def grow(text: str, progress: float) -> str:
+    """`text` with its bar or sparkline at `progress` of its height, same width.
+
+    A bar is block eighths, optionally followed by its track (`·`, `░`); it
+    fills from the left an eighth of a cell at a time, and the cells it has
+    not reached yet show the track. A sparkline rises column by column.
+    Anything else comes back unchanged.
+    """
+    if progress >= 1 or not text:
+        return text
+    eased = 1 - (1 - max(progress, 0.0)) ** 2
+    bar = _BAR.fullmatch(text)
+    if bar and text != "▌":
+        blocks, track = bar.groups()
+        filled = round(sum(_EIGHTHS.index(ch) for ch in blocks) * eased)
+        full, part = divmod(filled, 8)
+        drawn = "█" * full + (_EIGHTHS[part] if part else "")
+        return drawn + (track[:1] or " ") * (len(blocks) - len(drawn)) + track
+    if any(ch in _LEVELS[:-1] for ch in text) and all(
+            ch in _LEVELS or ch == " " for ch in text):
+        return "".join(ch if ch == " " else
+                       _LEVELS[max(0, round((_LEVELS.index(ch) + 1) * eased) - 1)]
+                       for ch in text)
+    return text
+
+
 def flash_role(age: float) -> str | None:
     """The style a changed count wears `age` seconds after it changed."""
     if age < 0 or age >= FLASH_SECONDS:
