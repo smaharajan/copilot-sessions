@@ -315,29 +315,43 @@ event; `cs hooks` will then count its runs and failures.
 
 The first row on the home screen. It finds each running Copilot CLI by the
 lock file it holds in its session folder (`inuse.<pid>.lock`, with the pid
-still alive) and draws a card for each, most urgent first. The status comes
-from the tail of that session's event log:
+still alive) and lists each, most urgent first. The status comes from the
+tail of that session's event log:
 
 | Status | Evidence |
 |---|---|
 | ▲ asking you | an open `ask_user` call or a pending permission request |
 | ■ failing | three main-agent tool failures in a row, or a session error last |
 | ◆ your turn | the last turn ended and the log has been quiet for 3 seconds |
-| ● working | a tool or sub-agent is running; the card names it |
-| ◐ thinking | the model is mid-reply |
+| ● working | a tool or sub-agent is running; the row names it |
+| ◐ thinking | the model is mid-reply, or compacting the conversation |
 | ○ idle | nothing written for thirty minutes |
 
-A card shows the repository, branch, model, effort and pid, what the session
-is doing now, your last ask, the agent's last reply, its todo list as a
-progress bar, and a thirty-minute burn sparkline with credits, turns and the
-tools it called. The band on top totals them: statuses, burn across every
-live session, today's spend, calls and failures. Cards sit two across at 120
-columns and wider.
+The page is a dashboard in four parts:
 
-It rereads every two seconds, reading only the bytes each log gained. A card
-whose status changes flashes once. ↑↓←→ choose, Enter opens the session in
-`cs show` and comes back, `r` rereads now, `q` goes back. `cs live` prints the
-same page as text when piped, and `cs live --json` gives the data.
+- **Tiles** — live, need you, working, burn per minute, today's spend and
+  tool calls, in block digits from 100 columns and 34 rows. They count up
+  when the page opens and flash when a reread changes them.
+- **Wave** — burn across every live session over the last thirty minutes,
+  in half-minute steps.
+- **Sessions** — two lines per session, each with its own colour: the
+  status with a spinner and a ticking timer, what it is doing now, a burn
+  sparkline and rate, and its repository and branch. The rows deal in when
+  the page opens.
+- **The chosen session and Activity** — the chosen session's repository,
+  model, pid, your last ask, the agent's last reply (typed in when you
+  move), plan or intent, spend, the tools it called, and flags. Below it,
+  one line per event across every session, newest first; each new line
+  lights up as it lands.
+
+From 120 columns the list and the chosen session sit side by side, with
+Activity across the full width underneath; narrower, the panels stack and
+give way to the list. It rereads every two seconds, reading only the bytes
+each log gained, and once nothing is moving it redraws once a second for
+the clocks. ↑↓ or j/k choose, g/G jump to the first or last, Enter opens the
+session in `cs show` and comes back, `r` rereads now, `q` goes back. A click
+chooses a session, a double-click opens it, and the wheel moves. `cs live` prints the same page as text when piped, and
+`cs live --json` gives the data, with the activity feed.
 
 ### The session running now
 

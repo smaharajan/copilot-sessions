@@ -1,7 +1,7 @@
 """Live sessions: every Copilot CLI running now, on one page.
 
 Running is decided by the lock a CLI holds, not by how recently the store
-moved, and each card's status is an inference from the event log that has
+moved, and each session's status is an inference from the event log that has
 to name its evidence. The page must hold its shape at every width, mask
 what it prints, and leave the home strip counting every live CLI.
 """
@@ -227,14 +227,17 @@ class LiveTest(StoreTest):
         state: dict = {}
         cli._live_read(state)
         for width in (40, 60, 80, 100, 140):
-            with self.subTest(width=width):
-                band, rows, boxes = cli._live_page(state["snapshot"], width, 0.0)
-                self.assertEqual(len(boxes), 2)
-                for line in [*band, *rows]:
-                    for x, text, _role in line:
-                        self.assertLessEqual(x + ui.cells(text), width - 1, text)
-                self.assertIn("2 live", " ".join(t for line in band for _x, t, _r in line))
-                self.assertLessEqual(ui.cells(cli._live_hint(width)), width - 1)
+            for height in (None, 24, 48):
+                with self.subTest(width=width, height=height):
+                    rows, hits = cli._live_screen(state["snapshot"], width, height)
+                    for line in rows:
+                        for x, text, _role in line:
+                            self.assertLessEqual(x + ui.cells(text), width - 1, text)
+                    if height:
+                        self.assertLessEqual(len(rows), height - 1)
+                    self.assertIn("2 live", " ".join(t for _x, t, _r in rows[0]))
+                    self.assertEqual({hit[3] for hit in hits}, {0, 1})
+            self.assertLessEqual(ui.cells(cli._live_hint(width)), width - 1)
 
     def test_nothing_running_says_so(self):
         from cs import cli
@@ -254,23 +257,59 @@ class LiveTest(StoreTest):
         self.assertEqual(chosen, "sess-beta")
         self.assertIsNone(cli._live_tui(Screen([ord("q")]), state))
 
-    def test_the_cards_deal_in_and_then_the_page_stops_moving(self):
+    def test_the_sessions_deal_in_and_then_the_page_stops_moving(self):
         from cs import cli, ui
 
-        self._lock("sess-alpha")
-        self._lock("sess-beta")
-        screen = _ClockScreen([-1] * 40 + [ord("q")])
+        old = time.time() - 600
+        for sid in ("sess-alpha", "sess-beta"):
+            for lock in self._lock(sid).glob("inuse.*.lock"):
+                os.utime(lock, (old, old))
+        screen = _ClockScreen([-1] * 60 + [ord("q")])
+        wall = time.time()
         with (
             mock.patch.object(ui, "PULSE_MS", 10**9),
             mock.patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
+            mock.patch.object(cli.time, "time", side_effect=lambda: wall + screen.now),
             mock.patch.object(cli.time, "strftime", return_value="12:00:00"),
         ):
             cli._live_tui(screen, {})
-        cards = [sum(text.startswith(("╭", "┏")) for text in frame.values())
-                 for frame in screen.frames]
-        self.assertEqual(cards[0], 1)
-        self.assertEqual(cards[-1], 2)
-        self.assertEqual(len({tuple(sorted(f.items())) for f in screen.frames[-5:]}), 1)
+        # Each session is two rows in the list, each starting with its chip.
+        dealt = [len({y for (y, x), text in frame.items()
+                      if x == 2 and text.startswith("▌")}) for frame in screen.frames]
+        self.assertLess(dealt[0], 4)
+        self.assertEqual(dealt[-1], 4)
+        # Settled: redrawn once a second for the clocks, and nothing else moves.
+        self.assertEqual(screen.delay, 1000)
+        self.assertEqual(len({tuple(sorted(f.items())) for f in screen.frames[-3:]}), 1)
+
+    def test_new_activity_lands_in_the_feed_and_lights_up(self):
+        from cs import cli
+
+        folder = self._lock("sess-alpha", events=[
+            _start("c1", "bash", _ago(5), description="build it")])
+        state: dict = {}
+        cli._live_read(state)
+        self.assertEqual(state["arrivals"], {})
+        self.assertEqual(state["snapshot"]["feed"][0]["detail"], "build it")
+        with open(folder / "events.jsonl", "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(_start("c2", "view", _ago(1), path="/a/b/notes.md"),
+                                    separators=(",", ":")) + "\n")
+        cli._live_read(state)
+        newest = state["snapshot"]["feed"][0]
+        self.assertEqual((newest["what"], newest["detail"]), ("view", "notes.md"))
+        self.assertEqual(list(state["arrivals"]), [newest["key"]])
+
+    def test_compacting_is_thinking_and_says_so(self):
+        start = _event("session.compaction_start", _ago(30), {})
+        self._lock("sess-alpha", events=[start])
+        card = self._card("sess-alpha")
+        self.assertEqual((card["status"], card["doing"]),
+                         ("thinking", "compacting the conversation"))
+        self._lock("sess-alpha", events=[
+            start, _event("session.compaction_complete", _ago(20), {}),
+            _event("assistant.turn_end", _ago(10), {"turnId": "0"})])
+        card = self._card("sess-alpha")
+        self.assertEqual((card["status"], card["compactions"]), ("waiting", 1))
 
     def test_live_runs_as_a_command_and_as_data(self):
         self._lock("sess-alpha")

@@ -10,12 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`cs live` puts every running session on one page.** The new first row on
-  the home screen finds each running Copilot CLI by its lock file and draws a
-  card per session: whether it is asking you, failing, waiting on you,
-  working, thinking or idle — with the evidence — plus its repository, model,
-  current tool or sub-agents, your last ask, the agent's last reply, todo
-  progress and a burn sparkline. A band on top totals status, burn and spend.
-  It rereads every two seconds; `cs live --json` gives the data.
+  the home screen finds each running Copilot CLI by its lock file and shows a
+  live dashboard. Block-digit tiles count up and flash on change. A gradient
+  wave shows thirty minutes of burn. Each session gets two colour-coded lines
+  with a spinner, a ticking timer and a sparkline, and its status comes with
+  the evidence: asking you, failing, waiting on you, working, thinking
+  (including compacting) or idle. A panel for the chosen session types in
+  your last ask and the agent's reply, and an Activity feed lights up each
+  event as it lands. It rereads every two seconds; `cs live --json` gives the
+  data and the feed.
 
 - **The home screen moves when something happens.** The counts roll up to
   their values on first arrival, a count the refresh changed flashes, the
