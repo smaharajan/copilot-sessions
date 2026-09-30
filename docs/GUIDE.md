@@ -352,9 +352,23 @@ Activity across the full width underneath; narrower, the panels stack and
 give way to the list. It rereads every two seconds, reading only the bytes
 each log gained, and once nothing is moving it redraws once a second for
 the clocks. ↑↓ or j/k choose, g/G jump to the first or last, Enter opens the
-session in `cs show` and comes back, `r` rereads now, `q` goes back. A click
-chooses a session, a double-click opens it, and the wheel moves. `cs live` prints the same page as text when piped, and
-`cs live --json` gives the data, with the activity feed.
+session's own page, `r` rereads now, `q` goes back. A click chooses a
+session, a double-click opens it, and the wheel moves. `cs live` prints the
+same page as text when piped, and `cs live --json` gives the data, with the
+activity feed.
+
+**Enter opens one session's own live page.** Under a `Live › title`
+breadcrumb it shows the status and its timer, the repository, model, uptime
+and pid, then turns, calls, failures, spend and burn with a sparkline, and
+what it is doing now, its plan or intent and its tools. Below, the
+Conversation panel keeps the session's recent history in order: what you
+asked, the agent's replies wrapped in full up to twelve lines, and every
+call it made, a blank line between turns. It rereads every two seconds and
+follows the newest line; new lines light up as they land. ↑↓, PgUp/PgDn and
+the wheel scroll back, and the view holds still while newer lines arrive
+below it (End follows again). `n`/`p` or Tab move to the next or previous
+session, Enter opens the full `cs show` page and comes back, and `q` returns
+to the list with that session chosen.
 
 ### The session running now
 

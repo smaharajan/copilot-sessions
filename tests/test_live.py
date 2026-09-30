@@ -257,6 +257,135 @@ class LiveTest(StoreTest):
         self.assertEqual(chosen, "sess-beta")
         self.assertIsNone(cli._live_tui(Screen([ord("q")]), state))
 
+    # ── One session's page ───────────────────────────────────────────
+
+    def _focus(self, sid: str = "sess-alpha") -> tuple[dict, dict]:
+        from cs import cli
+
+        state: dict = {"dealt": True, "focus": sid}
+        cli._live_read(state)
+        item = {s["id"]: s for s in state["snapshot"]["sessions"]}[sid]
+        return state, item
+
+    def test_a_sessions_page_holds_its_shape_and_masks_what_it_prints(self):
+        from cs import cli, ui
+
+        secret = "ghp_" + "d" * 36
+        self._lock("sess-alpha", events=[
+            _event("user.message", _ago(90), {"content": f"deploy with {secret}"}),
+            _start("c1", "bash", _ago(80), description="a long description " * 9),
+            _done("c1", _ago(79), False),
+            _event("assistant.message", _ago(70), {"content": "Done. " * 80}),
+            _event("assistant.turn_end", _ago(60), {"turnId": "0"})])
+        state, item = self._focus()
+        tail = state["tails"]["sess-alpha"]
+        for width in (40, 60, 80, 100, 140):
+            for height in (12, 24, 48):
+                with self.subTest(width=width, height=height):
+                    rows, back, total = cli._focus_screen(item, tail, width, height)
+                    self.assertLessEqual(len(rows), height - 1)
+                    for line in rows:
+                        for x, text, _role in line:
+                            self.assertLessEqual(x + ui.cells(text), width - 1, text)
+                    text = "\n".join(" ".join(t for _x, t, _r in line) for line in rows)
+                    self.assertIn("Live ›", text)
+                    self.assertNotIn(secret, text)
+                    self.assertEqual(back, 0)
+                    self.assertGreater(total, 3, "a long reply wraps")
+            self.assertLessEqual(ui.cells(cli._focus_hint(width)), width - 1)
+        rows, _back, _total = cli._focus_screen(item, tail, 100, 48)
+        text = ""
+        for line in rows:
+            for x, part, _role in sorted(line):
+                text += " " * max(x - ui.cells(text.rsplit("\n", 1)[-1]), 0) + part
+            text += "\n"
+        for expected in ("your turn", "deploy with", "Done. Done.", "✗", "FAILED 1"):
+            self.assertIn(expected, text)
+
+    def test_enter_opens_the_sessions_page_where_keys_move_and_q_goes_back(self):
+        from cs import cli
+
+        self._lock("sess-alpha", events=[_start("c1", "ask_user", _ago(5))])
+        self._lock("sess-beta")
+        state, _item = self._focus()
+        self.assertIsNone(cli._live_focus_tui(Screen([ord("q")]), state))
+        self.assertEqual(cli._live_focus_tui(Screen([10]), state), "show")
+        self.assertEqual(cli._live_focus_tui(Screen([ord("n"), ord("q")]), state), None)
+        self.assertEqual((state["focus"], state["cursor"]), ("sess-beta", 1))
+        cli._live_focus_tui(Screen([ord("p"), ord("q")]), state)
+        self.assertEqual(state["focus"], "sess-alpha")
+
+    def test_scrolled_back_the_view_holds_while_new_lines_land_below(self):
+        from cs import cli
+
+        folder = self._lock("sess-alpha", events=[
+            _start(f"c{n}", "bash", _ago(90 - n), description=f"step {n}")
+            for n in range(40)])
+        state, item = self._focus()
+        tail = state["tails"]["sess-alpha"]
+
+        def top(back: int) -> str:
+            rows, _back, _total = cli._focus_screen(item, tail, 80, 24, {"back": back})
+            return " ".join(t for _x, t, _r in rows[-15])
+
+        before = top(5)
+        with open(folder / "events.jsonl", "a", encoding="utf-8") as handle:
+            for n in range(40, 43):
+                handle.write(json.dumps(_start(f"c{n}", "bash", _ago(1),
+                                               description=f"step {n}"),
+                                        separators=(",", ":")) + "\n")
+        tail.read()
+        self.assertEqual(top(8), before)
+        self.assertIn("step 42", " ".join(
+            t for line in cli._focus_screen(item, tail, 80, 24)[0] for _x, t, _r in line))
+
+    def test_a_sessions_page_opens_with_motion_and_then_holds_still(self):
+        from cs import cli, ui
+
+        folder = self._lock("sess-alpha", events=[
+            _event("assistant.turn_end", _ago(60), {"turnId": "0"})])
+        old = time.time() - 600
+        for lock in folder.glob("inuse.*.lock"):
+            os.utime(lock, (old, old))
+        state, _item = self._focus()
+        screen = _ClockScreen([-1] * 60 + [ord("q")])
+        wall = time.time()
+        with (
+            mock.patch.object(ui, "PULSE_MS", 10**9),
+            mock.patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
+            mock.patch.object(cli.time, "time", side_effect=lambda: wall + screen.now),
+            mock.patch.object(cli.time, "strftime", return_value="12:00:00"),
+        ):
+            cli._live_focus_tui(screen, state)
+        self.assertNotEqual(screen.frames[0], screen.frames[-1], "no entrance")
+        self.assertEqual(screen.delay, 1000)
+        self.assertEqual(len({tuple(sorted(f.items())) for f in screen.frames[-3:]}), 1)
+
+    def test_live_goes_from_the_list_to_a_session_and_back(self):
+        from cs import cli
+
+        views = iter(["sess-alpha", "show", "show", None, None])
+        seen = []
+
+        def wrapper(view, state):
+            seen.append((view.__name__, state.get("focus"), state.pop("note", "")))
+            return next(views)
+
+        with (
+            mock.patch.object(cli.sys.stdin, "isatty", return_value=True),
+            mock.patch.object(cli.sys.stdout, "isatty", return_value=True),
+            mock.patch.object(cli, "_curses_wrapper", side_effect=wrapper),
+            mock.patch.object(cli, "cmd_show",
+                              side_effect=[None, SystemExit(1)]) as show,
+        ):
+            self.assertTrue(cli.cmd_live())
+        self.assertEqual([call.args for call in show.call_args_list],
+                         [("sess-alpha",), ("sess-alpha",)])
+        self.assertEqual([name for name, _sid, _note in seen], [
+            "_live_tui", "_live_focus_tui", "_live_focus_tui",
+            "_live_focus_tui", "_live_tui"])
+        self.assertIn("Not in the store yet", seen[3][2])
+
     def test_the_sessions_deal_in_and_then_the_page_stops_moving(self):
         from cs import cli, ui
 

@@ -40,8 +40,10 @@ LIVE_REFRESH_SECONDS = 2
 _LIVE_BURN_MINUTES = 10
 _LIVE_BINS = 60
 _LIVE_BIN_SECONDS = 30
-# How many recent events each session keeps for the activity feed.
+# How many recent events each session keeps for the activity feed, and for
+# its own page.
 _LIVE_FEED = 60
+_LIVE_HISTORY = 240
 # Headline readings kept for each tile's trend line: two minutes at 2s.
 _LIVE_TREND = 60
 # Waiting on you for longer than this is idle rather than waiting.
@@ -134,7 +136,7 @@ class _LiveTail:
         self.compacting = False
         self.tools: Counter = Counter()
         # (serial, when, mark, role, what, raw text) — cleaned only if shown.
-        self.feed: deque = deque(maxlen=_LIVE_FEED)
+        self.feed: deque = deque(maxlen=_LIVE_HISTORY)
         self.serial = 0
         self.cleaned: dict[int, str] = {}
 
@@ -145,7 +147,7 @@ class _LiveTail:
 
     def clean(self, serial: int, raw: str) -> str:
         if serial not in self.cleaned:
-            if len(self.cleaned) > 2 * _LIVE_FEED:
+            if len(self.cleaned) > 2 * _LIVE_HISTORY:
                 keep = {entry[0] for entry in self.feed}
                 self.cleaned = {k: v for k, v in self.cleaned.items() if k in keep}
             self.cleaned[serial] = _live_plain(_clean(raw))
@@ -1119,6 +1121,304 @@ def _live_ages(state: dict, clock: float) -> tuple[dict, dict]:
     return ages[0], ages[1]
 
 
+# ── One session ──────────────────────────────────────────────────────
+# Enter on a session opens its own page: the same reading, kept current, with
+# its whole recent conversation — what you asked, what it said, every call
+# it made — following the newest line as it lands.
+
+# How much of each kind of entry the conversation shows before it trims.
+_FOCUS_LINES = {"you": 4, "agent": 12}
+
+
+def _focus_entries(tail: _LiveTail, inner: int, motion: dict) -> list[list]:
+    """The session's events, oldest first, a turn at a time."""
+    arrivals = motion.get("arrivals", {})
+    stamp = inner >= 54
+    x = 10 if stamp else 0
+    text_x = x + 13
+    room = max(inner - text_x, 8)
+    out: list[list] = []
+    for serial, at, mark, role, what, raw in tail.feed:
+        if what == "you" and out:
+            out.append([])
+        age = arrivals.get(serial)
+        lit = ui.flash_role(age) if age is not None else None
+        progress = min(age / 0.3, 1.0) if age is not None else 1.0
+        detail = tail.clean(serial, raw)
+        lines = (textwrap.wrap(detail, room, max_lines=_FOCUS_LINES[what],
+                               placeholder=" …") if what in _FOCUS_LINES
+                 else [ui.trunc(detail, room)] if detail else [""])
+        tone = {"you": "title", "agent": "summary"}.get(what, "help")
+        budget = round(sum(map(len, lines)) * progress)
+        for n, line in enumerate(lines):
+            row: list = []
+            if not n:
+                if stamp:
+                    row.append((0, time.strftime("%H:%M:%S", time.localtime(at)),
+                                lit or "separator"))
+                row += [(x, mark, role), (x + 2, ui.trunc(_clean(what), 10), lit or role)]
+            shown = line[:max(budget, 0)]
+            budget -= len(line)
+            if shown:
+                row.append((text_x, shown, lit or tone))
+            out.append(row)
+    return out
+
+
+def _focus_screen(item: dict, tail: _LiveTail, width: int, height: int,
+                  motion: dict | None = None) -> tuple[list[list], int, int]:
+    """The page for one session, how many conversation lines sit below the
+    view, and how many there are in all."""
+    motion = motion or {}
+    usable = width - 1
+    chip = f"c{item.get('chip', 0) % max(motion.get('chips', 8), 1)}"
+    count = motion.get("count", 1.0)
+    typed = motion.get("typed", 1.0)
+    since = motion.get("since", 0.0)
+    ended = motion.get("ended")
+    mark, mark_role = (("○", "separator") if ended
+                       else _live_status_mark(item, motion))
+    label, role = ("ended", "help") if ended else _LIVE_STATES[item["status"]][1:]
+    right = [(mark, mark_role), (" " + label, role)]
+    timer = "" if ended else _live_timer(item, motion)
+    if timer:
+        right.append((f"  {timer}", "number"))
+    right_w = sum(ui.cells(text) for text, _ in right)
+    crumb = f" {ui.menu_icon('live')} Live › "
+    head = _live_line([(crumb, "help"), (ui.typed(item["title"], typed), "title")],
+                      max(usable - right_w - 2, 8))
+    if right_w + 12 <= usable:
+        head += _live_right(right, usable)
+    where = [(item["repo"] or "no repository", "repo")]
+    if item["branch"]:
+        where += [(" · ", "separator"), (item["branch"], "repo")]
+    # Whole facts or none: a clipped model name reads as a different model.
+    for fact, role in ((" ".join(filter(None, (item["model"], item["effort"]))), "turns"),
+                       (f"up {_live_span(item['up'] + since)}" if item["up"] else "", "help"),
+                       (f"pid {item['pid']}", "number")):
+        if fact and sum(ui.cells(t) for t, _ in where) + 5 + ui.cells(fact) <= usable - 1:
+            where += [("  ·  ", "separator"), (fact, role)]
+    rows: list[list] = [head, _live_line(where, usable - 1, 1), []]
+
+    stats: list[tuple[str, str]] = []
+    for name, value, tone in (
+            ("TURNS", str(item["turns"]), "number"),
+            ("CALLS", str(item["calls"]), "number"),
+            ("FAILED", str(item["failures"]) if item["failures"] else "", "danger"),
+            ("SPEND", f"{ui.fmt_aiu(item['nano'])} AIU", "credits"),
+            ("BURN", f"{item['burn_per_minute']:.2f}/m", "credits")):
+        if value:
+            stats += [("   " if stats else "", "separator"), (name + " ", "label"),
+                      (ui.count_up(value, count), tone)]
+    spare = usable - 1 - sum(ui.cells(text) for text, _ in stats) - 3
+    if spare >= 8:
+        stats += [("   ", "separator"),
+                  (_live_wave(item["bins"], min(spare, 30), 1,
+                              motion.get("grow", 1.0))[0][0], chip)]
+    rows.append(_live_line(stats, usable - 1, 1))
+
+    pad = 9
+    extra: list[tuple[int, list]] = []
+
+    def labelled(name: str, parts: list[tuple[str, str]], priority: int) -> None:
+        extra.append((priority, [(1, name, "label"),
+                                 *_live_line(parts, usable - pad - 1, pad)]))
+
+    if ended:
+        labelled("NOW", [("the session has ended", "help")], 0)
+    elif item["status"] == "waiting":
+        labelled("NOW", [("finished its turn · waiting for your reply", "credits")], 0)
+    elif item["status"] == "idle":
+        labelled("NOW", [("no activity", "separator")], 0)
+    else:
+        labelled("NOW", [_live_now(item)], 0)
+    done, total, current = item["todos"]
+    if total:
+        plan = [(_live_bar(done, total, max(min(12, usable // 6), 4)),
+                 "turns" if done == total else "active"), (f" {done}/{total}", "number")]
+        if current:
+            plan += [(" · ", "separator"), (current, "summary")]
+        labelled("PLAN", plan, 1)
+    if item["intent"]:
+        labelled("INTENT", [(item["intent"], "summary")], 2)
+    if item["tools"]:
+        peak = max(n for _name, n in item["tools"])
+        tools: list[tuple[str, str]] = []
+        for name, n in item["tools"]:
+            tools += [(f"{name} ", "summary"), ("▆" * max(1, round(n / peak * 8)), chip),
+                      (f" {n}   ", "number")]
+        flags = [(f"» {item['agents']} sub-agents", "turns") if item["agents"] else None,
+                 (f"◐ {item['compactions']} compacted", "warn")
+                 if item["compactions"] else None]
+        tools += [flag for flag in flags if flag]
+        labelled("TOOLS", tools, 3)
+    top = len(rows) + 1
+    keep = _live_keep(extra, max(height - 1 - top - 1 - 7, 1))
+    rows += keep + [[]]
+
+    panel_h = max(height - 1 - len(rows), 3)
+    inner = usable - 4
+    body = _focus_entries(tail, inner, motion) or [
+        [(0, ui.clip("Nothing yet — its events appear here as they happen.",
+                     inner), "help")]]
+    view = panel_h - 2
+    back = min(max(motion.get("back", 0), 0), max(len(body) - view, 0))
+    start = max(len(body) - view - back, 0)
+    shown = body[start:start + view]
+    opened = motion.get("open")
+    if opened is not None:
+        shown = [line if (opened - 0.1 - n * 0.02) >= 0 else []
+                 for n, line in enumerate(shown)]
+    note = [("●", motion.get("pulse", "active")), (" following", "help")]
+    if back:
+        note = [(f"↓ {back} newer · End follows", "warn")]
+    elif start:
+        note = [("↑ ", "help"), *note]
+    rows += _live_panel([("Conversation", "header")], note, shown, usable, panel_h, chip)
+    return rows[:height - 1], back, len(body)
+
+
+def _focus_hint(width: int, note: str = "") -> str:
+    if note:
+        return ui.clip(f" {note} ", width - 1)
+    for hint in (" ↑↓ scroll · n/p next session · ↵ full page · q back to Live ",
+                 " ↑↓ scroll · n/p session · ↵ full page · q back ",
+                 " ↑↓ · n/p · ↵ full · q back ", " ↵ · q "):
+        if ui.cells(hint) <= width - 1:
+            return hint
+    return ""
+
+
+def _live_focus_tui(screen, state: dict):
+    """One session's page. Returns "show" to open its full page, or None."""
+    import curses
+
+    screen.keypad(True)
+    theme, grad, chips = _live_theme(curses)
+    try:
+        curses.curs_set(0)
+        screen.bkgd(" ", theme["background"])
+    except curses.error:
+        pass
+    mouse = _enable_mouse(curses)
+    last_click = [0.0, -1]
+    pending: list[int] = []
+    sid = state["focus"]
+    opened = time.monotonic()
+    read_at: float | None = None
+    tail = item = None
+    seen: int | None = None
+    arrivals: dict[int, float] = {}
+    back = 0
+    lines: int | None = None
+    note = state.pop("note", "")
+    try:
+        while True:
+            clock = time.monotonic()
+            if read_at is None or clock - read_at >= LIVE_REFRESH_SECONDS:
+                _live_read(state)
+                read_at = time.monotonic()
+            sessions = state["snapshot"]["sessions"]
+            index = next((n for n, s in enumerate(sessions) if s["id"] == sid), None)
+            if index is not None:
+                item = sessions[index]
+                state["cursor"] = index
+            tail = state["tails"].get(sid, tail)
+            if item is None or tail is None:
+                return None
+            if seen is not None:
+                for entry in tail.feed:
+                    if entry[0] > seen:
+                        arrivals[entry[0]] = clock
+            seen = tail.serial
+            for key in [key for key, at in arrivals.items()
+                        if clock - at >= ui.FLASH_SECONDS]:
+                del arrivals[key]
+            elapsed = None if opened is None else clock - opened
+            if elapsed is not None and elapsed >= 0.1 + ui.COUNT_SECONDS:
+                opened = elapsed = None
+            height, width = screen.getmaxyx()
+            motion = {
+                "since": clock - read_at, "open": elapsed, "ended": index is None,
+                "count": ui.launch_progress(elapsed, 0.1, ui.COUNT_SECONDS),
+                "grow": ui.launch_progress(elapsed, 0.0, 0.8),
+                "typed": ui.launch_progress(elapsed, 0.0, _LIVE_TYPE_SECONDS),
+                "arrivals": {key: clock - at for key, at in arrivals.items()},
+                "spin": int(clock * 1000 / _LIVE_SPIN_MS),
+                "pulse": ui.pulse_role(clock), "grad": grad, "chips": chips,
+                "back": back,
+            }
+            rows, back, total = _focus_screen(item, tail, width, height, motion)
+            # Scrolled back, the view stays on what you are reading while
+            # newer lines arrive under it.
+            if back and lines is not None and total > lines:
+                back += total - lines
+                motion["back"] = back
+                rows, back, total = _focus_screen(item, tail, width, height, motion)
+            lines = total
+            screen.erase()
+            for y, line in enumerate(rows):
+                for x, text, role in line:
+                    _addstr(screen, y, x, text, width, theme[role])
+            hint = _focus_hint(width, note)
+            _addstr(screen, height - 1, 0, hint, width,
+                    theme["warn" if note else "status"])
+            stamp = f"updated {state['snapshot']['refreshed']} · every {LIVE_REFRESH_SECONDS}s "
+            if ui.cells(hint) + ui.cells(stamp) + 2 <= width - 1:
+                _addstr(screen, height - 1, width - 1 - ui.cells(stamp), stamp,
+                        width, theme["help"])
+            screen.refresh()
+            moving = opened is not None or arrivals
+            busy = index is not None and item["status"] in (
+                "working", "thinking", "asking", "failing")
+            screen.timeout(ui.MOTION_MS if moving else _LIVE_SPIN_MS if busy else 1000)
+            try:
+                key = pending.pop(0) if pending else screen.getch()
+            except KeyboardInterrupt:
+                return None
+            if key == -1:
+                continue
+            note = ""
+            opened = None
+            page = max(height - 12, 1)
+            event = _mouse_event(screen, curses, key, last_click, pending)
+            if event:
+                if event[0] == "wheel-up":
+                    back += 3
+                elif event[0] == "wheel-down":
+                    back = max(back - 3, 0)
+                continue
+            if key in (27, ord("q"), ord("Q"), curses.KEY_LEFT, ord("h")):
+                return None
+            if key in (10, 13, curses.KEY_ENTER, ord("s")):
+                return "show"
+            if key in (ord("n"), ord("p"), 9, curses.KEY_BTAB) and sessions:
+                step = -1 if key in (ord("p"), curses.KEY_BTAB) else 1
+                here = index if index is not None else state.get("cursor", 0)
+                item = sessions[(here + step) % len(sessions)]
+                sid = state["focus"] = item["id"]
+                tail, seen, back, lines = state["tails"].get(sid), None, 0, None
+                arrivals.clear()
+                opened = time.monotonic()
+            elif key in (ord("r"), ord("R")):
+                read_at = None
+            elif key in (curses.KEY_UP, ord("k")):
+                back += 1
+            elif key in (curses.KEY_DOWN, ord("j")):
+                back = max(back - 1, 0)
+            elif key in (curses.KEY_PPAGE, ord("b")):
+                back += page
+            elif key in (curses.KEY_NPAGE, ord(" ")):
+                back = max(back - page, 0)
+            elif key in (curses.KEY_HOME, ord("g")):
+                back = 10**6
+            elif key in (curses.KEY_END, ord("G")):
+                back = 0
+    finally:
+        if mouse:
+            _disable_mouse()
+
+
 def _live_hint(width: int) -> str:
     for hint in (" ↑↓ choose · ↵ open session · r refresh · q back ",
                  " ↑↓ choose · ↵ open · r refresh · q back ",
@@ -1315,4 +1615,9 @@ def cmd_live() -> bool:
             return False
         if chosen is None:
             return True
-        cmd_show(chosen)
+        state["focus"] = chosen
+        while _curses_wrapper(_live_focus_tui, state) == "show":
+            try:
+                cmd_show(state["focus"])
+            except SystemExit:
+                state["note"] = "Not in the store yet — the CLI writes it shortly."

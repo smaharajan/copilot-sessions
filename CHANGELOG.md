@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Enter on a live session opens its own live page.** The status with its
+  timer, the repository, model and uptime, turns, calls, spend and burn,
+  what it is doing now and its plan sit above a Conversation panel that
+  follows the session as it runs: your asks, the agent's replies in full,
+  and every call it makes, new lines lighting up as they land. Scroll back
+  and the view holds; `n`/`p` step through the running sessions, Enter
+  opens the full page, and `q` returns to the list.
+
 ## [2.1.0] — 2026-09-30
 
 ### Added
