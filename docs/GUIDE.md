@@ -103,6 +103,19 @@ so the header is lit by a single pass across it rather than raised like a
 shutter. And the wipe is **eased** — brisk at the start, decelerating into
 place, so it arrives rather than stops.
 
+Four smaller motions follow the same rule — each is tied to something
+happening, and each ends when it does:
+
+- **The counts roll up** to their values on the same curve as the wipe, on
+  first arrival only. A count that loads a moment later, such as skills, rolls
+  up when it lands. The labels beside them never slide.
+- **A count a refresh changed flashes** — lit, then dimmer, then itself —
+  so the 60-second refresh shows you what it moved.
+- **The cursor bar glides** to the row you moved to instead of jumping. Only
+  the drawing trails: Enter mid-glide opens the row you chose.
+- **The live dot breathes** while a session is running, and is still when
+  none is.
+
 **Each group is drawn in its own hue.** `▌FIND` in the product blue, `▌MEASURE`
 in the violet that spend is drawn in everywhere else, `▌GOVERN` in amber
 because that block exists to tell you something is wrong, and `▌REFERENCE` in
@@ -1582,7 +1595,9 @@ stated order — what a thing *is* outranks how long its bar is.
 
 **Motion happens on arrival and then stops.** The landing screen and the
 report reader wipe in once, on a slant, and hold still after. Any keypress
-lands you on the finished page. Nothing animates while you are reading it.
+lands you on the finished page. After that the home screen moves only to
+report something: a count arriving or changing, the cursor moving, a session
+running.
 
 ### Sorting and scripting
 

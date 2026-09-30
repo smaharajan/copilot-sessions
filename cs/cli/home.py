@@ -622,7 +622,8 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
                       reveal: int | None = None, start: int = 0,
                       activity: list[int] | None = None,
                       pace: int | None = None,
-                      live: list[tuple[str, str]] | None = None) -> int:
+                      live: list[tuple[str, str]] | None = None,
+                      pulse: str | None = None) -> int:
     """Draw the banner and the facts above the menu. Returns the first menu row.
 
     `art` is the wordmark _home_plan chose — passed in rather than worked out
@@ -701,6 +702,11 @@ def _draw_home_header(screen, theme, width: int, art: list[str],
     row += 1
     for text, role in live or []:
         _addstr(screen, row, 0, text, width, theme.get(role, theme["summary"]))
+        # `pulse` is the live dot's shade this frame: it breathes while a
+        # session runs and is simply drawn once nothing is.
+        dot = text.find("●")
+        if pulse and dot >= 0:
+            _addstr(screen, row, ui.cells(text[:dot]), "●", 1, theme[pulse])
         row += 1
     if art and activity:
         row = _draw_home_activity(screen, theme, width, row, activity, sweep,
@@ -873,6 +879,37 @@ def _theme_picker(screen, current: str) -> str:
             cursor = len(themes) - 1
 
 
+def _moving_facts(state: dict, motions: dict[str, tuple[str, float]],
+                  now: float, counting: bool, timed: bool) -> list[tuple]:
+    """The header counts as they should look at `now`.
+
+    A count seen for the first time rolls up when `counting`; one whose value
+    changed since the last frame flashes. `motions` holds what is under way,
+    by label, and loses each entry when it has played out. What each count
+    last read is kept in `state`, so a view handing you back is not news.
+    """
+    facts = state.get("facts", [])
+    seen = state.setdefault("fact_seen", {})
+    for value, label, *_style in facts:
+        if timed and label not in seen and counting:
+            motions[label] = ("count", now)
+        elif timed and label in seen and seen[label] != value:
+            motions[label] = ("flash", now)
+        seen[label] = value
+    shown = []
+    for fact in facts:
+        kind, since = motions.get(fact[1], ("", now))
+        age = now - since
+        if kind == "count" and age < ui.COUNT_SECONDS:
+            fact = (ui.count_up(fact[0], age / ui.COUNT_SECONDS), *fact[1:])
+        elif kind == "flash" and (role := ui.flash_role(age)):
+            fact = (fact[0], fact[1], role)
+        else:
+            motions.pop(fact[1], None)
+        shown.append(fact)
+    return shown
+
+
 def _home_tui(screen, state: dict):
     """Draw the menu. Returns an item index, ('search', term), or None to quit."""
     import curses
@@ -930,6 +967,13 @@ def _home_tui(screen, state: dict):
     # ui.PACE_FRAMES while the refresh heartbeat keeps running.
     pace = 0 if timed else None
     rested = 0
+    next_pace = 0.0
+    # The smaller motions, all on the clock rather than the frame count, so
+    # a fast tick for one never hurries another. Counts roll up only on the
+    # visit that plays the wipe; a count a refresh changed flashes.
+    counting = reveal is not None
+    motions: dict[str, tuple[str, float]] = {}
+    bar: float | None = None
 
     def settle() -> None:
         """End the wipe — because it finished, or because a key arrived."""
@@ -1026,11 +1070,14 @@ def _home_tui(screen, state: dict):
             slack = height - 1 - _home_header_rows(
                 width, height, len(layout), bool(activity), len(live_rows))
             pad = (slack - len(layout)) // 2 if slack - len(layout) >= 6 else 0
-            top = _draw_home_header(screen, theme, width, art,
-                                    state.get("facts", []), sweep, reveal, pad,
-                                    activity,
+            now = time.monotonic()
+            facts = _moving_facts(state, motions, now, counting, timed)
+            pulse = (ui.pulse_role(now) if timed and state.get("session")
+                     else None)
+            top = _draw_home_header(screen, theme, width, art, facts, sweep,
+                                    reveal, pad, activity,
                                     None if reveal is not None else pace,
-                                    live_rows)
+                                    live_rows, pulse)
 
             # The menu scrolls rather than spilling off a short window, so
             # every option stays reachable however small the terminal is.
@@ -1042,6 +1089,15 @@ def _home_tui(screen, state: dict):
             elif place >= offset + visible:
                 offset = place - visible + 1
             offset = min(max(offset, 0), max(len(layout) - visible, 0))
+            # The bar glides to the cursor's row rather than jumping to it.
+            # Only the drawing trails: the cursor itself is already there, so
+            # Enter mid-glide opens the row you moved to.
+            goal = top + place - offset if shown else None
+            if goal is None or bar is None or reveal is not None or not timed:
+                bar = goal
+            else:
+                bar = ui.glide(bar, goal)
+            lit = None if bar is None else round(bar)
             # During the wipe the menu arrives a few rows at a time under it.
             # It is a cap on what is *drawn*, never on what exists: the
             # layout, the scroll offset and the cursor are all computed over
@@ -1053,6 +1109,13 @@ def _home_tui(screen, state: dict):
                 if line - top >= drawn:
                     break
                 kind, value = row
+                if kind == "head" and line == lit:
+                    # The bar passing over a heading, on its way to a row.
+                    _addstr(screen, line, 1, " " * (width - 1), width - 1,
+                            theme["cursor"])
+                    _addstr(screen, line, 0, "▌", 1, theme["title"])
+                    _addstr(screen, line, 2, value.upper(), width, theme["cursor"])
+                    continue
                 if kind == "head":
                     # `▌CAPTION ─────`, the shape ui.heading draws in every
                     # report, in the group's own hue — so the menu and the
@@ -1077,7 +1140,7 @@ def _home_tui(screen, state: dict):
                     continue
                 index = value
                 icon, label, description = items[index][:3]
-                on_cursor = index == cursor
+                on_cursor = line == lit
                 style = theme["cursor"] if on_cursor else None
                 if on_cursor:
                     # The bar starts at column 1 so the marker sits outside it
@@ -1123,10 +1186,18 @@ def _home_tui(screen, state: dict):
             # Input handlers can reset curses to blocking mode. Own the
             # timeout at the read boundary, with a one-second idle heartbeat.
             if timed:
-                wait_until(
-                    ui.REVEAL_MS if reveal is not None else
-                    ui.PACE_MS if rested < ui.PACE_FRAMES else 1000
-                )
+                if reveal is not None:
+                    tick = ui.REVEAL_MS
+                else:
+                    tick = ui.PACE_MS if rested < ui.PACE_FRAMES else 1000
+                    if pulse:
+                        # Woken on the shade's own boundary, so no step is
+                        # skipped or held.
+                        tick = min(tick, ui.PULSE_MS
+                                   - int(now * 1000) % ui.PULSE_MS + 1)
+                    if motions or bar != goal:
+                        tick = min(tick, ui.MOTION_MS)
+                wait_until(tick)
             try:
                 key = pending.pop(0) if pending else screen.getch()
             except KeyboardInterrupt:
@@ -1138,9 +1209,11 @@ def _home_tui(screen, state: dict):
                     if reveal >= ui.REVEAL_FRAMES:
                         settle()
                     continue
-                if pace is not None and rested < ui.PACE_FRAMES:
+                if (pace is not None and rested < ui.PACE_FRAMES
+                        and time.monotonic() >= next_pace):
                     pace += 1
                     rested += 1
+                    next_pace = time.monotonic() + ui.PACE_MS / 1000
                 continue
             settle()  # any key at all lands you on the finished screen
             event = _mouse_event(screen, curses, key, last_click, pending)

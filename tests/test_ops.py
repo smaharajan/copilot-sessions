@@ -126,6 +126,9 @@ class WatchTest(StoreTest):
 
         with (
             mock.patch.object(ui, "PACE_FRAMES", 0),
+            # The live dot breathes faster than this counts idle seconds;
+            # it has its own test.
+            mock.patch.object(ui, "PULSE_MS", 10**9),
             mock.patch.object(cli.time, "monotonic",
                               side_effect=lambda: screen.now),
             mock.patch.object(cli, "_refresh_live", side_effect=track_live),

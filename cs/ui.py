@@ -782,6 +782,62 @@ def pace_column(frame: int, span: int) -> int:
     return at if at <= leg else 2 * leg - at
 
 
+# The menu's smaller motions. Each one is tied to something happening — a
+# number arriving, a number changing, the cursor moving, a session running —
+# and each one ends when that thing does, the same rule as the wipe.
+MOTION_MS = 30
+# Counts roll up to themselves the first time they arrive, on the wipe's curve.
+COUNT_SECONDS = 0.7
+# A count a refresh changed is lit, then dimmer, then itself again.
+FLASH_SECONDS = 1.2
+# The share of the remaining distance the cursor bar covers each frame: far
+# jumps and one-row steps both land in a few frames.
+GLIDE_SHARE = 0.5
+# The live dot breathes while a session runs: one shade per step.
+PULSE_MS = 400
+PULSE_ROLES = ("active", "title", "active", "repo")
+
+_COUNT = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def count_up(text: str, progress: float) -> str:
+    """`text` with its first number at `progress` of its value, same width.
+
+    Only the first number moves: in '9/125' and '3.20/50' the second is the
+    thing being measured against, and it rolling too reads as noise. Padded
+    to the finished width so the label beside it never slides.
+    """
+    found = _COUNT.search(text)
+    if progress >= 1 or not found:
+        return text
+    raw = found.group()
+    places = len(raw.split(".")[1]) if "." in raw else 0
+    eased = 1 - (1 - max(progress, 0.0)) ** 1.5
+    value = float(raw.replace(",", "")) * eased
+    shown = f"{value:{',' if ',' in raw else ''}.{places}f}"
+    return f"{text[:found.start()]}{shown}{text[found.end():]}".rjust(len(text))
+
+
+def flash_role(age: float) -> str | None:
+    """The style a changed count wears `age` seconds after it changed."""
+    if age < 0 or age >= FLASH_SECONDS:
+        return None
+    return "cursor" if age < FLASH_SECONDS / 2 else "title"
+
+
+def glide(at: float, goal: int) -> float:
+    """The cursor bar's next row on its way from `at` to `goal`."""
+    gap = goal - at
+    if abs(gap) <= 1:
+        return float(goal)
+    return at + gap * GLIDE_SHARE
+
+
+def pulse_role(now: float) -> str:
+    """The live dot's shade at monotonic time `now`."""
+    return PULSE_ROLES[int(now * 1000 / PULSE_MS) % len(PULSE_ROLES)]
+
+
 def banner_palette(curses) -> list[int]:
     """The gradient as curses attributes, purple first.
 

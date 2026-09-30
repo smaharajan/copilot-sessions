@@ -867,6 +867,88 @@ class LandingAnimationTest(StoreTest):
     same clock, which makes the two halves one gesture rather than two.
     """
 
+    def test_counts_roll_up_once_and_changes_flash_then_settle(self):
+        from cs import cli, ui
+
+        # Only the first number moves, and the width never does.
+        self.assertEqual(ui.count_up("1,234", 0), "    0")
+        self.assertEqual(ui.count_up("12/125", 0), " 0/125")
+        self.assertEqual(ui.count_up("5.1k", 1), "5.1k")
+        self.assertEqual(ui.count_up("-", 0.5), "-")
+        middle = ui.count_up("1,234", 0.5)
+        self.assertEqual(len(middle), 5)
+        self.assertLess(0, int(middle.replace(",", "")), 1234)
+
+        # First visit: a count rolls up and lands on itself.
+        motions: dict = {}
+        state = {"facts": [("1,234", "sessions")]}
+        self.assertEqual(cli._moving_facts(state, motions, 0.0, True, True)[0][0],
+                         "    0")
+        self.assertEqual(cli._moving_facts(state, motions, ui.COUNT_SECONDS, True,
+                                           True)[0][0], "1,234")
+        self.assertFalse(motions, "a finished count must stop asking for frames")
+
+        # A refresh that changes it lights it, dims it, then lets it go.
+        state["facts"] = [("1,240", "sessions")]
+        roles = [cli._moving_facts(state, motions, 10.0 + age, True, True)[0]
+                 for age in (0, ui.FLASH_SECONDS * 0.75, ui.FLASH_SECONDS + 0.01)]
+        self.assertEqual([fact[2] if len(fact) > 2 else None for fact in roles],
+                         ["cursor", "title", None])
+        self.assertEqual({fact[0] for fact in roles}, {"1,240"})
+
+        # A later visit, or a terminal that cannot animate: nothing moves.
+        quiet: dict = {}
+        for counting, timed in ((False, True), (True, False)):
+            fresh = {"facts": [("7", "repos")]}
+            self.assertEqual(cli._moving_facts(fresh, quiet, 0.0, counting, timed),
+                             [("7", "repos")])
+        self.assertFalse(quiet)
+
+    def test_the_cursor_bar_glides_to_a_far_row(self):
+        import curses
+
+        from cs import cli, ui
+
+        steps, at = [], 2.0
+        while at != 20:
+            at = ui.glide(at, 20)
+            steps.append(at)
+        self.assertLessEqual(len(steps), 6, "a long jump must still land quickly")
+        self.assertEqual(ui.glide(4.0, 5), 5.0)
+
+        # End jumps the cursor; the frames after it show the bar in between
+        # before it lands.
+        screen = Screen([curses.KEY_END] + [-1] * 10 + [ord("q")])
+        cli._home_tui(screen, {"revealed": True})
+        bars = [next((y for (y, x), text in frame.items()
+                      if x == 0 and text == "▌"), None)
+                for frame in screen.frames]
+        self.assertGreater(len(set(bars)), 2, bars)
+        self.assertEqual(bars[-1], bars[-2], "the bar must come to rest")
+
+    def test_the_live_dot_breathes_through_every_shade(self):
+        from cs import ui
+
+        seen = [ui.pulse_role(step * ui.PULSE_MS / 1000)
+                for step in range(len(ui.PULSE_ROLES))]
+        self.assertEqual(tuple(seen), ui.PULSE_ROLES)
+        self.assertEqual(ui.pulse_role(len(ui.PULSE_ROLES) * ui.PULSE_MS / 1000),
+                         ui.PULSE_ROLES[0])
+
+        # Drawn over the strip's own dot, wherever the line puts it — and
+        # only while there is a shade to draw.
+        from cs import cli
+
+        theme = {k: 0 for k in ("title", "help", "repo", "separator", "summary",
+                                "cursor", "credits", "active")}
+        live = [("  ● live  Fix the cart", "active")]
+        for pulse, dots in (("title", 1), (None, 0)):
+            screen = Screen()
+            cli._draw_home_header(screen, theme, 100, [], [("9", "s")],
+                                  live=live, pulse=pulse)
+            self.assertEqual(sum(1 for (_y, x), text in screen.frame.items()
+                                 if x == 2 and text == "●"), dots)
+
     def test_the_cascade_shares_the_wipes_clock(self):
         """Both halves have to finish together. A menu that settles before
         the wordmark makes the banner look stuck; after it, dropped."""
@@ -1027,7 +1109,9 @@ class LandingAnimationTest(StoreTest):
             def __init__(self):
                 # One idle second per tick, so the interval itself is the
                 # number of ticks it takes to reach a refresh.
-                super().__init__([-1] * cli._REFRESH_SECONDS + [ord("q")])
+                # Then fifty more, for the flash the new count sets off to
+                # play out before the idle heartbeat is checked.
+                super().__init__([-1] * (cli._REFRESH_SECONDS + 50) + [ord("q")])
                 self.now = 0.0
                 self.delay = 0
                 self.delays = []
@@ -1050,6 +1134,9 @@ class LandingAnimationTest(StoreTest):
         snapshot = ([("2", "sessions")], [0, 1])
         with (
             patch.object(ui, "PACE_FRAMES", 0),
+            # The live dot breathes faster than this counts idle seconds;
+            # it has its own test.
+            patch.object(ui, "PULSE_MS", 10**9),
             patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
             patch.object(cli, "_home_snapshot", return_value=snapshot) as fresh,
         ):
@@ -1167,12 +1254,16 @@ class LandingAnimationTest(StoreTest):
 
         with (
             patch.object(ui, "PACE_FRAMES", 0),
+            # The live dot breathes faster than this counts idle seconds;
+            # it has its own test.
+            patch.object(ui, "PULSE_MS", 10**9),
             patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
             patch.object(cli, "_home_snapshot", side_effect=snapshot),
         ):
             cli._home_tui(screen, {"revealed": True})
+        # Rounded: the fake clock sums 30 ms motion frames in floating point.
         self.assertEqual(
-            starts,
+            [round(at, 3) for at in starts],
             [cli._REFRESH_SECONDS * n for n in (1, 2, 3)],
             "each refresh is timed from the deadline, not from when the last"
             " query happened to finish",
@@ -1215,6 +1306,9 @@ class LandingAnimationTest(StoreTest):
                 snapshot = ([("5.00", "AIU")], [0, 1])
                 with (
                     patch.object(ui, "PACE_FRAMES", 0),
+                    # The live dot breathes faster than this counts idle seconds;
+                    # it has its own test.
+                    patch.object(ui, "PULSE_MS", 10**9),
                     patch.object(
                         cli.time, "monotonic", side_effect=lambda screen=screen: screen.now
                     ),

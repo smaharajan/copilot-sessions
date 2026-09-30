@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The home screen moves when something happens.** The counts roll up to
+  their values on first arrival, a count the refresh changed flashes, the
+  cursor bar glides to the row you moved to, and the live dot breathes while a
+  session is running. Each ends when its reason does; the page is otherwise
+  still.
+
 ### Fixed
 
 - **Printed listings stay inside the window.** The header and rows ran one
