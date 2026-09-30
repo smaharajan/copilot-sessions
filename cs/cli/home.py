@@ -1004,6 +1004,15 @@ def _home_tui(screen, state: dict):
     # The launch plays with the wipe, on the clock, and outlasts it.
     launch_at = time.monotonic() if reveal is not None else None
     launch: float | None = None
+    # When a key last set each reply in motion — "land" on a row, entering a
+    # "group", a "window" step, a new "theme" — dropped once it has played.
+    marks: dict[str, float] = {}
+    landed, group = cursor, ...
+    opening = 0
+
+    def since(mark: str, start: float, length: float) -> float:
+        at = marks.get(mark)
+        return ui.launch_progress(None if at is None else now - at, start, length)
 
     def settle() -> None:
         """End the wipe — because it finished, or because a key arrived."""
@@ -1020,6 +1029,8 @@ def _home_tui(screen, state: dict):
         # hands back the theme you came in with.
         if chosen != active_theme:
             state["theme_error"] = not ui.save_theme(chosen)
+            if timed:
+                marks["theme"] = time.monotonic()
         active_theme = chosen
         state["theme"] = active_theme
         theme = ui.tui_theme(curses)
@@ -1105,6 +1116,14 @@ def _home_tui(screen, state: dict):
                 launch_at = None
             launch = None if launch_at is None else now - launch_at
             facts = _moving_facts(state, motions, now, counting, timed)
+            if launch is not None:
+                start, stagger = ui.LAUNCH_FACTS
+                facts = [(fact[0], fact[1], role) if (role := ui.light_role(
+                    launch - start - index * stagger)) else fact
+                    for index, fact in enumerate(facts)]
+            for mark, at in list(marks.items()):
+                if now - at >= ui.FLASH_SECONDS:
+                    del marks[mark]
             pulse = (ui.pulse_role(now) if timed and state.get("session")
                      else None)
             top = _draw_home_header(screen, theme, width, art, facts, sweep,
@@ -1131,6 +1150,13 @@ def _home_tui(screen, state: dict):
             else:
                 bar = ui.glide(bar, goal)
             lit = None if bar is None else round(bar)
+            here = next((value for kind, value in reversed(layout[:place + 1])
+                         if kind == "head"), None)
+            if timed and cursor != landed:
+                marks["land"] = now
+            if timed and here != group and group is not ...:
+                marks["group"] = now
+            landed, group = cursor, here
             # During the wipe the menu arrives a few rows at a time under it.
             # It is a cap on what is *drawn*, never on what exists: the
             # layout, the scroll offset and the cursor are all computed over
@@ -1139,6 +1165,7 @@ def _home_tui(screen, state: dict):
             drawn = (len(layout) if reveal is None
                      else ui.reveal_rows(reveal, len(layout)))
             heading = 0
+            dealt = 0
             for line, row in enumerate(layout[offset:offset + visible], top):
                 if line - top >= drawn:
                     break
@@ -1155,6 +1182,9 @@ def _home_tui(screen, state: dict):
                     # report, in the group's own hue — so the menu and the
                     # page it opens are visibly the same product.
                     tone = theme[_HOME_GROUP_TONE.get(value, "header")]
+                    if value == group and "group" in marks and (
+                            role := ui.flash_role(now - marks["group"])):
+                        tone = theme[role]
                     _addstr(screen, line, 1, "▌", 1, tone)
                     _addstr(screen, line, 2, value.upper(), width, tone)
                     # A hairline from the caption to the right edge. It used
@@ -1176,19 +1206,31 @@ def _home_tui(screen, state: dict):
                     note = (f" {_window_label(state.get('period', 30))} "
                             if value in _WINDOWED_GROUPS else "")
                     if note and rule > len(note) + 6 and drawn_to >= 1:
-                        _addstr(screen, line, width - len(note) - 3, note,
+                        _addstr(screen, line, width - len(note) - 3,
+                                ui.typed(note, since("window", 0,
+                                                     ui.WINDOW_SECONDS)),
                                 width, tone)
                     continue
                 index = value
                 icon, label, description = items[index][:3]
-                on_cursor = line == lit
+                # Enter blinks the bar off and on before the view opens.
+                on_cursor = line == lit and not (opening and opening % 2 == 0)
                 style = theme["cursor"] if on_cursor else None
                 if on_cursor:
                     # The bar starts at column 1 so the marker sits outside it
                     # and reads as a pointer rather than as part of the fill.
-                    _addstr(screen, line, 1, " " * (width - 1), width - 1,
-                            theme["cursor"])
+                    # Landing on a row sweeps it across, left to right.
+                    fill = max(round((width - 1) * since(
+                        "land", 0, ui.SWEEP_SECONDS)), 1)
+                    _addstr(screen, line, 1, " " * fill, fill, theme["cursor"])
                     _addstr(screen, line, 0, "▌", 1, theme["title"])
+                    description = ui.typed(description, since(
+                        "land", 0.05, ui.DESCRIBE_SECONDS))
+                # At launch each icon pops in a beat after its label.
+                start, stagger = ui.LAUNCH_ICONS
+                if ui.launch_progress(launch, start + dealt * stagger, 0.01) < 1:
+                    icon = "·"
+                dealt += 1
                 # Every column after the icon is placed absolutely, so a
                 # terminal that draws an emoji one cell wide rather than two
                 # shifts nothing: it just leaves a slightly wider gap.
@@ -1213,6 +1255,14 @@ def _home_tui(screen, state: dict):
             if not shown:
                 _addstr(screen, top, 3, f"nothing matches '{query}'", width,
                         theme["repo"])
+            if "theme" in marks:
+                # A new theme wipes down the screen behind a bright edge.
+                edge = round((height - 1) * since("theme", 0, ui.WIPE_SECONDS))
+                for blank in range(edge, height - 1):
+                    _addstr(screen, blank, 0, " " * width, width,
+                            theme["background"])
+                if edge < height - 1:
+                    _addstr(screen, edge, 0, "─" * width, width, theme["title"])
 
             _addstr(screen, height - 1, 0,
                     _launch_status(
@@ -1238,9 +1288,20 @@ def _home_tui(screen, state: dict):
                         # skipped or held.
                         tick = min(tick, ui.PULSE_MS
                                    - int(now * 1000) % ui.PULSE_MS + 1)
-                    if motions or bar != goal or launch is not None:
+                    if motions or bar != goal or launch is not None or marks:
                         tick = min(tick, ui.MOTION_MS)
                 wait_until(tick)
+            if opening:
+                # Drawn frames, not read ones: a key typed now belongs to the
+                # view that is about to open.
+                opening -= 1
+                if opening:
+                    time.sleep(ui.MOTION_MS / 1000)
+                    continue
+                chosen = open_item(cursor, height, width)
+                if chosen is not None:
+                    return chosen
+                continue
             try:
                 key = pending.pop(0) if pending else screen.getch()
             except KeyboardInterrupt:
@@ -1260,6 +1321,7 @@ def _home_tui(screen, state: dict):
                 continue
             settle()  # any key at all lands you on the finished screen
             launch_at = None
+            marks.clear()
             event = _mouse_event(screen, curses, key, last_click, pending)
             rested = 0
             if event:
@@ -1274,9 +1336,7 @@ def _home_tui(screen, state: dict):
                     if row[0] == "item":
                         cursor = row[1]
                         if kind == "double":
-                            chosen = open_item(cursor, height, width)
-                            if chosen is not None:
-                                return chosen
+                            opening = ui.OPEN_FRAMES if timed else 1
                 continue
             if key == 27:
                 # Esc clears what you typed before it quits, the same as it
@@ -1291,9 +1351,7 @@ def _home_tui(screen, state: dict):
             elif key in (10, 13, curses.KEY_ENTER):
                 if not shown:
                     continue
-                chosen = open_item(cursor, height, width)
-                if chosen is not None:
-                    return chosen
+                opening = ui.OPEN_FRAMES if timed else 1
             elif key == curses.KEY_UP:
                 cursor = _home_step(shown, cursor, -1)
             elif key == curses.KEY_DOWN:
@@ -1306,6 +1364,8 @@ def _home_tui(screen, state: dict):
                 state["period"] = _step_period(
                     state.get("period", 30), 1 if key == curses.KEY_RIGHT else -1
                 )
+                if timed:
+                    marks["window"] = time.monotonic()
             elif key in (ord("t"), ord("T")) and not query:
                 activate_theme(_theme_picker(screen, active_theme))
             elif key == ord("?") and not query:

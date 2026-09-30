@@ -852,6 +852,29 @@ LAUNCH_HINTS = (1.6, 0.35)
 LAUNCH_SECONDS = sum(LAUNCH_HINTS)
 
 
+# The header counts light in one after another, and each row's icon pops in
+# a beat after its label. (start, stagger) in seconds.
+LAUNCH_FACTS = (0.15, 0.08)
+LAUNCH_ICONS = (0.25, 0.03)
+LIGHT_SECONDS = 0.25
+
+# What answers a key on the menu, in seconds. Landing on a row sweeps the bar
+# across it and types its description in; ←→ retypes the window notes; a new
+# theme wipes down the screen; Enter blinks the row before its view opens.
+SWEEP_SECONDS = 0.25
+DESCRIBE_SECONDS = 0.35
+WINDOW_SECONDS = 0.3
+WIPE_SECONDS = 0.35
+OPEN_FRAMES = 4
+
+
+def light_role(age: float) -> str | None:
+    """A header count `age` seconds after its turn to light: dim, lit, itself."""
+    if age < 0:
+        return "separator"
+    return "title" if age < LIGHT_SECONDS else None
+
+
 def launch_progress(elapsed: float | None, start: float, length: float) -> float:
     """How far one part of the launch is, eased. 1.0 once it has ended."""
     if elapsed is None:

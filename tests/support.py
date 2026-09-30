@@ -17,6 +17,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -223,6 +224,13 @@ class StoreTest(unittest.TestCase):
         os.environ["CS_CONFIG_HOME"] = str(base / ".config")
         os.environ["XDG_CACHE_HOME"] = str(base / ".cache")
         os.environ["TERM"] = "dumb"  # disable colour
+        # Enter opens on the next frame here. Its blink sleeps between frames
+        # so it never reads a key meant for the view; across every test that
+        # presses Enter that is seconds of nothing. Its own test patches it.
+        from cs import ui
+        patcher = unittest.mock.patch.object(ui, "OPEN_FRAMES", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         from cs import events
         events.reset_cache()
 

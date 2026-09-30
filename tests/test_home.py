@@ -10,6 +10,40 @@ from unittest.mock import patch
 from support import Screen, StoreTest
 
 
+class ClockScreen(Screen):
+    """A Screen on a fake clock that also keeps the style of each cell run."""
+
+    now = 0.0
+    delay = 0
+
+    def __init__(self, keys=()):
+        super().__init__(keys)
+        self.style = {}
+        self.styles = []
+
+    def erase(self):
+        super().erase()
+        self.style = {}
+
+    def addnstr(self, y, x, text, width, style=0):
+        super().addnstr(y, x, text, width, style)
+        self.style[(y, x)] = style
+
+    def refresh(self):
+        super().refresh()
+        self.styles.append(dict(self.style))
+
+    def timeout(self, milliseconds):
+        super().timeout(milliseconds)
+        self.delay = milliseconds
+
+    def getch(self):
+        key = super().getch()
+        if key == -1:
+            self.now += self.delay / 1000
+        return key
+
+
 class HomeMenuTest(StoreTest):
     def test_the_menu_offers_every_view_it_means_to(self):
         from cs import cli
@@ -950,6 +984,7 @@ class LandingAnimationTest(StoreTest):
                                  if x == 2 and text == "●"), dots)
 
     def test_the_launch_plays_once_on_the_clock_and_lands_on_the_hints(self):
+        import curses
         import time as real_time
 
         from cs import cli, ui
@@ -977,22 +1012,9 @@ class LandingAnimationTest(StoreTest):
 
         # On a clock: the divider opens from the centre, rules draw out, and
         # the launch ends on the ordinary screen by itself.
-        class ClockScreen(Screen):
-            now = 0.0
-            delay = 0
-
-            def timeout(self, milliseconds):
-                super().timeout(milliseconds)
-                self.delay = milliseconds
-
-            def getch(self):
-                key = super().getch()
-                if key == -1:
-                    self.now += self.delay / 1000
-                return key
-
         screen = ClockScreen([-1] * 200 + [ord("q")])
-        state = {"facts": facts, "activity": [1, 2, 3] * 30}
+        state = {"facts": facts + [("71", "repos")],
+                 "activity": [1, 2, 3] * 30}
         with (
             patch.object(ui, "PULSE_MS", 10**9),
             patch.object(cli.time, "monotonic", side_effect=lambda: screen.now),
@@ -1019,10 +1041,95 @@ class LandingAnimationTest(StoreTest):
         self.assertLess(rules[len(rules) // 20], rules[-1],
                         "the heading rules did not draw out")
 
+        # Each icon pops in after its label; the counts light in, in turn.
+        self.assertTrue(any(text == "·" for f in screen.frames
+                            for (_y, x), text in f.items() if x == 3))
+        self.assertFalse(any(text == "·" for (_y, x), text
+                             in screen.frames[-1].items() if x == 3))
+
+        def fact_style(at):
+            # The count is the cell just left of its label; it may still be
+            # rolling up, so it is found by place rather than by value.
+            frame, styles = screen.frames[at], screen.styles[at]
+            y, x = next(cell for cell, text in frame.items() if text == "repos")
+            return styles[max(cell for cell in frame
+                               if cell[0] == y and cell[1] < x)]
+
+        self.assertEqual(fact_style(0), curses.A_DIM)
+        self.assertNotEqual(fact_style(-1), curses.A_DIM)
+
         # Back from a view: no launch, the hints on the very first frame.
         again = Screen([ord("q")])
         cli._home_tui(again, state)
         self.assertIn("/ search", status(again.frames[0]))
+
+    def test_keys_are_answered_by_motion_that_then_stops(self):
+        import curses
+
+        from cs import cli, ui
+
+        def cursor_line(frame):
+            return next(y for (y, x), text in frame.items()
+                        if x == 0 and text == "▌")
+
+        def run(keys, state):
+            screen = ClockScreen(keys)
+            with (
+                patch.object(ui, "PULSE_MS", 10**9),
+                patch.object(ui, "OPEN_FRAMES", 4),
+                patch.object(cli.time, "monotonic",
+                             side_effect=lambda: screen.now),
+                patch.object(cli.time, "sleep"),
+            ):
+                chosen = cli._home_tui(screen, state)
+            return screen, chosen
+
+        idle = [-1] * 60
+        state = {"revealed": True, "period": 30, "theme": "dark"}
+        screen, chosen = run([curses.KEY_END, *idle, curses.KEY_RIGHT, *idle,
+                              10], state)
+        frames, styles = screen.frames, screen.styles
+        landed = frames[1]
+        settled = frames[len(idle)]
+        line = cursor_line(settled)
+        arrived = next(f for f in frames if cursor_line(f) == line)
+        # The bar sweeps across the row it lands on, and the description
+        # types in behind it; both end on the ordinary row.
+        full = len(frames[0][(cursor_line(frames[0]), 1)])
+        self.assertLess(len(landed[(cursor_line(landed), 1)]), full)
+        self.assertEqual(len(settled[(line, 1)]), full)
+        self.assertLess(len(arrived.get((line, 24), "")),
+                        len(settled[(line, 24)]))
+        # Entering another group lights its heading, then lets it go.
+        head = next(y for (y, x), text in landed.items()
+                    if x == 2 and text == "REFERENCE")
+        self.assertEqual(styles[1][(head, 2)], curses.A_REVERSE)
+        self.assertNotEqual(styles[len(idle)][(head, 2)], curses.A_REVERSE)
+        # ←→ retypes the window notes.
+        notes = [text for f in frames for (_y, x), text in f.items()
+                 if x > 60 and "days" in text]
+        final = notes[-1]
+        self.assertIn("last 90 days", final)
+        self.assertTrue(any(final.startswith(n) and n != final
+                            for n in [text for f in frames for (_y, x), text
+                                      in f.items() if x > 60]))
+        # Enter blinks the bar off and on, then opens the row.
+        self.assertEqual(chosen[0] if isinstance(chosen, tuple) else chosen,
+                         len(cli._home_items()) - 1)
+        tail = frames[-4:]
+        self.assertEqual([any(x == 0 and text == "▌" for (_y, x), text
+                              in f.items()) for f in tail],
+                         [False, True, False, True])
+
+        # A new theme wipes down the screen behind a bright edge, once.
+        screen, _ = run([ord("t"), curses.KEY_DOWN, 10, *idle, ord("q")],
+                        {"revealed": True, "theme": "dark"})
+        def blanked(frame):
+            return any(x == 0 and len(text) > 90 and not text.strip()
+                       for (_y, x), text in frame.items())
+
+        self.assertTrue(any(blanked(f) for f in screen.frames))
+        self.assertFalse(blanked(screen.frames[-1]))
 
     def test_the_cascade_shares_the_wipes_clock(self):
         """Both halves have to finish together. A menu that settles before
@@ -1375,7 +1482,8 @@ class LandingAnimationTest(StoreTest):
         for keys in events:
             with self.subTest(keys=keys):
                 screen = ClockScreen(
-                    [*keys, *([-1] * cli._REFRESH_SECONDS), ord("q")]
+                    # The extra ticks let the row it lands on finish sweeping.
+                    [*keys, *([-1] * (cli._REFRESH_SECONDS + 50)), ord("q")]
                 )
                 state = {"revealed": True, "facts": [("4.00", "AIU")]}
                 snapshot = ([("5.00", "AIU")], [0, 1])

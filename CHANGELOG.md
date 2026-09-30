@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the divider opens from the centre, the group rules draw out in turn, and the
   status bar greets you with your session count before the key hints type in.
   It plays once, and any key skips it.
+- **The menu answers each key with motion.** The bar sweeps across the row you
+  land on while its description types in, a group's heading lights as you
+  enter it, ←→ retypes the window notes, a new theme wipes down the screen,
+  and Enter blinks the row before opening it. At launch the header counts
+  light in turn and the row icons pop in behind the cascade.
 
 ### Fixed
 

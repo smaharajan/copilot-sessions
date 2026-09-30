@@ -103,7 +103,7 @@ so the header is lit by a single pass across it rather than raised like a
 shutter. And the wipe is **eased** — brisk at the start, decelerating into
 place, so it arrives rather than stops.
 
-Four smaller motions follow the same rule — each is tied to something
+Smaller motions follow the same rule — each is tied to something
 happening, and each ends when it does:
 
 - **The counts roll up** to their values on the same curve as the wipe, on
@@ -115,10 +115,20 @@ happening, and each ends when it does:
   the drawing trails: Enter mid-glide opens the row you chose.
 - **The live dot breathes** while a session is running, and is still when
   none is.
+- **The row you land on answers.** The bar sweeps across it left to right
+  and its description types in behind it. Moving into another group lights
+  that group's heading for a moment.
+- **←→ retypes the window notes** on the MEASURE and GOVERN rules, so you see
+  the window you just chose arrive.
+- **A new theme wipes down the screen** behind a bright edge.
+- **Enter blinks the bar** off and on before the view opens. Those frames
+  read no keys, so a key typed during them reaches the view.
 
 **Opening `cs` plays a two-second launch, once.** Under the wipe, the activity
 strip grows from its baseline, the divider opens outward from the centre, and
-each group's rule draws out a beat after the one above it. The status bar
+each group's rule draws out a beat after the one above it. The header counts
+light in one after another, and each row's icon pops in just after its
+label. The status bar
 types a greeting for the time of day with your session count, then the key
 hints type in over it. Any key skips straight to the finished screen, and
 coming back from a view never replays it.
