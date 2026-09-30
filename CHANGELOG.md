@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`CS_MOTION=off` keeps every screen still.** The launch sequence, wipes,
-  count-ups, growing bars, cursor glide, flashes and the live dot's pulse all
-  draw settled instead; live data still refreshes on its heartbeat.
+  count-ups, growing bars, cursor glide, flashes, the live dot's pulse and the
+  live spinner all draw settled instead; live data still refreshes.
 
 ### Fixed
 

@@ -2577,6 +2577,14 @@ class CSTest(StoreTest):
             self.assertIsNone(ui.flash_role(0.1))
             self.assertIsNone(ui.light_role(-1))
 
+        from cs.cli import live
+
+        item = {"status": "working"}
+        with mock.patch.object(ui, "MOTION", False):
+            self.assertEqual({live._live_status_mark(item, {"spin": n})[0]
+                              for n in range(8)}, {live._LIVE_SPIN[0]},
+                             "the spinner still turned")
+
     def test_the_reader_still_draws_where_a_timeout_is_not_available(self):
         """No timed getch means no wipe — and a fully drawn page anyway."""
         from cs.cli import _reader_tui

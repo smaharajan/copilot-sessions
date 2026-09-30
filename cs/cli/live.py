@@ -627,7 +627,7 @@ def _live_status_mark(item: dict, motion: dict) -> tuple[str, str]:
     """The status glyph: spinning while it runs, blinking while it needs you."""
     status = item["status"]
     mark, _label, role = _LIVE_STATES[status]
-    spin = motion.get("spin", 0)
+    spin = motion.get("spin", 0) if ui.MOTION else 0
     if status == "working":
         return _LIVE_SPIN[spin % len(_LIVE_SPIN)], role
     if status == "thinking":
@@ -1369,7 +1369,7 @@ def _live_focus_tui(screen, state: dict):
                         width, theme["help"])
             screen.refresh()
             moving = opened is not None or arrivals
-            busy = index is not None and item["status"] in (
+            busy = ui.MOTION and index is not None and item["status"] in (
                 "working", "thinking", "asking", "failing")
             screen.timeout(ui.MOTION_MS if moving else _LIVE_SPIN_MS if busy else 1000)
             try:
@@ -1523,8 +1523,9 @@ def _live_tui(screen, state: dict):
             screen.refresh()
             moving = (opened is not None or marks or arrivals or lit or typed < 1
                       or (moved is not None and moved < ui.SWEEP_SECONDS))
-            busy = any(item["status"] in ("working", "thinking", "asking", "failing")
-                       for item in sessions)
+            busy = ui.MOTION and any(
+                item["status"] in ("working", "thinking", "asking", "failing")
+                for item in sessions)
             screen.timeout(ui.MOTION_MS if moving else _LIVE_SPIN_MS if busy else 1000)
             try:
                 key = pending.pop(0) if pending else screen.getch()
