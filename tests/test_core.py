@@ -2277,6 +2277,28 @@ class CSTest(StoreTest):
                 for (_, column), text in frame.items():
                     self.assertLessEqual(column + ui.cells(text), width)
 
+    def test_printed_listing_rows_stay_inside_the_window(self):
+        """The row budget counted 24 fixed cells where there are 25, and a
+        four-digit #N took one more, so a cut title ran a cell off the edge."""
+        import shutil
+        from unittest import mock
+
+        from cs import cli, ui
+
+        rows = [(f"id-{n}", "2026-08-01T12:00", "A long title " * 8, "org/widgets",
+                 "/tmp/widgets", 3, 5_000_000_000, 2, 1) for n in range(1000)]
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width), \
+                    mock.patch.object(shutil, "get_terminal_size",
+                                      return_value=os.terminal_size((width, 24))):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    cli._render_listing(rows, "Sessions", show_all=True,
+                                        sort_by="summary")
+                widest = max(ui.cells(ui._strip(line))
+                             for line in out.getvalue().splitlines())
+                self.assertLessEqual(widest, width)
+
     def test_listing_dates_use_an_unambiguous_month_name(self):
         from cs.cli import _listing_tui
 

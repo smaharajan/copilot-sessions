@@ -101,10 +101,9 @@ def _render_listing(
         f" {labels['skills']:>6} {labels['agents']:>6}" if kit else ""
     )
     pin_pad = " "
-    print(
-        f"  {ui.DIM}{pin_pad}  #   {labels['active']:<7} {labels['turns']:<6}"
-        f" {labels['credits']:<8}{kit_head} {labels['summary']}{ui.RST}"
-    )
+    head = (f"{pin_pad}  #   {labels['active']:<7} {labels['turns']:<6}"
+            f" {labels['credits']:<8}{kit_head} {labels['summary']}")
+    print(f"  {ui.DIM}{ui._fit(head, width - 2)}{ui.RST}")
     # Sized to the window like every other view. The full-screen listing has
     # always been fluid; this is the one you get when the output is piped or
     # a report is printed straight out, and it was pinned at 72 columns.
@@ -127,13 +126,15 @@ def _render_listing(
         # What is left after the fixed columns, split between the summary and
         # the repository tag — the tag capped, because past twenty-odd
         # characters it is a path and the summary is the thing being read.
-        # The fixed columns cost 24 plus the timestamp — five characters when
+        # The fixed columns cost 25 plus the timestamp — five characters when
         # the rows are grouped by day and carry a clock, eleven when they are
         # not and carry a date. Whatever is left is the summary's, and on a
         # window with nothing left the row is the numbers alone: a summary cut
         # to three characters is not a summary, and a row that runs off the
         # window is not a row.
-        room = max(0, width - 24 - (5 if group_by_day else 11) - (14 if kit else 0))
+        # A #N past 999 pushes its row one cell further per extra digit.
+        room = max(0, width - 25 - (5 if group_by_day else 11) - (14 if kit else 0)
+                   - max(0, len(str(n)) - 3))
         tag = _project_tag(repo, cwd)
         tag_span = min(22, room // 3) if tag and room >= 12 else 0
         summary = redact.one_line(redact.redact(summary))
