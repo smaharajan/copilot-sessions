@@ -582,9 +582,10 @@ def _roster(state: dict, width: int, height: int, wanted: int, spark: bool,
     snap = state.get("live", {}).get("snapshot")
     if not snap or not snap["sessions"]:
         return []
-    spare = height - 1 - wanted - _home_header_rows(width, height, wanted, spark)
-    least = 1 if width < 72 else 2 if width < 100 else 3
-    room = min(max(spare, least), len(snap["sessions"]) + 2, 10)
+    # Only rows the menu does not need: the summary always (it replaces the
+    # one-line strip), and a session row each for up to four more.
+    spare = height - 1 - wanted - _home_header_rows(width, height, wanted, spark, 1)
+    room = 1 + min(max(spare, 0), len(snap["sessions"]), 4)
     return _live_home_rows(snap, width, room, motion)
 
 
@@ -1165,8 +1166,7 @@ def _home_tui(screen, state: dict):
                 "marks": live_marks, "arrivals": arrivals,
                 # At launch the rows deal in once the divider has opened.
                 "open": None if launch is None else launch - 0.3,
-                "grow": ui.launch_progress(launch, *ui.LAUNCH_SPARK),
-                "grad": grad, "chips": chips,
+                "chips": chips,
             }
             wanted = len(shown) + len({_home_group(index) for index in shown})
             live_rows = (_roster(state, width, height, wanted, bool(activity),

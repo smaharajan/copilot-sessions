@@ -1120,8 +1120,8 @@ def _live_ages(state: dict, clock: float) -> tuple[dict, dict]:
 
 
 def _live_home_rows(snap: dict, width: int, room: int, motion: dict) -> list[list]:
-    """The home screen's live roster, at most `room` rows: a summary line,
-    a row for each running session, and the newest event as it lands."""
+    """The home screen's live roster, at most `room` rows: a summary line in
+    the counts line's own style, then a row for each running session."""
     sessions = snap["sessions"]
     if not sessions or room < 1 or width < 20:
         return []
@@ -1129,29 +1129,25 @@ def _live_home_rows(snap: dict, width: int, room: int, motion: dict) -> list[lis
     counts = snap["counts"]
     need = counts.get("asking", 0) + counts.get("waiting", 0)
     busy = counts.get("working", 0) + counts.get("thinking", 0)
-    ticker = room >= 3 and bool(snap.get("feed"))
-    slots = min(len(sessions), room - 1 - ticker)
+    slots = min(len(sessions), room - 1)
     hidden = len(sessions) - slots
-    parts = [("●", motion.get("pulse") or "active"), (f" {len(sessions)} live", "active")]
+    # Bright numbers, dim words, as on the counts line above it.
+    groups = [[("●", motion.get("pulse") or "active"),
+               (f" {len(sessions)}", "active"), (" live", "repo")]]
     for count, text, role in ((need, "need you", "warn"), (busy, "working", "turns"),
                               (counts.get("failing", 0), "failing", "danger")):
         if count:
-            parts += [("  ·  ", "separator"), (f"{count} {text}", role)]
-    parts += [("  ·  ", "separator"),
-              (f"{snap['burn_per_minute']:.1f} AIU/min", "credits")]
-    tail = "↵ Live sessions" if usable >= 90 else "↵"
-    right = [(f"+{hidden} more · {tail}", "help")] if hidden else []
+            groups.append([(" · ", "separator"), (str(count), role), (f" {text}", "repo")])
+    groups.append([(" · ", "separator"), (f"{snap['burn_per_minute']:.1f}", "credits"),
+                   (" AIU/min", "repo")])
+    right = [(f"+{hidden} more", "help")] if hidden else []
     right_w = sum(ui.cells(text) for text, _ in right)
     budget = usable - 2 - (right_w + 2 if right else 0)
     # Whole readings fall off the end rather than one being cut mid-word.
-    while len(parts) > 2 and sum(ui.cells(text) for text, _ in parts) > budget:
-        parts = parts[:-2]
-    summary = _live_line(parts, budget, 2)
-    wave = _live_wave(snap["bins"][-20:], 20, 1, motion.get("grow", 1.0))[0][0]
-    used = 2 + sum(ui.cells(text) for _x, text, _r in summary)
-    if used + 24 + (right_w + 2 if right else 0) <= usable:
-        summary += _live_tint(wave, motion.get("grad", 1), used + 2)
-    if right and used + right_w + 2 <= usable:
+    while len(groups) > 1 and sum(ui.cells(t) for g in groups for t, _ in g) > budget:
+        groups.pop()
+    summary = _live_line([part for group in groups for part in group], budget, 2)
+    if right:
         summary += _live_right(right, usable)
     rows = [summary]
     chips = max(motion.get("chips", 8), 1)
@@ -1180,17 +1176,13 @@ def _live_home_rows(snap: dict, width: int, room: int, motion: dict) -> list[lis
                                (_live_timer(item, motion).rjust(6), "number")],
                               usable - x, x)
             x += 18
-            now, now_role = _live_now(item)
+            now, _now_role = _live_now(item)
             if usable - x >= 12:
-                row += _live_line([(ui.trunc(now, usable - x), now_role)],
+                row += _live_line([(ui.trunc(now, usable - x), "help")],
                                   usable - x, x)
         elif progress >= 1 and usable - x >= 6:
             row.append((usable - 6, _live_timer(item, motion).rjust(6), "number"))
         rows.append(row)
-    if ticker:
-        line = _live_feed(snap["feed"][:1], usable - 4, 1, motion)[0]
-        rows.append([(2, "↯", motion.get("pulse") or "active"),
-                     *[(x + 4, text, role) for x, text, role in line]])
     return rows
 
 

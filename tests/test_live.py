@@ -378,10 +378,14 @@ class LiveTest(StoreTest):
 
         self._lock("sess-alpha", events=[_start("c1", "bash", _ago(5), description="build")])
         self._lock("sess-beta")
-        screen = Screen([ord("q")])
+        class Tall(Screen):
+            def getmaxyx(self):
+                return 60, 100
+
+        screen = Tall([ord("q")])
         cli._home_tui(screen, {"revealed": True})
         drawn = " ".join(screen.frames[-1].values())
-        self.assertIn("2 live", drawn)
         self.assertIn("2 running", drawn)
+        self.assertNotIn("more", drawn, "the tall window hid a session")
         self.assertIn("working", drawn)
         self.assertIn("your turn", drawn)

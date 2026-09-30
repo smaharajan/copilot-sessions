@@ -358,11 +358,10 @@ chooses a session, a double-click opens it, and the wheel moves. `cs live` print
 
 There is no `cs watch`. While any Copilot CLI is running, the home screen
 draws a live roster under the counts and rereads it every two seconds: a
-summary (`● 8 live · 2 need you · 6 working · 80 AIU/min`) with a burn wave,
-one row per session with its colour, a spinner, its status, a ticking timer
-and what it is doing, then the newest event as it lands. It takes the rows
-the menu can spare and says how many it left out (`+3 more · ↵ Live
-sessions`); the Live sessions row carries the same counts. With no CLI
+summary (`● 8 live · 2 need you · 6 working · 80 AIU/min`), then up to four
+sessions, each with its colour, a spinner, its status, a ticking timer and
+what it is doing. It only takes rows the menu does not need and says how many
+it left out (`+3 more`); the Live sessions row carries the same counts. With no CLI
 running, it falls back to the session that was active in
 the last fifteen minutes: title, burn rate over ten
 minutes, budget left today, the last tool and the last failure, and a
