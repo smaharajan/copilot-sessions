@@ -498,6 +498,24 @@ again, live. They are stored under `saved_searches` in
 `~/.config/cs/settings.json`. It is a command only; the home screen has no
 row for it.
 
+### 📘 `cs playbook` — what worked before
+
+```bash
+cs playbook             # the last 90 days
+cs playbook 30          # or any window; `all` for everything
+cs playbook --json      # also --csv
+```
+
+A session makes the Playbook only if all of these hold: it shipped (a commit
+or pull request), its last call ended cleanly (`stop` or `tool_calls` — an
+unrecorded ending does not count), it has no stuck loop, and its opening
+prompt is at least 30 characters. Newest first. Under each row: the kind of
+work, what shipped, and the opening ask, masked like every other view. It is
+an ordinary listing, so `/` filters, Enter resumes, `v` and `t` read the
+session, and `cs show N --asks` prints the full opening. It is the Playbook
+row under Find on the home screen. An empty Playbook says which test nothing
+passed.
+
 ### 📁 `cs files` — from a file back to the work
 
 ```bash
@@ -1639,7 +1657,7 @@ cs export 3 --json           # …or as structured turns
 | `--csv` | The view's *main table* only. A view whose answer is a handful of totals has no useful CSV and says so rather than inventing a one-row file |
 
 Supported by `recent` / `all`, `search`, `stats`, `timeline`, `cost`,
-`efficiency`, `agents`, `repos`, `skills` and `profiles`. Anything else refuses by name
+`efficiency`, `agents`, `repos`, `skills`, `profiles` and `playbook`. Anything else refuses by name
 rather than printing a screen into your pipe.
 
 **Redaction is not optional here.** Everything goes out through the same

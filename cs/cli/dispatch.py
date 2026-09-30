@@ -23,6 +23,7 @@ from .analysis import (
     cmd_anomalies,
     cmd_health,
     cmd_patterns,
+    cmd_playbook,
 )
 from .evidence import (
     cmd_endings,
@@ -85,7 +86,7 @@ _COMPLETION_COMMANDS = (
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
     "failures", "loops", "subagents", "switches", "endings",
     "next", "eod", "weekly", "today", "saved", "cleanup",
-    "anomalies", "health", "patterns",
+    "anomalies", "health", "patterns", "playbook",
     "doctor", "rollup",
     "show", "brief", "read",
     "export", "files", "resume", "help", "version",
@@ -495,12 +496,15 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(export.saved(), fmt)
         return 0
 
-    if cmd in ("anomalies", "patterns"):
+    if cmd in ("anomalies", "patterns", "playbook"):
         days, _sort, _desc, _word, _flags, error = _report_options(
             rest, None, days=True)
         if error:
             print(f"error: {error}", file=sys.stderr)
             return 1
+        if cmd == "playbook":
+            export.emit(export.playbook(days), fmt)
+            return 0
         build = export.anomalies if cmd == "anomalies" else export.patterns
         export.emit(build(30 if days is None else days), fmt)
         return 0
@@ -924,6 +928,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
         cmd_patterns(30 if days is None else days)
+    elif cmd == "playbook":
+        days, _, _, _, _, error = _report_options(rest, None, days=True)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_playbook() if days is None else cmd_playbook(days)
     elif cmd == "doctor":
         if rest:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
