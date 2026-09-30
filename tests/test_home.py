@@ -1258,8 +1258,12 @@ class LandingAnimationTest(StoreTest):
         """
         from cs import cli, ui
 
-        screen = Screen([-1] * (ui.PACE_FRAMES + 40) + [ord("q")])
-        cli._home_tui(screen, {"revealed": True})
+        # On a clock that moves only by the wait the menu asked for: the walk
+        # steps every PACE_MS, so on the wall clock a slow runner could land
+        # a step inside the last twenty frames and read as never settling.
+        screen = ClockScreen([-1] * (2 * ui.PACE_FRAMES + 40) + [ord("q")])
+        with patch.object(cli.time, "monotonic", side_effect=lambda: screen.now):
+            cli._home_tui(screen, {"revealed": True})
 
         walked = [self._on_rule(frame) for frame in screen.frames]
         walked = [col for col in walked if col is not None]
