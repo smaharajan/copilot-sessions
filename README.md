@@ -246,7 +246,8 @@ effort change under its session and shows the spend either side.
 
 ### 🩺 Running it with confidence
 
-The session running now is on the home screen, not a separate command.
+The home screen shows the live session strip, while `cs live` opens every
+running Copilot CLI on its own live dashboard.
 **`cs doctor`** checks what cs depends on — Python, the store and its schema,
 the event logs, the config and cache directories, the terminal, the mouse
 protocol and the glyph mode — and prints pass, warn or fail with a fix for
