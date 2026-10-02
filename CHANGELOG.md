@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Session titles are read only for the sessions being shown.** Listing
+  rows fetched by id (the live page) used to read every
+  `workspace.yaml` in the store to title a handful of rows; on a store of
+  two thousand sessions that was most of a second before the first frame.
+
 ## [2.3.0] — 2026-09-30
 
 ### Added

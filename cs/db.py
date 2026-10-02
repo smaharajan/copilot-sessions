@@ -861,7 +861,10 @@ def sessions_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, tuple]
             chunk,
         ):
             found[row[0]] = row
-    return {row[0]: row for row in _given_names(list(found.values()), session_names())}
+    # Only these sessions' names: reading every workspace.yaml in the store
+    # to title a handful of rows cost a page its first frame.
+    names = {sid: name for sid in found if (name := session_name(sid))}
+    return {row[0]: row for row in _given_names(list(found.values()), names)}
 
 
 def last_asks(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
