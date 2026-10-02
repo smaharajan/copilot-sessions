@@ -175,11 +175,12 @@ class ThemeTest(unittest.TestCase):
             importlib.reload(ui)
 
     def test_the_default_palette_is_saturated(self):
-        """Pastels have no chroma left on black; the accent was #87afff."""
+        """The default has enough contrast and chroma for a black terminal."""
         with self._theme(None) as ui:
-            self.assertEqual(ui.ACCENT, "\033[38;5;39m")   # #00afff
-            self.assertEqual(ui.VIOLET, "\033[38;5;177m")  # #d787ff
-            self.assertEqual(ui.SLATE, "\033[38;5;239m")   # neutral, recessed
+            self.assertEqual(ui.theme_name(), "cyberpunk")
+            self.assertEqual(ui.ACCENT, "\033[38;5;226m")  # electric yellow
+            self.assertEqual(ui.VIOLET, "\033[38;5;201m")  # neon magenta
+            self.assertEqual(ui.SLATE, "\033[38;5;238m")   # recessed panel
             # The bar ramp is the wordmark's gradient; its two pale steps
             # were the ones that made a half-length bar look unfinished.
             self.assertNotIn(111, ui._BAR_RAMP)
@@ -329,7 +330,7 @@ class ThemeMemoryTest(unittest.TestCase):
     def test_the_theme_you_applied_is_the_one_you_come_back_to(self):
         from cs import ui
 
-        self.assertEqual(ui.theme_name(), "dark")
+        self.assertEqual(ui.theme_name(), "cyberpunk")
         self.assertTrue(ui.save_theme("nord"))
         self.assertEqual(ui.saved_theme(), "nord")
         self.assertEqual(self._restart().theme_name(), "nord")
@@ -365,7 +366,7 @@ class ThemeMemoryTest(unittest.TestCase):
         self._settings().parent.mkdir(parents=True)
         self._settings().write_text('{"theme": "vaporwave"}')
         self.assertIsNone(ui.saved_theme())
-        self.assertEqual(self._restart().theme_name(), "dark")
+        self.assertEqual(self._restart().theme_name(), "cyberpunk")
 
     def test_an_unreadable_settings_file_is_ignored_rather_than_fatal(self):
         from cs import ui
@@ -375,7 +376,7 @@ class ThemeMemoryTest(unittest.TestCase):
             with self.subTest(content=content):
                 self._settings().write_text(content)
                 self.assertIsNone(ui.saved_theme())
-                self.assertEqual(self._restart().theme_name(), "dark")
+                self.assertEqual(self._restart().theme_name(), "cyberpunk")
 
     def test_a_settings_file_that_cannot_be_written_says_so(self):
         """The caller needs the answer: the choice will not survive the run."""

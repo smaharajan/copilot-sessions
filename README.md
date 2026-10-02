@@ -69,8 +69,8 @@ needs nothing beyond Python itself.
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
    ▌SETTINGS  ──────────────────────────────────────────────────────────────────────────────
-     🎨  Themes            Dark · choose from 20 palettes · or press t
-   ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · updated 12:00 · / search · q quit
+     🎨  Themes            Cyberpunk · choose from 20 palettes · or press t
+   ↑↓ move · ↵ open · ←→ window 30d · t theme Cyberpunk · ? help · updated 12:00 · / search · q quit
 ```
 
 Arrow keys move, `Enter` opens, `/` filters, `Esc` goes back — and **every view

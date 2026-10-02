@@ -57,8 +57,8 @@ single line:
      🔔  Hooks             what runs around a session, how often it fails, what's missing
      🔌  MCP servers       tool sources wired up, and which were used
    ▌SETTINGS  ──────────────────────────────────────────────────────────────────────────────
-     🎨  Themes            Dark · choose from 20 palettes · or press t
-   ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · updated 12:00 · / search · q quit
+     🎨  Themes            Cyberpunk · choose from 20 palettes · or press t
+   ↑↓ move · ↵ open · ←→ window 30d · t theme Cyberpunk · ? help · updated 12:00 · / search · q quit
 ```
 
 **The facts line reads *used over installed*.** `11/30 skills` is not an
@@ -178,7 +178,7 @@ two Govern rows that do not (Autonomy, Handoffs) say "all time" themselves.
      💰  AI spend          credits by model, repository and day
      🔋  Efficiency        cache, rate multiplier, latency, reasoning
 
- ↑↓ move · ↵ open · ←→ window 30d · t theme Dark · ? help · / search · q quit
+ ↑↓ move · ↵ open · ←→ window 30d · t theme Cyberpunk · ? help · / search · q quit
 ```
 
 This used to be a picker that opened *after* Enter and wanted an Enter of its

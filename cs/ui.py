@@ -218,10 +218,10 @@ _TUI_PALETTES = {name: _tui_palette(name) for name in THEMES}
 
 
 def _normalise_theme(name: str | None) -> str:
-    chosen = (name or "dark").strip().lower()
+    chosen = (name or "cyberpunk").strip().lower()
     if chosen in THEMES or chosen in _THEME_ALIASES:
         return _THEME_ALIASES.get(chosen, chosen)
-    return "dark"
+    return "cyberpunk"
 
 
 # ── Remembered choices ───────────────────────────────────────────────
@@ -255,7 +255,7 @@ def _load_settings() -> dict:
 def saved_theme() -> str | None:
     """The theme last applied from the picker, or None if there isn't one.
 
-    None rather than "dark" for a name that no longer exists, so a theme
+    None rather than the default theme for a name that no longer exists, so a theme
     retired between releases falls back to the default instead of pinning
     the file's stale answer over it.
     """
@@ -578,7 +578,7 @@ def theme_description(name: str) -> str:
 
 
 def next_theme(name: str | None = None) -> str:
-    """The theme after `name`, wrapping back to dark."""
+    """The theme after `name`, wrapping around the curated collection."""
     current = _normalise_theme(name or _THEME)
     return THEMES[(THEMES.index(current) + 1) % len(THEMES)]
 
