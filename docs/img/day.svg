@@ -10,7 +10,7 @@
     <text x="107.1" y="66.0" fill="#8a8a8a" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Friday 2 October</text>
     <text x="819.9" y="66.0" fill="#00ffaf" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●</text>
     <text x="828.0" y="66.0" fill="#00ffaf" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> LIVE</text>
-    <text x="868.5" y="66.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   as of 16:45</text>
+    <text x="868.5" y="66.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   as of 16:56</text>
     <text x="26.1" y="104.0" fill="#d787ff" font-weight="600" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">23.9</text>
     <text x="66.6" y="104.0" fill="#d787ff" font-weight="600" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">AIU</text>
     <text x="99.0" y="104.0" fill="#8a8a8a" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">so</text>
@@ -68,9 +68,10 @@
     <text x="828.0" y="161.0" fill="#e6e6e6" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">               4m </text>
     <text x="973.8" y="161.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="180.0" fill="#875fff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀██</text>
-    <text x="107.1" y="180.0" fill="#5f87ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀██</text>
-    <text x="204.3" y="180.0" fill="#00d7ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▀▀██</text>
+    <text x="42.3" y="180.0" fill="#d787ff" font-weight="600" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">23.9</text>
+    <text x="74.7" y="180.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> AIU</text>
+    <text x="107.1" y="180.0" fill="#8a8a8a" textLength="105.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> so far today</text>
+    <text x="342.0" y="180.0" fill="#ffaf00" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ▲202% </text>
     <text x="406.8" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="439.2" y="180.0" fill="#4e4e4e" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▁▁▁▁▁▁</text>
@@ -82,12 +83,10 @@
     <text x="779.4" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="795.6" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="811.8" y="180.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▁▁▁▁▁▁▁</text>
-    <text x="868.5" y="180.0" fill="#00afff" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▄█▆▆▃▆█</text>
+    <text x="868.5" y="180.0" fill="#00afff" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▄▇▅▇▃▅█</text>
     <text x="973.8" y="180.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="199.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="199.0" fill="#875fff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██▀▀▀▀</text>
-    <text x="107.1" y="199.0" fill="#5f87ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▀▀██</text>
-    <text x="204.3" y="199.0" fill="#00d7ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀██</text>
+    <text x="42.3" y="199.0" fill="#8a8a8a" textLength="275.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">vs 7.92 AIU by this time yesterday</text>
     <text x="406.8" y="199.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="199.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="439.2" y="199.0" fill="#8a8a8a" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">6 new</text>
@@ -99,11 +98,8 @@
     <text x="811.8" y="199.0" fill="#8a8a8a" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4 models</text>
     <text x="973.8" y="199.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="218.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="218.0" fill="#875fff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀▀▀</text>
-    <text x="107.1" y="218.0" fill="#5f87ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀▀▀</text>
-    <text x="171.9" y="218.0" fill="#00d7ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀</text>
-    <text x="204.3" y="218.0" fill="#00d7ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▀▀▀▀▀▀</text>
-    <text x="269.1" y="218.0" fill="#8a8a8a" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">AIU</text>
+    <text x="42.3" y="218.0" fill="#ffaf00" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██████████████████</text>
+    <text x="188.1" y="218.0" fill="#8a8a8a" textLength="210.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  302% of yesterday's 7.92</text>
     <text x="406.8" y="218.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="218.0" fill="#4e4e4e" textLength="178.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰────────────────────╯</text>
     <text x="609.3" y="218.0" fill="#4e4e4e" textLength="178.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰────────────────────╯</text>
@@ -123,8 +119,10 @@
     <text x="868.5" y="237.0" fill="#4e4e4e" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ───────────</text>
     <text x="965.7" y="237.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─╮</text>
     <text x="18.0" y="256.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="256.0" fill="#ffaf00" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ▲202% </text>
-    <text x="99.0" y="256.0" fill="#8a8a8a" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  vs 7.92 by this time yesterday</text>
+    <text x="42.3" y="256.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">this hour</text>
+    <text x="188.1" y="256.0" fill="#d787ff" font-weight="600" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">5.19</text>
+    <text x="220.5" y="256.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> AIU · </text>
+    <text x="277.2" y="256.0" fill="#e6e6e6" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">11 calls        </text>
     <text x="406.8" y="256.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="256.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="439.2" y="256.0" fill="#00afff" font-weight="600" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">192</text>
@@ -137,8 +135,9 @@
     <text x="811.8" y="256.0" fill="#00afff" font-weight="600" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4h 25m</text>
     <text x="973.8" y="256.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="275.0" fill="#ffaf00" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">██████████████████</text>
-    <text x="188.1" y="275.0" fill="#8a8a8a" textLength="210.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  302% of yesterday's 7.92</text>
+    <text x="42.3" y="275.0" fill="#8a8a8a" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">per model-minute</text>
+    <text x="171.9" y="275.0" fill="#e6e6e6" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  5.8</text>
+    <text x="212.4" y="275.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> AIU</text>
     <text x="406.8" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="431.1" y="275.0" fill="#e6e6e6" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> bash 60</text>
@@ -151,12 +150,12 @@
     <text x="779.4" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="795.6" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="811.8" y="275.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▁▁▁▁▁▁▁</text>
-    <text x="868.5" y="275.0" fill="#00afff" font-weight="600" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▅▅▇▆▄▆▅</text>
+    <text x="868.5" y="275.0" fill="#00afff" font-weight="600" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▅▇▅▆▄▅▆</text>
     <text x="973.8" y="275.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="294.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="294.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">7-day average </text>
-    <text x="155.7" y="294.0" fill="#e6e6e6" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">17.0</text>
-    <text x="188.1" y="294.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> a day</text>
+    <text x="42.3" y="294.0" fill="#8a8a8a" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">per ask</text>
+    <text x="99.0" y="294.0" fill="#e6e6e6" textLength="121.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">           0.73</text>
+    <text x="220.5" y="294.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> AIU</text>
     <text x="406.8" y="294.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="423.0" y="294.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="439.2" y="294.0" fill="#8a8a8a" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0 sub-agents</text>
@@ -172,55 +171,67 @@
     <text x="609.3" y="313.0" fill="#4e4e4e" textLength="178.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰────────────────────╯</text>
     <text x="795.6" y="313.0" fill="#4e4e4e" textLength="186.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╰─────────────────────╯</text>
     <text x="18.0" y="351.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╭─ </text>
-    <text x="42.3" y="351.0" fill="#00afff" font-weight="600" textLength="170.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Spend through the day</text>
-    <text x="212.4" y="351.0" fill="#4e4e4e" textLength="558.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ────────────────────────────────────────────────────────────────────</text>
-    <text x="779.4" y="351.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿ </text>
-    <text x="795.6" y="351.0" fill="#8a8a8a" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">today</text>
-    <text x="836.1" y="351.0" fill="#8a8a8a" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   ⠒⠒ </text>
-    <text x="884.7" y="351.0" fill="#8a8a8a" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">yesterday</text>
+    <text x="42.3" y="351.0" fill="#00afff" font-weight="600" textLength="145.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Spend over the day</text>
+    <text x="188.1" y="351.0" fill="#4e4e4e" textLength="461.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ────────────────────────────────────────────────────────</text>
+    <text x="657.9" y="351.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">AIU per 10 min</text>
+    <text x="771.3" y="351.0" fill="#4e4e4e" textLength="105.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ·  dearest </text>
+    <text x="876.6" y="351.0" fill="#e6e6e6" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">16:50</text>
+    <text x="925.2" y="351.0" fill="#d787ff" font-weight="600" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4.01</text>
     <text x="957.6" y="351.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ─╮</text>
     <text x="18.0" y="370.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="370.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">23.9</text>
+    <text x="42.3" y="370.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">4.01</text>
     <text x="82.8" y="370.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┤</text>
-    <text x="698.4" y="370.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣾</text>
-    <text x="706.5" y="370.0" fill="#d787ff" font-weight="600" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 23.9</text>
+    <text x="706.5" y="370.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
+    <text x="714.6" y="370.0" fill="#d787ff" font-weight="600" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> 4.01</text>
     <text x="973.8" y="370.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="389.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="82.8" y="389.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="641.7" y="389.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣠⣤⣤⣶⣶⣾⣿</text>
+    <text x="706.5" y="389.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="389.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="408.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="82.8" y="408.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="601.2" y="408.0" fill="#00afff" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣤⣴⣶⣿</text>
-    <text x="641.7" y="408.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿</text>
+    <text x="706.5" y="408.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="408.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="427.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="42.3" y="427.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">12.0</text>
+    <text x="42.3" y="427.0" fill="#8a8a8a" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">2.00</text>
     <text x="82.8" y="427.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┤</text>
-    <text x="544.5" y="427.0" fill="#00afff" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣤⣶⣶⣾⣿⣿⣿⣿⣿⣿</text>
-    <text x="641.7" y="427.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿</text>
+    <text x="706.5" y="427.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="427.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="446.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="82.8" y="446.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="495.9" y="446.0" fill="#0087ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣠⣴</text>
-    <text x="528.3" y="446.0" fill="#00afff" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿</text>
-    <text x="641.7" y="446.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿</text>
-    <text x="706.5" y="446.0" fill="#8a8a8a" textLength="259.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤</text>
+    <text x="706.5" y="446.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="446.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="465.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="82.8" y="465.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-    <text x="455.4" y="465.0" fill="#0087ff" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣤⣶⣶⣿⣿⣿⣿⣿</text>
-    <text x="528.3" y="465.0" fill="#00afff" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿</text>
-    <text x="641.7" y="465.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿</text>
+    <text x="455.4" y="465.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⡄</text>
+    <text x="487.8" y="465.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣠⡄</text>
+    <text x="536.4" y="465.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣠⡄</text>
+    <text x="560.7" y="465.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡀</text>
+    <text x="609.3" y="465.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢠⡄</text>
+    <text x="633.6" y="465.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⢀⣠</text>
+    <text x="706.5" y="465.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="465.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="484.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="66.6" y="484.0" fill="#8a8a8a" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
     <text x="82.8" y="484.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┤</text>
-    <text x="90.9" y="484.0" fill="#8a8a8a" textLength="299.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀</text>
-    <text x="390.6" y="484.0" fill="#5f87ff" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣠⣤⣤</text>
-    <text x="423.0" y="484.0" fill="#0087ff" textLength="105.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣴⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿</text>
-    <text x="528.3" y="484.0" fill="#00afff" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿</text>
-    <text x="641.7" y="484.0" fill="#00d7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿⣿⣿⣿⣿⣿⣿</text>
+    <text x="90.9" y="484.0" fill="#4e4e4e" textLength="291.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀</text>
+    <text x="382.5" y="484.0" fill="#875fff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀⣴⣶</text>
+    <text x="406.8" y="484.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+    <text x="414.9" y="484.0" fill="#875fff" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣠⣴⣶⣰⣦</text>
+    <text x="455.4" y="484.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿</text>
+    <text x="463.5" y="484.0" fill="#875fff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣇⣀⣶</text>
+    <text x="487.8" y="484.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣇</text>
+    <text x="504.0" y="484.0" fill="#875fff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+    <text x="512.1" y="484.0" fill="#8787ff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣸</text>
+    <text x="520.2" y="484.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣷⣤</text>
+    <text x="536.4" y="484.0" fill="#8787ff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣇⣿⣇⣸⣿</text>
+    <text x="585.0" y="484.0" fill="#875fff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣄⣰</text>
+    <text x="601.2" y="484.0" fill="#8787ff" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣸⣿</text>
+    <text x="625.5" y="484.0" fill="#875fff" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣤</text>
+    <text x="633.6" y="484.0" fill="#8787ff" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣿⣿</text>
+    <text x="649.8" y="484.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣀</text>
+    <text x="657.9" y="484.0" fill="#875fff" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⣄⣀⣤⣄⣀⣤</text>
+    <text x="706.5" y="484.0" fill="#00afff" font-weight="600" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⡇</text>
     <text x="973.8" y="484.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="503.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="90.9" y="503.0" fill="#8a8a8a" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">00</text>

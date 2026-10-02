@@ -1506,7 +1506,7 @@ def cmd_help() -> None:
   {ui.BOLD}Today{ui.RST}
     cs day [when]         The whole day as a live dashboard in four tabs: an
                           Overview (spend against yesterday by the same hour, six
-                          cards, the day's running total), every Session on a
+                          cards, spend per ten minutes), every Session on a
                           timeline, a Breakdown of models by spend and by time
                           (AIU a minute), repos and tokens, and the Activity feed
                           {ui.DIM}when: today (default), yesterday, N days back or a

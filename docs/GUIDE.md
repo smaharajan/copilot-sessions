@@ -258,7 +258,7 @@ there are, and a long list scrolls inside its own panel. `⇥`/`⇧⇥` or `1`�
 switch tabs (a click on one works too); the content slides in from the side
 you chose and the underline glides across.
 
-<img src="img/day.svg" alt="cs day, Overview tab — the day's spend in large gradient figures against yesterday, six cards with hourly sparklines, the spend as a running total beside yesterday's, and the top sessions, models and repositories" width="980">
+<img src="img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the spend in each ten minutes as braille bars, and the top sessions, models and repositories" width="980">
 
 **Overview** — what to read if nothing else.
 
@@ -268,17 +268,19 @@ you chose and the underline glides across.
   yesterday always reads as a quiet one, so the comparison stops where today
   has got to; when yesterday had nothing by now, it says what yesterday came
   to in all.
-- **AI spend** in large figures, in the theme's gradient, with the change
-  against yesterday, a gauge (against your daily budget when one is set,
-  else against all of yesterday, else the 7-day average), the cost of a
-  minute of model time, and the 7-day average.
+- **AI spend**, with the change against yesterday, a gauge (against your
+  daily budget when one is set, else against all of yesterday, else the
+  7-day average), and what the spend came to: this hour, per minute of
+  model time, per ask, the dearest hour and the 7-day average.
 - **Six cards**: sessions (new, live), asks (and their busiest hour), model
   calls (and model time), tool calls (failures, the busiest tools), what
   shipped, and active time — each with its shape hour by hour. A figure the
   store cannot give makes room for files or tokens.
-- **Spend through the day**: the running total, drawn in braille as a filled
-  area in the gradient, beside the day before's as a line, with the figure
-  at its head. Where today crosses yesterday's line is where you passed it.
+- **Spend over the day**: what was actually billed in each ten minutes,
+  drawn in braille as bars and coloured by how much each cost, with the
+  dearest labelled. A quiet hour is a flat baseline and a burst stands up on
+  its own — a running total would only ever rise, and draw three bursts as a
+  day of steady spending.
 - **Top sessions, models and repositories**, each with its share of the
   spend; models show the time they ran beside what they cost.
 
@@ -317,14 +319,15 @@ counts the five-minute slots that held an ask or a model call. AIU per
 minute is spend over the time the model spent answering.
 
 **It opens with motion, and stays alive while today is.** The title types
-in, the tabs fade up, the spend rolls up like an odometer, the cards deal in
-one after another with their sparklines rising, yesterday's line draws
-across the chart and today's area sweeps in behind it, the panels below wipe
-in, and the ticker types last. Today then rereads every three seconds *in
+in, the tabs fade up, the figures count up, the cards deal in one after
+another with their sparklines rising, the spend bars rise in a wave that
+runs out from midnight, the panels below wipe in, and the ticker types
+last. Today then rereads every three seconds *in
 the background*, so nothing on screen waits for the store: a figure that
 moved rolls from its old value to its new one and flashes with the change
-(`▲1`), running sessions spin, the head of the running total breathes, and
-the newest event types into the ticker at the foot of the page. A past day
+(`▲1`), the bar for the current ten minutes grows as spend lands and
+breathes while you are in it, running sessions spin, and the newest event
+types into the ticker at the foot of the page. A past day
 holds still. Under `CS_MOTION=off` the first frame is the finished page.
 
 The store is read before the first frame and the event logs after it, so

@@ -580,8 +580,12 @@ own column where a store has one and by the turn that touched them where it
 does not; refs and files that cannot be timed come back `None`, and the page
 leaves their cards out rather than drawing a zero. Yesterday comes from
 `db.spend_times` — its calls' times and spend only — which gives the
-comparison by the same time of day, yesterday's whole total, and the curve
-drawn beside today's.
+comparison by the same time of day and yesterday's whole total.
+
+**The chart draws what was billed, not a running total.** A running total
+can only rise, so a day of three bursts reads as a day of steady spending.
+The Overview's chart is the spend in each ten minutes (`data["slots"]`),
+with quiet steps on the baseline and the dearest labelled.
 
 **Models are measured in time as well as money.** `duration_ms` per call is
 summed per model, so the Breakdown can set each model's share of spend
@@ -610,22 +614,23 @@ log tails. The tests set `state["threaded"] = False` to read in place.
 
 **Each tab fits the window.** A tab is given the rows between the pinned
 header and the ticker and lays itself out to them: on the Overview the
-lists take what they need up to a cap and the curve takes the rest; on
+lists take what they need up to a cap and the spend chart takes the rest; on
 Sessions the rows scroll inside their panel under fixed column headings;
 on Activity the feed fills what is left. Page scrolling is the fallback for
 a window too small for any of that.
 
 **Motion is tied to arrival, as on the menu.** The entrance is one clock:
-the title types, the spend rolls up through `ui.count_up` drawn in the
-three-row block figures, the cards deal in with their sparklines rising,
-the curve's yesterday line draws and today's area sweeps behind it
-(`_day_plot` builds the braille cells; `trace` and `sweep` say how far), and
+the title types, the figures count up through `ui.count_up`, the cards
+deal in with their sparklines rising, the spend bars rise in a wave from
+midnight (`_day_columns` builds the braille cells, a dot column per step of
+ten minutes, and `grow` runs the wave), and
 each panel wipes in a row at a time behind a slanted edge (`_day_reveal`),
 growing its bars and counting its figures — never a clock time or a PR
 number. A tab switch replays its panels at `_DAY_SWITCH_PACE` while the
 content slides in and the underline glides. After that, motion follows the
-data: a figure a reread changed rolls from old to new and flashes, the
-ticker types each new event, and while a session is running the loop wakes
+data: a figure a reread changed rolls from old to new and flashes, a ten
+minutes whose spend changed grows its bar from the old height to the new,
+the ticker types each new event, and while a session is running the loop wakes
 every `_DAY_SPIN_MS` for its spinner and the curve's breathing head; with
 nothing moving it waits a second at a time for the clock. Every helper
 answers "finished" under `CS_MOTION=off`.

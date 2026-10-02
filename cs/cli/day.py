@@ -2,9 +2,9 @@
 
 `cs live` is the sessions running now and `cs today` is where you are. This
 is the day's ledger, drawn as a dashboard in four tabs that each fit one
-screen: an Overview (spend in large figures against yesterday, six cards
-with their hour-by-hour shape, and the day's spend as a running total beside
-yesterday's), every Session on a 24-hour timeline, a Breakdown of models —
+screen: an Overview (the spend against yesterday, six cards
+with their hour-by-hour shape, and what was billed in each ten minutes),
+every Session on a 24-hour timeline, a Breakdown of models —
 spend against the time each one ran — repositories and how the calls ran,
 and the day's Activity, ending in a live feed of what the agents are doing.
 
@@ -61,7 +61,7 @@ DAY_REFRESH_SECONDS = 3
 _DAY_BACK = 366
 # Active time is the five-minute slots that held an ask or a model call.
 _DAY_SLOT_MINUTES = 5
-# The running total and the session timelines are drawn in ten-minute steps.
+# The spend chart and the session timelines are drawn in ten-minute steps.
 _DAY_CURVE_MINUTES = 10
 # Rows in each ranked panel before the rest are summed or counted.
 _DAY_MODELS = 6
@@ -75,8 +75,8 @@ _DAY_TABS = (("overview", "Overview"), ("sessions", "Sessions"),
 
 # ── Motion ───────────────────────────────────────────────────────────
 # The first open plays an entrance on one clock, in seconds: the title
-# types, the spend rolls up like an odometer, the cards deal in, the running
-# total draws itself across the day, and the panels below wipe in. A tab or
+# types, the figures count up, the cards deal in, the spend bars rise in a
+# wave from midnight, and the panels below wipe in. A tab or
 # a day replays its own panels faster. Each panel takes this long to wipe in.
 _DAY_PANEL_SECONDS = 0.45
 _DAY_INTRO_SECONDS = 2.1
@@ -101,17 +101,6 @@ _DAY_COUNTED = frozenset({"number", "credits"})
 _DAY_EIGHTHS = " ▏▎▍▌▋▊▉█"
 _DAY_SPARKS = " ▁▂▃▄▅▆▇█"
 _DAY_SHADES = " ░▒▓█"
-# Large figures, three rows tall, from the half and full blocks the bars
-# already use. The comma drops below the line, the point sits on it.
-_DAY_FONT = {
-    "0": ("█▀█", "█ █", "▀▀▀"), "1": ("▀█ ", " █ ", "▀▀▀"),
-    "2": ("▀▀█", "█▀▀", "▀▀▀"), "3": ("▀▀█", " ▀█", "▀▀▀"),
-    "4": ("█ █", "▀▀█", "  ▀"), "5": ("█▀▀", "▀▀█", "▀▀▀"),
-    "6": ("█▀▀", "█▀█", "▀▀▀"), "7": ("▀▀█", "  █", "  ▀"),
-    "8": ("█▀█", "█▀█", "▀▀▀"), "9": ("█▀█", "▀▀█", "▀▀▀"),
-    ".": (" ", " ", "▀"), ",": (" ", " ", "▄"), "—": ("  ", "▀▀", "  "),
-    "k": ("█  ", "█▄▀", "▀ ▀"), "M": ("█▄ ▄█", "█ ▀ █", "▀   ▀"), " ": (" ", " ", " "),
-}
 # Braille dots by (row, column) within a cell: two columns of four.
 _DAY_DOTS = ((0x01, 0x08), (0x02, 0x10), (0x04, 0x20), (0x40, 0x80))
 
@@ -357,13 +346,10 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
     now_slot = (min(int((now - start).total_seconds() // step), slots - 1)
                 if live else None)
 
-    def running_total(values: list[int], upto: int | None) -> list[int | None]:
-        out: list[int | None] = []
-        total = 0
-        for index, value in enumerate(values):
-            total += value
-            out.append(total if upto is None or index <= upto else None)
-        return out
+    def until_now(values: list[int], upto: int | None) -> list[int | None]:
+        """Each step's own spend; the steps still to come are None, not 0."""
+        return [value if upto is None or index <= upto else None
+                for index, value in enumerate(values)]
 
     # What the running sessions are doing, from the tail of each one's log.
     statuses: dict[str, str] = {}
@@ -433,8 +419,11 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
             "week_average_nano_aiu": None if week is None else round(week / 7),
             "budget_aiu": ui.daily_budget_aiu() if live else None,
         },
-        "curve": {"today": running_total(by_slot, now_slot),
-                  "before": running_total(before_slots, None) if timed else []},
+        # What was billed in each ten minutes — not a running total, which
+        # can only rise and so draws three bursts as a day of steady spending.
+        "slots": {"minutes": _DAY_CURVE_MINUTES,
+                  "today": until_now(by_slot, now_slot),
+                  "before": before_slots if timed else []},
         "sessions": len(cards),
         "new_sessions": sum(1 for s in cards.values() if s["new"]),
         "live_sessions": sum(1 for s in cards.values() if s["live"]),
@@ -740,34 +729,6 @@ def _day_shown(data: dict, motion: dict, key: str) -> float | None:
 
 # ── Widgets ──────────────────────────────────────────────────────────
 
-def _day_big_width(text: str, scale: int = 1) -> int:
-    glyphs = [_DAY_FONT.get(ch, _DAY_FONT[" "]) for ch in text]
-    return sum(len(glyph[0]) * scale for glyph in glyphs) + max(len(glyphs) - 1, 0) * scale
-
-
-def _day_big(text: str, x: int, grad: int, lit: str | None = None,
-             scale: int = 1) -> list[list]:
-    """`text` in the large figures, three rows, coloured along the gradient.
-
-    `scale` 2 draws every column twice: on a wide card the figures are then
-    about as wide as they are tall, which is what reads as a headline.
-    """
-    rows: list[list] = [[], [], []]
-    digits = max(sum(ch.isdigit() for ch in text), 1)
-    seen = 0
-    for ch in text:
-        glyph = _DAY_FONT.get(ch, _DAY_FONT[" "])
-        role = lit or (f"g{min(seen * grad // digits, grad - 1)}" if grad > 1
-                       else "credits")
-        for r in range(3):
-            drawn = "".join(part * scale for part in glyph[r])
-            if drawn.strip():
-                rows[r].append((x, drawn, role))
-        x += (len(glyph[0]) + 1) * scale
-        seen += ch.isdigit()
-    return rows
-
-
 def _day_strip(values: list[float], cells: int, upto: int | None, role: str,
                grow: float = 1.0) -> list[tuple[int, str, str]]:
     """An hour-by-hour sparkline `cells` wide; hours still to come are blank."""
@@ -788,61 +749,48 @@ def _day_strip(values: list[float], cells: int, upto: int | None, role: str,
     return _day_runs(out)
 
 
-def _day_plot(today: list, before: list, cols: int, rows: int, peak: float,
-              sweep: float = 1.0, trace: float = 1.0) -> list[list[tuple[str, str]]]:
-    """A braille chart: today's running total as a filled area, the day
-    before's as a line. (char, kind) per cell, top row first; kind is 'a',
-    'b', 'h' (today's newest point) or ''.
+def _day_columns(values: list, cols: int, rows: int, peak: float,
+                 grow: float = 1.0) -> list[list[tuple[str, int, int]]]:
+    """Spend per step as braille columns: (char, step, kind) per cell, top row
+    first. kind is 'bar', 'zero' (a quiet step, drawn as the baseline) or ''.
 
-    `trace` is how far the day-before line has drawn across, `sweep` how far
-    today's area has — the entrance draws one, then the other.
+    Every dot column belongs to one step, so a step is as wide as the chart
+    allows and a quiet hour is a flat line, not a gap. As the page opens
+    `grow` raises the bars in a wave that runs out from midnight.
     """
     width, height = cols * 2, rows * 4
+    count = max(len(values), 1)
     bits = [[0] * cols for _ in range(rows)]
+    steps = [[-1] * cols for _ in range(rows)]
     kinds = [[""] * cols for _ in range(rows)]
+    per = width / count
 
-    def at(series: list, x: int) -> float | None:
-        count = len(series)
-        if not count:
-            return None
-        pos = x * (count - 1) / max(width - 1, 1)
-        low = int(pos)
-        high = min(low + 1, count - 1)
-        if series[low] is None:
-            return None
-        nxt = series[high] if series[high] is not None else series[low]
-        return series[low] + (nxt - series[low]) * (pos - low)
+    def dot(x: int, y: int, step: int, kind: str) -> None:
+        r, c = y // 4, x // 2
+        bits[r][c] |= _DAY_DOTS[y % 4][x % 2]
+        if kind == "bar" or not kinds[r][c]:
+            kinds[r][c], steps[r][c] = kind, step
 
-    def dot(x: int, y: int, kind: str) -> None:
-        if 0 <= y < height and 0 <= x < width:
-            r, c = y // 4, x // 2
-            bits[r][c] |= _DAY_DOTS[y % 4][x % 2]
-            if kind == "a" or not kinds[r][c]:
-                kinds[r][c] = kind
-
-    last = None
-    for x in range(min(width, round(width * trace))):
-        value = at(before, x)
+    for x in range(width):
+        step = min(int(x / per), count - 1)
+        value = values[step]
         if value is None:
             continue
-        y = height - 1 - round(value / peak * (height - 1))
-        for yy in range(min(y, last if last is not None else y),
-                        max(y, last if last is not None else y) + 1):
-            dot(x, yy, "b")
-        last = y
-    head = None
-    for x in range(min(width, round(width * sweep))):
-        value = at(today, x)
-        if value is None:
-            break
-        top = height - round(value / peak * height)
-        for y in range(max(top, 0), height):
-            dot(x, y, "a")
-        head = (x, min(max(top, 0), height - 1))
-    if head:
-        kinds[head[1] // 4][head[0] // 2] = "h"
-        dot(head[0], head[1], "h")
-    return [[(chr(0x2800 + bits[r][c]) if bits[r][c] else " ", kinds[r][c])
+        # A step wider than two dots keeps a one-dot gap on its right, so
+        # neighbouring bars read as separate steps.
+        if per >= 3 and int((x + 1) / per) != step and x > 0:
+            continue
+        wave = min(max(grow * 1.6 - 0.6 * x / width, 0.0), 1.0)
+        wave = 1 - (1 - wave) ** 2
+        tall = round(value / peak * height * wave) if peak else 0
+        if value > 0 and wave > 0:
+            tall = max(tall, 1)
+        if tall:
+            for y in range(height - tall, height):
+                dot(x, y, step, "bar")
+        else:
+            dot(x, height - 1, step, "zero")
+    return [[(chr(0x2800 + bits[r][c]) if bits[r][c] else " ", steps[r][c], kinds[r][c])
              for c in range(cols)] for r in range(rows)]
 
 
@@ -1105,8 +1053,12 @@ def _day_story_parts(data: dict) -> list[tuple[str, str]]:
     return parts
 
 
-def _day_compare(data: dict) -> list[list[tuple[str, str]]]:
-    """The spend set against the day before, longest wording first."""
+def _day_compare(data: dict, arrow: bool = True) -> list[list[tuple[str, str]]]:
+    """The spend set against the day before, longest wording first.
+
+    `arrow=False` leaves the ▲/▼ share off, for a line under a figure that
+    already carries it.
+    """
     spend = data["spend"]
     change = _day_change(spend["nano_aiu"], spend["before_nano_aiu"])
     against = "by this time yesterday" if data["live"] else "the day before"
@@ -1121,10 +1073,13 @@ def _day_compare(data: dict) -> list[list[tuple[str, str]]]:
     if change[0] == "level":
         return [[("level with yesterday" if data["live"] else "level with the day before",
                   "help")]]
-    arrow = (f" {change[0]} ", change[1])
-    return [[arrow, (f"  vs {_day_aiu(spend['before_nano_aiu'])} {against}", "help")],
-            [arrow, ("  vs yesterday" if data["live"] else "  vs the day before", "help")],
-            [arrow]]
+    if not arrow:
+        return [[(f"vs {_day_aiu(spend['before_nano_aiu'])} AIU {against}", "help")],
+                [("vs yesterday" if data["live"] else "vs the day before", "help")]]
+    mark = (f" {change[0]} ", change[1])
+    return [[mark, (f"  vs {_day_aiu(spend['before_nano_aiu'])} {against}", "help")],
+            [mark, ("  vs yesterday" if data["live"] else "  vs the day before", "help")],
+            [mark]]
 
 
 def _day_gauge(data: dict, room: int, motion: dict) -> list:
@@ -1159,50 +1114,78 @@ def _day_gauge(data: dict, room: int, motion: dict) -> list:
 
 
 def _day_hero(data: dict, width: int, height: int | None, motion: dict) -> list[list]:
-    """The day's spend in large figures, set against yesterday, with a gauge."""
+    """The day's spend, set against yesterday, with a gauge and what it bought.
+
+    The figure is written at the size of every other figure on the page and
+    made to stand out by colour and place, not by size; the rows under it
+    say what the spend came to per hour, per ask and per minute of a model.
+    """
     inner = width - 4
     spend = data["spend"]
     value = _day_shown(data, motion, "spend")
     text = _day_aiu(None if value is None else round(value))
     if text != "—":
-        text = ui.count_up(text, _day_ease(motion, 0.3, 1.0))
+        text = ui.count_up(text, _day_ease(motion, 0.3, 1.0)).strip()
     age = motion.get("flash", {}).get("spend")
     lit = ui.flash_role(age) if age is not None else None
     body: list[list] = [[]]
-    # The widest figures that leave room for the unit beside them.
-    scale = 2 if _day_big_width("8,888", 2) + 8 <= inner else 1
-    figures = _day_big_width(text, scale)
-    if figures + 6 <= inner:
-        big = _day_big(text, 1, max(motion.get("grad", 1), 1), lit, scale)
-        big[2].append((1 + figures + 2, "AIU", "help"))
-        body += big
-    else:
-        body.append(_live_line([(text.strip(), lit or "credits"), (" AIU", "help")],
-                               inner - 1, 1))
-    body.append([])
-    body.append(_live_line(_day_fit(_day_compare(data), inner - 1), inner - 1, 1))
+    head = _live_line([(text, lit or "credits"), (" AIU", "help"),
+                       (" so far today" if data["live"] else " spent", "help")],
+                      inner - 1, 1)
+    change = _day_change(spend["nano_aiu"], spend["before_nano_aiu"])
+    if change and change[0] not in ("new", "level"):
+        badge = [(f" {change[0]} ", change[1])]
+        used = sum(ui.cells(t) for _x, t, _r in head) + 1
+        if used + ui.cells(badge[0][0]) + 2 <= inner:
+            head += _live_right(badge, inner)
+    body.append(head)
+    arrowless = change is not None and change[0] not in ("new", "level")
+    body.append(_live_line(_day_fit(_day_compare(data, arrow=not arrowless), inner - 1),
+                           inner - 1, 1))
     gauge = _day_gauge(data, inner - 1, motion)
     if gauge:
         body.append(gauge)
+    facts = _day_hero_facts(data)
     room = None if height is None else height - 2
-    if spend["week_average_nano_aiu"] is not None and (room is None or len(body) < room):
-        rate = data.get("aiu_per_minute")
-        parts = [("7-day average ", "help"),
-                 (_day_aiu(spend["week_average_nano_aiu"]), "number"), (" a day", "help")]
-        if rate is not None:
-            parts = [(_day_rate(rate), "number"), (" AIU a model-minute", "help"),
-                     ("  ·  ", "separator"), *parts]
-        body.append(_live_line(_day_fit([parts, parts[-3:]], inner - 1), inner - 1, 1))
-    if room is not None:
-        # Spare rows go above and below the figures, so they sit centred.
-        while len(body) < room:
-            if len(body) % 2:
-                body.insert(0, [])
-            else:
-                body.append([])
+    if facts and (room is None or len(body) + 2 <= room):
+        body.append([])
+        label_w = min(18, max(inner // 2, 10))
+        for label, parts in facts:
+            if room is not None and len(body) >= room:
+                break
+            body.append([(1, ui.trunc(label, label_w - 1), "help"),
+                         *_live_line(parts, inner - 1 - label_w, 1 + label_w)])
     note = ([("● ", motion.get("pulse", "active")), ("live", "active")]
             if data["live"] else [(data["written"], "help")])
     return _live_panel([("AI spend", "header")], note, body, width, height)
+
+
+def _day_hero_facts(data: dict) -> list[tuple[str, list[tuple[str, str]]]]:
+    """What the spend came to, most immediate first: this hour, a minute of a
+    model, an ask, the dearest hour, and an ordinary day this week."""
+    spend = data["spend"]
+    nano = spend["nano_aiu"]
+    facts: list[tuple[str, list[tuple[str, str]]]] = []
+    if data["live"] and data["now_hour"] is not None and nano is not None:
+        hour = data["by_hour"][data["now_hour"]]
+        facts.append(("this hour", [(_day_aiu(hour["nano_aiu"]), "credits"),
+                                    (" AIU · ", "help"),
+                                    (f"{hour['calls']:,} calls", "number")]))
+    if data.get("aiu_per_minute") is not None:
+        facts.append(("per model-minute", [(_day_rate(data["aiu_per_minute"]), "number"),
+                                           (" AIU", "help")]))
+    if nano and data["asks"]:
+        facts.append(("per ask", [(_day_aiu(nano / data["asks"]), "number"),
+                                  (" AIU", "help")]))
+    if data["peak"]:
+        facts.append(("dearest hour", [(data["peak"]["hour"], "number"),
+                                       (" · ", "separator"),
+                                       (_day_aiu(data["peak"]["nano_aiu"]), "credits"),
+                                       (" AIU", "help")]))
+    if spend["week_average_nano_aiu"] is not None:
+        facts.append(("7-day average", [(_day_aiu(spend["week_average_nano_aiu"]), "number"),
+                                        (" AIU a day", "help")]))
+    return facts
 
 
 def _day_cards_of(data: dict, motion: dict) -> list[dict]:
@@ -1331,30 +1314,43 @@ def _day_card(card: dict, width: int, motion: dict, index: int) -> list[list]:
                        width, 5)
 
 
-def _day_curve(data: dict, width: int, rows: int, motion: dict
-               ) -> tuple[list, list, list]:
-    """The day's spend as a running total beside the day before's, in braille."""
+def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
+                     ) -> tuple[list, list, list]:
+    """What was billed in each ten minutes across the day, as it happened.
+
+    Bars are coloured by how much each step cost, so the dear ones stand out
+    by colour as well as height; the dearest is labelled with its figure, and
+    while today is live the step you are in breathes.
+    """
     inner = width - 4
-    today = data["curve"]["today"]
-    before = data["curve"]["before"]
+    minutes = data["slots"]["minutes"]
+    today = list(data["slots"]["today"])
+    # A reread that changed a step grows its bar to the new height.
+    old = motion.get("slots_from")
+    blend = motion.get("slots_blend", 1.0)
+    if old and blend < 1 and len(old) == len(today):
+        today = [None if new is None else (old[n] or 0) + (new - (old[n] or 0)) * blend
+                 for n, new in enumerate(today)]
     known = [value for value in today if value is not None]
-    peak = max(known + list(before) + [0])
-    title = [("Spend through the day", "header")]
+    peak = max(known + [0])
+    title = [("Spend over the day", "header")]
     if not peak:
         return title, [], [_live_line([("Nothing billed on this day.", "help")], inner)]
     gutter = 7 if inner >= 50 else 0
     cols = max(inner - gutter, 8)
     grad = max(motion.get("grad", 1), 1)
-    sweep = _day_ease(motion, 0.8, 1.0)
-    trace = _day_ease(motion, 0.6, 0.6)
-    body: list[list] = []
+    grow = _day_ease(motion, 0.6, 1.0)
+    now = data["now_slot"]
     if ui._ASCII_GLYPHS:
-        lines, quiet = _live_wave([value or 0 for value in today], cols, rows, sweep)
-        cells = [[(ch, "" if ch == " " else "a") for ch in line] for line in lines]
+        lines, _quiet = _live_wave([value or 0 for value in today], cols, rows, grow)
+        cells = [[(ch, min(c * len(today) // cols, len(today) - 1),
+                   "" if ch == " " else "bar" if ch != "▁" else "zero")
+                  for c, ch in enumerate(line)] for line in lines]
     else:
-        cells = _day_plot(today, before, cols, rows, peak, sweep, trace)
-    head = next(((r, c) for r, line in enumerate(cells) for c, (_ch, kind)
-                 in enumerate(line) if kind == "h"), None)
+        cells = _day_columns(today, cols, rows, peak, grow)
+    top = max(range(len(today)), key=lambda n: today[n] or 0)
+    body: list[list] = []
+    label_at = None
     for r, line in enumerate(cells):
         row: list = []
         if gutter:
@@ -1364,33 +1360,47 @@ def _day_curve(data: dict, width: int, rows: int, motion: dict
                 row.append((max(gutter - 2 - ui.cells(label), 0), label, "help"))
             row.append((gutter - 1, "┤" if label else "│", "separator"))
         painted = []
-        for c, (ch, kind) in enumerate(line):
-            role = ("" if not kind else "help" if kind == "b" else
-                    motion.get("pulse", "title") if kind == "h" and data["live"] else
-                    f"g{min(c * grad // cols, grad - 1)}")
-            painted.append((ch, role))
+        for ch, step, kind in line:
+            if kind == "zero":
+                painted.append((ch, "separator"))
+            elif kind == "bar":
+                value = today[step] or 0
+                role = (motion.get("pulse", "title") if step == now and data["live"]
+                        else f"g{min(int(value / peak * grad), grad - 1)}" if grad > 1
+                        else "credits")
+                painted.append((ch, role))
+                if step == top and label_at is None:
+                    label_at = (r, len(painted) - 1)
+            else:
+                painted.append((ch, ""))
         row += _day_runs(painted, gutter)
-        if head and head[0] == r and sweep >= 1:
-            value = known[-1] if known else 0
-            text = f" {_day_aiu(value)}"
-            x = gutter + head[1] + 1
-            if x + ui.cells(text) <= inner:
-                row.append((x, text, "credits"))
         body.append(row)
+    # The dearest step carries its figure, just above or beside its bar.
+    if label_at and grow >= 1:
+        r, c = label_at
+        text = f" {_day_aiu(peak)}"
+        x = gutter + c + 1
+        y = max(r - 1, 0) if r > 0 else r
+        if x + ui.cells(text) > inner:
+            x = gutter + c - ui.cells(text)
+        if gutter <= x and x + ui.cells(text) <= inner:
+            body[y].append((x, text, "credits"))
     hours = len(data["hours"])
     axis: list = []
-    step = next(n for n in (1, 2, 3, 4, 6, 12, 24) if cols * n / hours >= 4)
-    for hour in range(0, hours, step):
+    step_hours = next(n for n in (1, 2, 3, 4, 6, 12, 24) if cols * n / hours >= 4)
+    for hour in range(0, hours, step_hours):
         x = gutter + round(hour * cols / hours)
         if x + 2 > inner:
             break
         axis.append((x, data["hours"][hour][:2],
                      "title" if hour == data["now_hour"] else "help"))
     body.append(axis)
-    note = [("⣿ ", "g0" if grad > 1 else "credits"), ("today", "help")]
-    if before and not ui._ASCII_GLYPHS:
-        note += [("   ⠒⠒ ", "help"), ("yesterday" if data["live"] else "day before", "help")]
-    return title, note, body
+    when = (datetime.fromisoformat(data["date"]) + timedelta(minutes=top * minutes))
+    note = [(f"AIU per {minutes} min", "help")]
+    if width >= 70:
+        note += [("  ·  dearest ", "separator"), (when.strftime("%H:%M"), "number"),
+                 (" ", ""), (_day_aiu(peak), "credits")]
+    return title, [(t, r or "help") for t, r in note], body
 
 
 def _day_top(data: dict, width: int, motion: dict, limit: int
@@ -1554,7 +1564,7 @@ def _day_overview(data: dict, usable: int, room: int | None, motion: dict
     chart_rows = 7
     if room is not None:
         chart_rows = min(max(room - len(body) - len(bottom) - 1 - 3, 4), 24)
-    title, note, chart = _day_curve(data, usable, chart_rows, motion)
+    title, note, chart = _day_spend_chart(data, usable, chart_rows, motion)
     panel = _live_panel(title, note, chart, usable)
     panel = _day_reveal(panel, _day_due(motion, 0.55, _DAY_PANEL_SECONDS), usable,
                         contents=False)
@@ -1615,7 +1625,7 @@ def _day_sessions_tab(data: dict, usable: int, room: int | None, motion: dict
             head.append((x + (width - len(text) if align == ">" else 0), text, "label"))
     body: list[list] = [head]
     chips = max(motion.get("chips", 8), 1)
-    count = len(data["curve"]["today"])
+    count = len(data["slots"]["today"])
     peak = 0
     if track:
         for s in sessions:
@@ -2358,6 +2368,7 @@ def _day_tui(screen, state: dict):
     tab_from, glide_at = tab, None
     slide_at, slide_dir = None, 0
     ticker_key, ticker_at = None, None
+    slots_from, slots_at = None, None
     moved_at = None
     try:
         while True:
@@ -2377,6 +2388,8 @@ def _day_tui(screen, state: dict):
                                      _live_span(abs(step) * 60) if key == "active" else
                                      _day_format(key, abs(step)))
                             deltas[key] = f"{'▲' if step > 0 else '▼'}{shown}"
+                    if old["slots"]["today"] != fresh["slots"]["today"]:
+                        slots_from, slots_at = old["slots"]["today"], clock
                     if old.get("feed") is not None and old["live"]:
                         known = {entry["key"] for entry in old.get("feed") or []}
                         for entry in fresh.get("feed") or []:
@@ -2423,6 +2436,9 @@ def _day_tui(screen, state: dict):
             ticker = (1.0 if ticker_at is None or not ui.MOTION
                       else min((clock - ticker_at) / _DAY_TICK_SECONDS, 1.0))
             moved = None if moved_at is None else clock - moved_at
+            blend = (1.0 if slots_at is None or not ui.MOTION
+                     else min((clock - slots_at) / _DAY_ROLL_SECONDS, 1.0))
+            blend = 1 - (1 - blend) ** 3
             motion = {
                 "open": elapsed,
                 "roll": rolling,
@@ -2436,6 +2452,7 @@ def _day_tui(screen, state: dict):
                 "clock": time.strftime("%H:%M:%S"),
                 "glide": glide, "tab_from": tab_from,
                 "ticker": ticker,
+                "slots_from": slots_from, "slots_blend": blend,
                 "grad": grad, "chips": chips,
             }
             head, body, foot, hits = _day_screen(data, width, height, motion, tab)
@@ -2474,7 +2491,7 @@ def _day_tui(screen, state: dict):
             screen.refresh()
             painted = True
             moving = (opened is not None or rolls or lit or arrivals or glide < 1
-                      or slide < 1 or ticker < 1
+                      or slide < 1 or ticker < 1 or blend < 1
                       or (moved is not None and moved < ui.SWEEP_SECONDS))
             alive = data["live"] and (data.get("running") or data["live_sessions"])
             if moving and ui.MOTION:
@@ -2553,6 +2570,7 @@ def _day_tui(screen, state: dict):
                     lit.clear()
                     deltas.clear()
                     arrivals.clear()
+                    slots_from = slots_at = None
                     opened, pace = time.monotonic(), _DAY_SWITCH_PACE
                     state["dealt"] = False
                 continue

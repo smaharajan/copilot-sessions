@@ -200,19 +200,25 @@ class DayTest(StoreTest):
             self.assertIn(heading, text)
         self.assertIn("25.0", text)
 
-    def test_the_running_total_stops_at_now_and_yesterday_runs_the_whole_day(self):
+    def test_each_ten_minutes_carries_only_its_own_spend(self):
+        """Not a running total: a quiet stretch reads as nothing, not as the
+        level the day had reached."""
         from cs import cli
 
         self._session("sess-prev", "Yesterday's work", self.yesterday)
-        self._spend("sess-prev", self.yesterday + timedelta(hours=1), 3)
+        self._spend("sess-prev", self.yesterday + timedelta(hours=1, minutes=5), 3)
+        self._spend("sess-alpha", self.today + timedelta(minutes=5), 2)
         data = cli._day_data(0)
-        today, before = data["curve"]["today"], data["curve"]["before"]
+        today, before = data["slots"]["today"], data["slots"]["before"]
         now = data["now_slot"]
-        self.assertEqual(today[now], 4_000_000_000)
+        self.assertEqual(data["slots"]["minutes"], 10)
+        self.assertEqual(today[0], 2_000_000_000)
+        self.assertEqual(today[now], 4_000_000_000 + (2_000_000_000 if now == 0 else 0))
+        if now > 2:
+            self.assertEqual(today[1], 0, "a quiet ten minutes is nothing, not a total")
         self.assertTrue(all(value is None for value in today[now + 1:]))
-        self.assertEqual(before[-1], 3_000_000_000)
-        self.assertEqual(len(today), 24 * 60 // data["slot_minutes"]
-                         if len(today) % 24 == 0 else len(today))
+        self.assertEqual(before[6], 3_000_000_000)
+        self.assertEqual(sum(before), 3_000_000_000)
 
     def test_a_commit_from_a_quiet_session_still_carries_its_title(self):
         from cs import cli
@@ -447,24 +453,42 @@ class DayTest(StoreTest):
         first, last = self._text(screen.frames[0]), self._text(screen.frames[-1])
         # The sentence types in, the cards deal in, the chart draws last.
         self.assertNotIn("4.00 AIU so far", first)
-        self.assertNotIn("Spend through the day", first)
+        self.assertNotIn("Spend over the day", first)
         self.assertNotIn("MODEL CALLS", first)
         self.assertIn("4.00 AIU so far", last)
-        self.assertIn("Spend through the day", last)
+        self.assertIn("Spend over the day", last)
         self.assertIn("MODEL CALLS", last)
         # Somewhere between, the counts were on their way up.
         middle = [self._text(f) for f in screen.frames[5:40]]
-        self.assertTrue(any("MODEL CALLS" in text and "Spend through" not in text
+        self.assertTrue(any("MODEL CALLS" in text and "Spend over" not in text
                             for text in middle), "the cards did not deal in before the chart")
         self.assertTrue(state["dealt"])
         # Settled: redrawn once a second for the clock, and nothing moves.
         self.assertEqual(screen.delay, 1000)
         self.assertEqual(len({self._still(f) for f in screen.frames[-3:]}), 1)
 
+    def test_the_spend_chart_draws_quiet_hours_flat_and_rises_in_a_wave(self):
+        from cs import cli
+
+        values = [0] * 6 + [5] * 6 + [0] * 6
+        cells = cli._day_columns(values, 18, 2, 5)
+        bottom = [kind for _ch, _step, kind in cells[-1]]
+        # A quiet step is the baseline; a dear one is a bar, full height.
+        self.assertEqual(bottom[0], "zero")
+        self.assertEqual(bottom[8], "bar")
+        self.assertEqual(cells[0][8][2], "bar")
+        self.assertEqual(cells[0][0][2], "")
+        # Part way into the entrance the early bars are up and the later ones
+        # are not yet: the wave runs out from midnight.
+        rising = cli._day_columns([5] * 18, 18, 2, 5, grow=0.5)
+        early = sum(ch != " " for ch, _s, _k in (row[1] for row in rising))
+        late = sum(ch != " " for ch, _s, _k in (row[16] for row in rising))
+        self.assertGreater(early, late)
+
     def test_with_motion_off_the_first_frame_is_the_last(self):
         screen, _chosen, _state = self._play([-1] * 3 + [ord("q")], motion=False)
         self.assertIn("4.00 AIU so far", self._text(screen.frames[0]))
-        self.assertIn("Spend through the day", self._text(screen.frames[0]))
+        self.assertIn("Spend over the day", self._text(screen.frames[0]))
         self.assertEqual(self._still(screen.frames[0]), self._still(screen.frames[-1]))
 
     def test_the_logs_are_read_after_the_first_frame(self):

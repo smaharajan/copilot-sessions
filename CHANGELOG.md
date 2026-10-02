@@ -12,12 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`cs day` puts the whole day on one live dashboard, and it is the first
   row on the home screen.** A new **Now** group leads the menu with 🌅 Today
   and the live sessions. Four tabs, each fitted to one screen:
-  - **Overview** — the day's spend in large gradient figures against
-    yesterday *by the same time of day*, a gauge (budget, else yesterday,
-    else the 7-day average) and the cost of a model-minute; six cards
+  - **Overview** — the day's spend against yesterday *by the same time of
+    day*, a gauge (budget, else yesterday, else the 7-day average) and what
+    it came to this hour, per ask and per model-minute; six cards
     (sessions, asks, model calls, tool calls, shipped, active time) with
-    their hour-by-hour shape; the spend as a running total drawn in braille
-    beside yesterday's; and the top sessions, models and repositories.
+    their hour-by-hour shape; the spend actually billed in each ten
+    minutes, drawn as braille bars coloured by cost with the dearest
+    labelled; and the top sessions, models and repositories.
   - **Sessions** — every session on a 24-hour timeline shaded by spend per
     ten minutes, with a now line and spinners on running sessions.
   - **Breakdown** — each model's AIU and share against **the time it ran,
@@ -31,13 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   night counts only what it did today, tool calls are counted from the event
   log by timestamp and read on incrementally, and a figure an older store
   cannot time is left off rather than shown as zero.
-- **Motion that opens the page and keeps it alive.** The spend rolls up like
-  an odometer, cards deal in, the running total draws itself across the day,
-  panels wipe in, and tabs slide with a gliding underline. Today rereads in
+- **Motion that opens the page and keeps it alive.** Figures count up,
+  cards deal in, the spend bars rise in a wave from midnight, panels wipe
+  in, and tabs slide with a gliding underline. Today rereads in
   a background thread every three seconds, so animation never stalls:
-  figures roll to their new value and flash with the change, running
-  sessions spin, and the newest event types into a ticker at the foot of the
-  page. `CS_MOTION=off` draws everything settled.
+  figures roll to their new value and flash with the change, the bar for
+  the current ten minutes grows as spend lands, running sessions spin, and
+  the newest event types into a ticker at the foot of the page. `CS_MOTION=off` draws everything settled.
 - **Any day, from the page or the shell.** `←`/`→` step through earlier days
   and `t` returns to today; `cs day yesterday`, `cs day 3` and
   `cs day 2026-09-30` open one directly. Enter opens the chosen session.
