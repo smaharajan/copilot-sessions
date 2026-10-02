@@ -559,7 +559,7 @@ returns lines, which is why it can be tested without a terminal at all.
 ## The day dashboard
 
 `cs day` (`cli/day.py`) is the first row on the menu: one local day, whole,
-in four tabs. It is built the way the live page is — `_day_data()` returns
+in three tabs. It is built the way the live page is — `_day_data()` returns
 plain, already-masked data, which is also what `--json` hands back, and
 `_day_screen(data, width, height, motion, tab)` turns it into the pinned
 rows above (title, tabs, underline), the body, and the ticker below, all as
@@ -593,6 +593,17 @@ beside its share of model time and give AIU per minute of model time, with
 the same three figures for the day as a whole. They are in `--json` as
 `time_ms`, `time_share` and `aiu_per_minute`.
 
+**Commits come from three places, counted once.** Copilot records a commit
+only when it notices one. `_day_commits` asks git, read-only, in each folder
+a session of the day ran in (`git log --all --no-merges` by the tree's
+configured email, at most once a minute per tree, with `GIT_OPTIONAL_LOCKS=0`
+so it takes no lock); `events.window_counts` notes each `git commit` command
+an agent ran and keeps only its exit code and the short hashes from git's
+`[branch hash]` lines — never the rest of the output; and the store's refs
+add what Copilot recorded. `_day_shipped_from` merges them by hash prefix,
+and counts a clean exit with no hash once. The tool call's `success` flag is
+not used, because it is true for a command that ran and failed.
+
 **Tool calls are counted from the event log by timestamp.** A digest counts a
 whole log, which would credit today with a session's yesterday.
 `events.window_counts` reads only the five event types it needs, joins a
@@ -616,7 +627,7 @@ log tails. The tests set `state["threaded"] = False` to read in place.
 header and the ticker and lays itself out to them: on the Overview the
 lists take what they need up to a cap and the spend chart takes the rest; on
 Sessions the rows scroll inside their panel under fixed column headings;
-on Activity the feed fills what is left. Page scrolling is the fallback for
+on Activity the feed fills what is left. The page lists no sessions. Page scrolling is the fallback for
 a window too small for any of that.
 
 **Motion is tied to arrival, as on the menu.** The entrance is one clock:

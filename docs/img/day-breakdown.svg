@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="754" viewBox="0 0 1000 754" role="img" aria-label="cs day · Breakdown">
-  <rect width="1000" height="754" rx="10" fill="#14161c"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="792" viewBox="0 0 1000 792" role="img" aria-label="cs day · Breakdown">
+  <rect width="1000" height="792" rx="10" fill="#14161c"/>
   <rect width="1000" height="34.0" rx="10" fill="#1d2029"/>
   <rect y="24.0" width="1000" height="10" fill="#1d2029"/>
   <circle cx="22" cy="17" r="6" fill="#ff5f56"/><circle cx="40" cy="17" r="6" fill="#ffbd2e"/><circle cx="58" cy="17" r="6" fill="#27c93f"/>
@@ -10,7 +10,7 @@
     <text x="107.1" y="66.0" fill="#8a8a8a" textLength="129.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Friday 2 October</text>
     <text x="819.9" y="66.0" fill="#00ffaf" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">●</text>
     <text x="828.0" y="66.0" fill="#00ffaf" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> LIVE</text>
-    <text x="868.5" y="66.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   as of 16:56</text>
+    <text x="868.5" y="66.0" fill="#8a8a8a" textLength="113.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   as of 17:10</text>
     <text x="18.0" y="104.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╭─ </text>
     <text x="42.3" y="104.0" fill="#00afff" font-weight="600" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Models</text>
     <text x="90.9" y="104.0" fill="#4e4e4e" textLength="615.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ───────────────────────────────────────────────────────────────────────────</text>
@@ -205,8 +205,8 @@
     <text x="973.8" y="503.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="18.0" y="522.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="34.2" y="522.0" fill="#e6e6e6" font-weight="600" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">active</text>
-    <text x="82.8" y="522.0" fill="#e6e6e6" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      4h 25m</text>
-    <text x="180.0" y="522.0" fill="#8a8a8a" textLength="121.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  08:00 → 16:56</text>
+    <text x="82.8" y="522.0" fill="#e6e6e6" textLength="97.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">      4h 10m</text>
+    <text x="180.0" y="522.0" fill="#8a8a8a" textLength="121.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  08:10 → 17:10</text>
     <text x="487.8" y="522.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="504.0" y="522.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
     <text x="973.8" y="522.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
@@ -282,15 +282,53 @@
     <text x="309.6" y="731.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">model</text>
     <text x="358.2" y="731.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">spent</text>
     <text x="406.8" y="731.0" fill="#4e4e4e" textLength="81.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">answering.</text>
-    <text x="495.9" y="731.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Spend</text>
-    <text x="544.5" y="731.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">is</text>
-    <text x="568.8" y="731.0" fill="#4e4e4e" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">compared</text>
-    <text x="641.7" y="731.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">with</text>
-    <text x="682.2" y="731.0" fill="#4e4e4e" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">yesterday</text>
-    <text x="763.2" y="731.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">up</text>
-    <text x="787.5" y="731.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">to</text>
-    <text x="811.8" y="731.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">the</text>
-    <text x="844.2" y="731.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">same</text>
-    <text x="884.7" y="731.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">time.</text>
+    <text x="495.9" y="731.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Commits</text>
+    <text x="560.7" y="731.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">are</text>
+    <text x="593.1" y="731.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">counted</text>
+    <text x="657.9" y="731.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">once</text>
+    <text x="698.4" y="731.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">each</text>
+    <text x="738.9" y="731.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">from</text>
+    <text x="779.4" y="731.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git</text>
+    <text x="811.8" y="731.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">in</text>
+    <text x="836.1" y="731.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">every</text>
+    <text x="884.7" y="731.0" fill="#4e4e4e" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">folder</text>
+    <text x="941.4" y="731.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">a</text>
+    <text x="26.1" y="750.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">session</text>
+    <text x="90.9" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ran</text>
+    <text x="123.3" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">in,</text>
+    <text x="155.7" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">the</text>
+    <text x="188.1" y="750.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commits</text>
+    <text x="252.9" y="750.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Copilot</text>
+    <text x="317.7" y="750.0" fill="#4e4e4e" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">recorded,</text>
+    <text x="398.7" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">and</text>
+    <text x="431.1" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">the</text>
+    <text x="463.5" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git</text>
+    <text x="495.9" y="750.0" fill="#4e4e4e" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commit</text>
+    <text x="552.6" y="750.0" fill="#4e4e4e" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commands</text>
+    <text x="625.5" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">the</text>
+    <text x="657.9" y="750.0" fill="#4e4e4e" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">agents</text>
+    <text x="714.6" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ran</text>
+    <text x="747.0" y="750.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">that</text>
+    <text x="787.5" y="750.0" fill="#4e4e4e" textLength="48.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">exited</text>
+    <text x="844.2" y="750.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">0</text>
+    <text x="860.4" y="750.0" fill="#4e4e4e" textLength="8.1" lengthAdjust="spacingAndGlyphs" xml:space="preserve">—</text>
+    <text x="876.6" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">one</text>
+    <text x="909.0" y="750.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">per</text>
+    <text x="26.1" y="769.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">command</text>
+    <text x="90.9" y="769.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">where</text>
+    <text x="139.5" y="769.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git</text>
+    <text x="171.9" y="769.0" fill="#4e4e4e" textLength="56.7" lengthAdjust="spacingAndGlyphs" xml:space="preserve">printed</text>
+    <text x="236.7" y="769.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">no</text>
+    <text x="261.0" y="769.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">hash.</text>
+    <text x="309.6" y="769.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Spend</text>
+    <text x="358.2" y="769.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">is</text>
+    <text x="382.5" y="769.0" fill="#4e4e4e" textLength="64.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">compared</text>
+    <text x="455.4" y="769.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">with</text>
+    <text x="495.9" y="769.0" fill="#4e4e4e" textLength="72.9" lengthAdjust="spacingAndGlyphs" xml:space="preserve">yesterday</text>
+    <text x="576.9" y="769.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">up</text>
+    <text x="601.2" y="769.0" fill="#4e4e4e" textLength="16.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">to</text>
+    <text x="625.5" y="769.0" fill="#4e4e4e" textLength="24.3" lengthAdjust="spacingAndGlyphs" xml:space="preserve">the</text>
+    <text x="657.9" y="769.0" fill="#4e4e4e" textLength="32.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">same</text>
+    <text x="698.4" y="769.0" fill="#4e4e4e" textLength="40.5" lengthAdjust="spacingAndGlyphs" xml:space="preserve">time.</text>
   </g>
 </svg>

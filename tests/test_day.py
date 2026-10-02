@@ -361,8 +361,7 @@ class DayTest(StoreTest):
                                 self.assertGreaterEqual(x, 0, text)
                                 self.assertLessEqual(x + ui.cells(text), width - 1, text)
                         self.assertIn("Today", " ".join(t for _x, t, _r in head[0]))
-                        if cli._DAY_TABS[tab][0] in ("overview", "sessions"):
-                            self.assertEqual({index for *_rest, index in hits}, {0, 1})
+                        self.assertEqual(hits, [], "no session is listed on the page")
                         # A tab fits a full-size window without scrolling.
                         if height and height >= 48 and width >= 100:
                             self.assertLessEqual(len(body), height - len(head) - 2)
@@ -453,14 +452,14 @@ class DayTest(StoreTest):
         first, last = self._text(screen.frames[0]), self._text(screen.frames[-1])
         # The sentence types in, the cards deal in, the chart draws last.
         self.assertNotIn("4.00 AIU so far", first)
-        self.assertNotIn("Spend over the day", first)
+        self.assertNotIn("AI spend in each 10 minutes", first)
         self.assertNotIn("MODEL CALLS", first)
         self.assertIn("4.00 AIU so far", last)
-        self.assertIn("Spend over the day", last)
+        self.assertIn("AI spend in each 10 minutes", last)
         self.assertIn("MODEL CALLS", last)
         # Somewhere between, the counts were on their way up.
         middle = [self._text(f) for f in screen.frames[5:40]]
-        self.assertTrue(any("MODEL CALLS" in text and "Spend over" not in text
+        self.assertTrue(any("MODEL CALLS" in text and "AI spend in each" not in text
                             for text in middle), "the cards did not deal in before the chart")
         self.assertTrue(state["dealt"])
         # Settled: redrawn once a second for the clock, and nothing moves.
@@ -488,7 +487,7 @@ class DayTest(StoreTest):
     def test_with_motion_off_the_first_frame_is_the_last(self):
         screen, _chosen, _state = self._play([-1] * 3 + [ord("q")], motion=False)
         self.assertIn("4.00 AIU so far", self._text(screen.frames[0]))
-        self.assertIn("Spend over the day", self._text(screen.frames[0]))
+        self.assertIn("AI spend in each 10 minutes", self._text(screen.frames[0]))
         self.assertEqual(self._still(screen.frames[0]), self._still(screen.frames[-1]))
 
     def test_the_logs_are_read_after_the_first_frame(self):
@@ -515,10 +514,10 @@ class DayTest(StoreTest):
         # …and carries the count once the log has been read.
         self.assertRegex(self._text(screen.frames[-1]), r"0 failed")
 
-    def test_arrows_step_through_days_and_enter_opens_a_session(self):
+    def test_arrows_step_through_days(self):
         screen, chosen, state = self._play([curses_key("KEY_LEFT"), *[-1] * 30, ord("t"),
-                                            -1, 10], {"offset": 0, "dealt": True})
-        self.assertEqual(chosen, "sess-alpha")
+                                            -1, ord("q")], {"offset": 0, "dealt": True})
+        self.assertIsNone(chosen)
         self.assertEqual(state["offset"], 0)
         self.assertTrue(any("Yesterday" in self._text(f) for f in screen.frames))
         # → never goes past today.
@@ -554,19 +553,23 @@ class DayTest(StoreTest):
             [9, *[-1] * 30, ord("3"), *[-1] * 30, 353, *[-1] * 30, ord("q")],
             {"offset": 0, "dealt": True})
         texts = [self._text(f) for f in screen.frames]
-        self.assertTrue(any("SESSION" in t and "REPOSITORY" in t for t in texts))
+        self.assertEqual([name for _key, name in __import__("cs.cli", fromlist=["x"])
+                          ._DAY_TABS], ["Overview", "Breakdown", "Activity"])
         self.assertTrue(any("AIU/MIN" in t for t in texts))
-        # Shift-Tab from Breakdown lands on Sessions, and the page remembers it.
+        self.assertTrue(any("Spend by hour" in t for t in texts))
+        self.assertFalse(any("REPOSITORY" in t and "SESSION" in t for t in texts),
+                         "the page lists no sessions")
+        # Shift-Tab from Activity lands on Breakdown, and the page remembers it.
         self.assertEqual(state["tab"], 1)
         # The new tab's content slid in: its rows started further right.
         def left_edge(frame):
             return min((x for (y, x), text in frame.items() if 3 <= y < 38 and text.strip()),
                        default=0)
-        switch = next(n for n, t in enumerate(texts) if "REPOSITORY" in t)
+        switch = next(n for n, t in enumerate(texts) if "AIU/MIN" in t)
         self.assertGreater(left_edge(screen.frames[switch]), 0)
         self.assertEqual(left_edge(screen.frames[switch + 25]), 0)
 
-    def test_a_running_session_spins_and_the_ticker_types_its_newest_event(self):
+    def test_a_running_session_keeps_the_page_moving_and_types_into_the_ticker(self):
         from cs import cli
 
         folder = _write_events(self.base, "sess-alpha", [
@@ -585,10 +588,7 @@ class DayTest(StoreTest):
                                              {"offset": 0, "dealt": True})
         foot = [text for (y, _x), text in screen.frames[-1].items() if y == 38]
         self.assertIn("Run the tests", " ".join(foot))
-        # The spinner turns: the mark beside the session changes frame to frame.
-        marks = {text for f in screen.frames for (y, x), text in f.items() if x == 2
-                 and text in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏|/-\\"}
-        self.assertGreater(len(marks), 1)
+        # While something runs the page keeps moving at the spinner's pace.
         self.assertEqual(screen.delay, 110)
 
     def test_a_reread_runs_in_the_background(self):
@@ -623,19 +623,89 @@ class DayTest(StoreTest):
             self.assertTrue(cli._home_items()[0][3]())
         day.assert_called_once_with()
 
-    def test_it_goes_to_a_session_and_back(self):
+    # ── Commits, wherever they were made ─────────────────────────────
+
+    def _commit_call(self, call: str, at: datetime, command: str, output: str) -> list:
+        return [_event("tool.execution_start", _log_stamp(at),
+                       {"toolCallId": call, "toolName": "bash",
+                        "arguments": {"command": command}}),
+                _event("tool.execution_complete", _log_stamp(at),
+                       {"toolCallId": call, "success": True,
+                        "result": {"content": output}})]
+
+    def test_commits_the_agents_made_are_counted_once_by_their_exit_code(self):
         from cs import cli
 
-        seen = []
+        at = datetime.now() - timedelta(minutes=1)
+        _write_events(self.base, "sess-alpha", [
+            # The same commit Copilot recorded: counted once.
+            *self._commit_call("c1", at, "git commit -m one",
+                               "[main abc1234] one\n 1 file changed\n<exited with exit code 0>"),
+            *self._commit_call("c2", at, "git commit -m two",
+                               "[main 9f9f9f9] two\n<exited with exit code 0>"),
+            # Quiet: no hash printed, but it exited 0 — counted once.
+            *self._commit_call("c3", at, "cd /tmp/x && git commit -qm three",
+                               "<exited with exit code 0>"),
+            # Nothing to commit: exit 1, though the tool call "succeeded".
+            *self._commit_call("c4", at, "git commit -m four",
+                               "nothing to commit\n<exited with exit code 1>"),
+        ])
+        shipped = cli._day_data(0)["shipped"]
+        self.assertEqual(shipped["commits"], 3)
+        self.assertEqual(shipped["unnamed_commits"], 1)
+        self.assertEqual(sorted(i["value"] for i in shipped["items"] if i["kind"] == "commit"),
+                         ["9f9f9f9", "abc1234"])
+        self.assertIn("agent commands", shipped["commits_from"])
+        self.assertIn("from the agents' git commands", cli._day_text(120))
 
-        def wrapper(view, state):
-            seen.append(view.__name__)
-            return "sess-alpha" if len(seen) == 1 else None
+    def test_commits_in_a_sessions_folder_are_read_from_git(self):
+        import shutil
+        import subprocess
 
-        with mock.patch.object(cli, "_curses_wrapper", side_effect=wrapper), \
-                mock.patch.object(cli, "cmd_show") as show, \
-                mock.patch.object(cli.sys, "stdin", mock.Mock(isatty=lambda: True)), \
-                mock.patch.object(cli.sys, "stdout", mock.Mock(isatty=lambda: True)):
-            self.assertTrue(cli.cmd_day())
-        show.assert_called_once_with("sess-alpha")
-        self.assertEqual(seen, ["_day_tui", "_day_tui"])
+        from cs import cli
+
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
+        tree = self.base / "work-tree"
+        tree.mkdir()
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+
+        def git(*args: str) -> str:
+            return subprocess.run(["git", "-C", str(tree), *args], check=True, env=env,
+                                  capture_output=True, text=True).stdout.strip()
+
+        git("init", "-q")
+        git("config", "user.email", "dev@example.invalid")
+        git("config", "user.name", "Dev")
+        (tree / "a.txt").write_text("a")
+        git("add", "a.txt")
+        git("commit", "-qm", "add the portal shell")
+        made = git("rev-parse", "HEAD")
+        conn = self._db()
+        conn.execute("UPDATE sessions SET cwd = ? WHERE id = 'sess-alpha'", (str(tree),))
+        conn.commit()
+        conn.close()
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull}):
+            shipped = cli._day_data(0)["shipped"]
+        commits = {i["value"]: i for i in shipped["items"] if i["kind"] == "commit"}
+        self.assertIn(made[:12], commits)
+        self.assertEqual(commits[made[:12]]["title"], "add the portal shell")
+        self.assertIn("git", shipped["commits_from"])
+        # The fixture's recorded commit is a different one, so both count.
+        self.assertEqual(shipped["commits"], 2)
+
+    # ── The spend chart's scale ──────────────────────────────────────
+
+    def test_the_spend_axis_runs_to_a_round_figure_and_says_its_unit(self):
+        from cs import cli
+
+        for peak, top in ((275, 300), (137, 150), (4.0, 4.0), (0.37, 0.4), (1890, 2000),
+                          (9, 10), (12, 15)):
+            with self.subTest(peak=peak):
+                self.assertAlmostEqual(cli._day_nice(peak), top)
+        self.assertEqual([cli._day_tick(v) for v in (300, 150, 2.5, 0.4, 2000)],
+                         ["300", "150", "2.5", "0.4", "2k"])
+        text = cli._day_text(120)
+        self.assertIn("AI spend in each 10 minutes", text)
+        self.assertIn("4 AIU ┤", text)
+        self.assertIn("dearest", text)

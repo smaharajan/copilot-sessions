@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from collections.abc import Iterable, Iterator
@@ -422,6 +423,14 @@ def digests(ids: Iterable[str] | None = None, days: int | None = None,
 
 _WINDOW_TYPES = ("tool.execution_start", "tool.execution_complete",
                  "subagent.completed", "subagent.failed", "skill.invoked")
+# A shell command that commits, and the line git prints for each commit it
+# makes: `[main 1a2b3c4] subject`. Only the hash is kept from the output.
+_COMMITS = re.compile(r"\bgit\b[^|;&\n]*\bcommit\b")
+_COMMITTED = re.compile(r"^\[[^\]\n]*? ([0-9a-f]{7,40})\]", re.MULTILINE)
+# How much of a commit command's output is searched for those lines.
+_COMMIT_OUTPUT = 64 * 1024
+# The shell tool ends its output with the command's exit code.
+_EXIT = re.compile(r"with exit code (\d+)>\s*$")
 
 
 def window_counts(session_ids: Iterable[str], since: str, until: str,
@@ -430,14 +439,22 @@ def window_counts(session_ids: Iterable[str], since: str, until: str,
 
     `since` and `until` are `YYYY-MM-DDTHH:MM:SS` in UTC, the log's own
     shape. Returns ``{"calls", "failures", "tools": {name: [calls,
-    failures]}, "subagents", "skills": {name: count}, "logs"}`` — names and
-    counts only, never text. `logs` is how many of the sessions had a log
-    to read, so a caller can tell "no tool calls" from "nothing to read".
+    failures]}, "subagents", "skills": {name: count}, "commits", "logs"}``
+    — names, counts and hashes, never text. `logs` is how many of the
+    sessions had a log to read, so a caller can tell "no tool calls" from
+    "nothing to read".
+
+    `commits` is `[session, hash]` for each commit an agent's shell made: a
+    command that ran `git commit` and exited 0, with the short hash git
+    printed for each commit it made. A command whose output carried no hash
+    (`-q`, a loop, output sent elsewhere) is counted once, with an empty
+    hash. The tool's own `success` is not enough: it is true for a command
+    that ran and failed, so the exit code the shell reported decides.
     """
     memo = {} if memo is None else memo
     prefixes = tuple(_prefix(kind) for kind in _WINDOW_TYPES)
     total: dict = {"calls": 0, "failures": 0, "tools": {}, "subagents": 0,
-                   "skills": {}, "logs": 0}
+                   "skills": {}, "commits": [], "logs": 0}
     for session_id in session_ids:
         path = events_path(session_id)
         try:
@@ -450,7 +467,7 @@ def window_counts(session_ids: Iterable[str], since: str, until: str,
             entry = memo[session_id] = {
                 "window": (since, until), "offset": 0, "open": {},
                 "calls": 0, "failures": 0, "tools": {}, "subagents": 0,
-                "skills": {}}
+                "skills": {}, "committing": set(), "commits": []}
         if size > entry["offset"]:
             _window_read(path, entry, prefixes)
         total["logs"] += 1
@@ -462,6 +479,7 @@ def window_counts(session_ids: Iterable[str], since: str, until: str,
             counts[1] += failures
         for name, count in entry["skills"].items():
             total["skills"][name] = total["skills"].get(name, 0) + count
+        total["commits"] += [[session_id, commit] for commit in entry["commits"]]
     return total
 
 
@@ -492,10 +510,22 @@ def _window_read(path: Path, entry: dict, prefixes: tuple[bytes, ...]) -> None:
             if kind == "tool.execution_start":
                 if call:
                     entry["open"][call] = _name(data.get("toolName")) or "unknown"
+                    arguments = data.get("arguments")
+                    command = arguments.get("command") if isinstance(arguments, dict) else None
+                    if isinstance(command, str) and _COMMITS.search(command):
+                        entry["committing"].add(call)
                 continue
             tool = entry["open"].pop(call, "") if call else ""
+            committing = call in entry["committing"]
+            entry["committing"].discard(call)
             if not since <= _stamp(event) < until:
                 continue
+            if committing and kind == "tool.execution_complete":
+                hashes, code = _commit_outcome(data.get("result"))
+                if hashes:
+                    entry["commits"] += hashes
+                elif code == 0:
+                    entry["commits"].append("")
             if kind == "tool.execution_complete":
                 tool = tool or _name(data.get("toolName")) or "unknown"
                 counts = entry["tools"].setdefault(tool, [0, 0])
@@ -510,6 +540,17 @@ def _window_read(path: Path, entry: dict, prefixes: tuple[bytes, ...]) -> None:
                     entry["skills"][skill] = entry["skills"].get(skill, 0) + 1
             else:
                 entry["subagents"] += 1
+
+
+def _commit_outcome(result) -> tuple[list[str], int | None]:
+    """The hashes git printed for the commits it made, and the command's exit
+    code — nothing else is kept from the output."""
+    text = result.get("content") if isinstance(result, dict) else result
+    if not isinstance(text, str):
+        return [], None
+    code = _EXIT.search(text[-200:])
+    return (list(dict.fromkeys(_COMMITTED.findall(text[:_COMMIT_OUTPUT]))),
+            int(code.group(1)) if code else None)
 
 
 def _stderr_is_tty() -> bool:

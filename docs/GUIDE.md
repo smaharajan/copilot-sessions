@@ -252,13 +252,13 @@ the rest are commands, and `cs today` puts them on one page.
 ### 🌅 `cs day` — the whole day, on one live dashboard
 
 The first row on the home screen, under **Now**. Everything since local
-midnight as a dashboard in four tabs. Each tab is fitted to the window, so
+midnight as a dashboard in three tabs. Each tab is fitted to the window, so
 on a normal terminal nothing scrolls: the charts and lists take the rows
-there are, and a long list scrolls inside its own panel. `⇥`/`⇧⇥` or `1`–`4`
+there are, and a long list scrolls inside its own panel. `⇥`/`⇧⇥` or `1`–`3`
 switch tabs (a click on one works too); the content slides in from the side
 you chose and the underline glides across.
 
-<img src="img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the spend in each ten minutes as braille bars, and the top sessions, models and repositories" width="980">
+<img src="img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the AI spend in each ten minutes as braille bars on a round AIU scale, and models, repositories and tools" width="980">
 
 **Overview** — what to read if nothing else.
 
@@ -276,20 +276,18 @@ you chose and the underline glides across.
   calls (and model time), tool calls (failures, the busiest tools), what
   shipped, and active time — each with its shape hour by hour. A figure the
   store cannot give makes room for files or tokens.
-- **Spend over the day**: what was actually billed in each ten minutes,
-  drawn in braille as bars and coloured by how much each cost, with the
-  dearest labelled. A quiet hour is a flat baseline and a burst stands up on
-  its own — a running total would only ever rise, and draw three bursts as a
+- **AI spend in each 10 minutes**: what was actually billed in each ten
+  minutes, drawn in braille as bars and coloured by how much each cost. The
+  axis runs to a round figure just above the dearest step and says its unit
+  (`300 AIU`, `150`, `0`), and the dearest step is labelled with its time
+  and figure. A quiet hour is a flat baseline and a burst stands up on its
+  own — a running total would only ever rise, and draw three bursts as a
   day of steady spending.
-- **Top sessions, models and repositories**, each with its share of the
-  spend; models show the time they ran beside what they cost.
+- **Models, repositories and tools**, each with its share; models show the
+  time they ran beside what they cost.
 
-**Sessions** — every session of the day on one 24-hour timeline, shaded by
-what it spent in each ten minutes (a light mark where you asked something
-and nothing was billed), with a line where now is, its asks, spend and
-repository, and when it was active. Running sessions spin (`▲` when one is
-asking you, `◆` when it is your turn); `+` marks one started today. `↑↓`
-choose and Enter opens it.
+The page lists no sessions: it is the day in figures. `cs today`, `cs live`
+and the listings are where individual sessions are.
 
 <img src="img/day-breakdown.svg" alt="cs day, Breakdown tab — every model's AIU, share of spend, time, share of time and AIU per minute, with an all-models total and spend and time drawn as two stacked bars; then how the calls ran, who did the work, and repositories" width="980">
 
@@ -308,6 +306,19 @@ shipped.
 and the skills invoked, the commits and PRs, and, while today is live, a
 feed of what the running sessions are doing, newest first, each line lit as
 it lands.
+
+**Commits are counted from everywhere they were made, once each.** Copilot
+records a commit only when it notices one, and some days it records the PRs
+and none of the commits behind them. So `cs day` asks three places: git, in
+each folder a session of the day ran in (read-only `git log`, commits
+authored by the email that tree is configured with, merges left out); the
+commits Copilot recorded; and the `git commit` commands the agents ran that
+exited 0, which is where a commit made in a scratch clone under `/tmp` shows
+up and nowhere else. A hash seen twice is one commit. A command whose output
+named no commit (`-q`, a loop over several repositories) counts once, and
+the Shipped panel says how many were counted that way. The tool's own
+"succeeded" is not used: it is true for a command that ran and failed, so
+the exit code decides.
 
 **Every figure is cut to the day by its own time**, not by when its session
 began, so a session opened last night counts only what it did today. Tool

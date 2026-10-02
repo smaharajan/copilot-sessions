@@ -11,16 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`cs day` puts the whole day on one live dashboard, and it is the first
   row on the home screen.** A new **Now** group leads the menu with 🌅 Today
-  and the live sessions. Four tabs, each fitted to one screen:
+  and the live sessions. Three tabs, each fitted to one screen:
   - **Overview** — the day's spend against yesterday *by the same time of
     day*, a gauge (budget, else yesterday, else the 7-day average) and what
     it came to this hour, per ask and per model-minute; six cards
     (sessions, asks, model calls, tool calls, shipped, active time) with
-    their hour-by-hour shape; the spend actually billed in each ten
-    minutes, drawn as braille bars coloured by cost with the dearest
-    labelled; and the top sessions, models and repositories.
-  - **Sessions** — every session on a 24-hour timeline shaded by spend per
-    ten minutes, with a now line and spinners on running sessions.
+    their hour-by-hour shape; the AI spend actually billed in each ten
+    minutes, drawn as braille bars coloured by cost on a round AIU scale
+    with the dearest labelled; and models, repositories and tools.
   - **Breakdown** — each model's AIU and share against **the time it ran,
     its share of time and AIU per minute of model time**, with an
     all-models total and spend and time as paired stacked bars; then cache,
@@ -28,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     repositories.
   - **Activity** — spend and asks by hour, tools and failures, commits and
     PRs, and a live feed of what running sessions are doing.
+- **Commits are counted wherever they were made.** Copilot's own refs miss
+  most of them, so commits are also read from git in each folder a session
+  ran in and from the `git commit` commands the agents ran that exited 0 —
+  the only record of a commit made in a scratch clone — each hash counted
+  once.
 - **Every figure is cut to the day by its own time.** A session opened last
   night counts only what it did today, tool calls are counted from the event
   log by timestamp and read on incrementally, and a figure an older store
@@ -41,8 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the newest event types into a ticker at the foot of the page. `CS_MOTION=off` draws everything settled.
 - **Any day, from the page or the shell.** `←`/`→` step through earlier days
   and `t` returns to today; `cs day yesterday`, `cs day 3` and
-  `cs day 2026-09-30` open one directly. Enter opens the chosen session.
-  Piped, it prints every tab (coloured on a terminal); `cs day --json` gives
+  `cs day 2026-09-30` open one directly. Piped, it prints every tab (coloured on a terminal); `cs day --json` gives
   every figure and `cs day --csv` the day hour by hour.
 
 ### Changed

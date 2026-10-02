@@ -16,10 +16,11 @@ GUIDE.md under Today.
 |---|---|
 | `db.day_*` window queries and one-pass `spend_windows` | **done** |
 | `events.window_counts`: tool calls by timestamp, read incrementally | **done** |
-| `cli/day.py`: data, layout, entrance, live refresh, ←/→ days, Enter opens | **done** |
+| `cli/day.py`: data, layout, entrance, live refresh, ←/→ days | **done** |
 | Home row, dispatch, `--json`, completion, help | **done** |
 | Redesign after first look: four tabs fitted to the screen, cards, braille spend per ten minutes, session timeline | **done** |
 | Second look: the spend at the size of every other figure; the running total replaced by what was billed in each ten minutes, which it misrepresented | **done** |
+| Third look: a round AIU axis with its unit; the Sessions tab and Top sessions panel removed; commits counted from git, Copilot's refs and the agents' `git commit` commands | **done** |
 | Model time: each model's time, share of time and AIU a minute | **done** |
 | Background reread, rolling figures, spinners, ticker and live feed | **done** |
 | `tests/test_day.py` (25), README/GUIDE/CHANGELOG, `docs/img/day*.svg` | **done** |

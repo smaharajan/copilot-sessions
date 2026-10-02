@@ -1,10 +1,10 @@
 """Today, whole: everything since midnight on one live dashboard.
 
 `cs live` is the sessions running now and `cs today` is where you are. This
-is the day's ledger, drawn as a dashboard in four tabs that each fit one
+is the day's ledger, drawn as a dashboard in three tabs that each fit one
 screen: an Overview (the spend against yesterday, six cards
 with their hour-by-hour shape, and what was billed in each ten minutes),
-every Session on a 24-hour timeline, a Breakdown of models —
+a Breakdown of models —
 spend against the time each one ran — repositories and how the calls ran,
 and the day's Activity, ending in a live feed of what the agents are doing.
 
@@ -22,7 +22,9 @@ event types into the ticker. Earlier days hold still.
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -41,18 +43,15 @@ from .evidence import _clean
 from .live import (
     _live_feed,
     _live_line,
-    _live_lit,
     _live_panel,
     _live_right,
     _live_short,
     _live_span,
     _live_status,
-    _live_status_mark,
     _live_theme,
     _live_wave,
     _LiveTail,
 )
-from .session import cmd_show
 
 # How often today rereads the store and the logs — in the background, so
 # nothing on screen waits for it. Earlier days hold still.
@@ -61,7 +60,7 @@ DAY_REFRESH_SECONDS = 3
 _DAY_BACK = 366
 # Active time is the five-minute slots that held an ask or a model call.
 _DAY_SLOT_MINUTES = 5
-# The spend chart and the session timelines are drawn in ten-minute steps.
+# The spend chart is drawn in ten-minute steps.
 _DAY_CURVE_MINUTES = 10
 # Rows in each ranked panel before the rest are summed or counted.
 _DAY_MODELS = 6
@@ -70,8 +69,8 @@ _DAY_TOOLS = 6
 _DAY_SHIPPED = 6
 # Events kept for the ticker and the live feed.
 _DAY_FEED = 30
-_DAY_TABS = (("overview", "Overview"), ("sessions", "Sessions"),
-             ("breakdown", "Breakdown"), ("activity", "Activity"))
+_DAY_TABS = (("overview", "Overview"), ("breakdown", "Breakdown"),
+             ("activity", "Activity"))
 
 # ── Motion ───────────────────────────────────────────────────────────
 # The first open plays an entrance on one clock, in seconds: the title
@@ -236,7 +235,7 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
                 "asks": 0, "calls": 0, "nano_aiu": 0, "models": Counter(),
                 "first": "", "last": "", "commits": 0, "prs": 0,
                 "new": sid in started, "live": sid in running, "status": None,
-                "by_hour": [0] * hours, "slots": [0] * slots, "asked": [0] * slots,
+                "by_hour": [0] * hours,
             }
         return cards[sid]
 
@@ -275,7 +274,6 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
             by_hour[hour]["nano_aiu"] += nano
             by_hour[hour]["calls"] += 1
             entry["by_hour"][hour] += nano
-            entry["slots"][slot] += nano
             by_slot[slot] += nano
         totals.update(nano_aiu=nano, calls=1, input=fresh, output=out,
                       cache_read=read, cache_write=written, reasoning=reasoning,
@@ -297,13 +295,12 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
         placed = seen(entry, stamp)
         if placed is not None:
             by_hour[placed[0]]["asks"] += 1
-            entry["asked"][placed[1]] += 1
     for hour, present in enumerate(hour_sessions):
         by_hour[hour]["sessions"] = len(present)
 
     shipped = None
     if refs is not None:
-        shipped = {"commits": 0, "prs": 0, "items": []}
+        shipped = {"commits": 0, "prs": 0, "items": [], "commits_from": "copilot"}
         for sid, kind, value in refs:
             key = "prs" if kind == "pr" else "commits"
             shipped[key] += 1
@@ -469,8 +466,7 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
         "by_session": [
             {**{key: s[key] for key in (
                 "id", "title", "repository", "asks", "calls", "nano_aiu",
-                "commits", "prs", "new", "live", "status", "by_hour", "slots",
-                "asked")},
+                "commits", "prs", "new", "live", "status", "by_hour")},
              "first": _day_clock(s["first"]), "last": _day_clock(s["last"]),
              "models": [name for name, _ in s["models"].most_common()]}
             for s in sessions],
@@ -482,12 +478,130 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
     }
     if tools:
         reading["tools"] = _day_tools(list(cards), since, until, memo)
+        folders = [rows[sid][4] for sid in cards if sid in rows and rows[sid][4]]
+        reading["shipped"] = _day_shipped_from(
+            shipped, _day_commits(folders, start, end, memo),
+            (reading["tools"] or {}).get("commits", []),
+            {sid: entry["title"] for sid, entry in cards.items()})
     else:
         # Whether there is a log to read at all — what decides if the page
         # holds a place for tool calls while it reads them.
         reading["tools_expected"] = any(
             events.events_path(sid).is_file() for sid in cards)
     return reading
+
+
+_DAY_GIT_SECONDS = 60
+
+
+def _day_git(args: list[str], tree: str) -> str | None:
+    """One read-only git command in `tree`, or None if it could not run."""
+    try:
+        done = subprocess.run(
+            ["git", "-C", tree, *args], capture_output=True, text=True, timeout=5,
+            check=False, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0",
+                              "GIT_TERMINAL_PROMPT": "0"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _day_commits(folders: list[str], start: datetime, end: datetime,
+                 memo: dict | None) -> list[dict] | None:
+    """The commits you made on the day in the repositories it worked in.
+
+    Copilot records a commit only when it notices one, so its own count runs
+    short — some days it has the PRs and none of the commits behind them.
+    This asks git instead: each working tree a session of the day ran in,
+    read-only, for commits authored on the day by the email that tree is
+    configured with. Merges are left out. Each tree is asked at most once a
+    minute. None when git is not installed or no folder is a working tree,
+    which the caller reads as "ask the store".
+    """
+    if not folders or shutil.which("git") is None:
+        return None
+    cache = (memo if memo is not None else {}).setdefault("git", {})
+    tops: dict[str, str] = cache.setdefault("tops", {})
+    found: dict[str, dict] = {}
+    asked = False
+    for folder in dict.fromkeys(folders):
+        if folder not in tops:
+            top = _day_git(["rev-parse", "--show-toplevel"], folder) \
+                if os.path.isdir(folder) else None
+            tops[folder] = (top or "").strip()
+        top = tops[folder]
+        if not top:
+            continue
+        asked = True
+        held = cache.get(top)
+        if held and held[0] == (start, end) and time.monotonic() - held[1] < _DAY_GIT_SECONDS:
+            commits = held[2]
+        else:
+            commits = []
+            email = (_day_git(["config", "user.email"], top) or "").strip()
+            if email:
+                out = _day_git(["log", "--all", "--no-merges", f"--author={email}",
+                                f"--since={start.isoformat()}", f"--until={end.isoformat()}",
+                                "--format=%H%x1f%ct%x1f%s"], top) or ""
+                for line in out.splitlines():
+                    parts = line.split("\x1f")
+                    if len(parts) == 3 and parts[1].isdigit():
+                        commits.append({"hash": parts[0], "at": int(parts[1]),
+                                        "subject": _clean(parts[2]),
+                                        "repository": _clean(os.path.basename(top))})
+            cache[top] = ((start, end), time.monotonic(), commits)
+        for commit in commits:
+            found.setdefault(commit["hash"], commit)
+    if not asked:
+        return None
+    return sorted(found.values(), key=lambda commit: -commit["at"])
+
+
+def _day_shipped_from(recorded: dict | None, git: list[dict] | None,
+                      agent: list[list[str]], titles: dict[str, str]) -> dict | None:
+    """The day's commits, from every place that saw them, counted once.
+
+    Copilot records a commit only when it notices one, so three places are
+    asked: git, in each folder a session ran in; Copilot's own refs; and the
+    `git commit` commands the agents ran that exited 0 — which is where a
+    commit made in a scratch clone under /tmp shows up and nowhere else. A
+    hash seen twice is one commit. A command whose output held no hash
+    counts once, and is said to be counted that way.
+    """
+    if recorded is None and not git and not agent:
+        return recorded
+    shipped = dict(recorded or {"commits": 0, "prs": 0, "items": []})
+    items = shipped["items"]
+    known: list[str] = []
+    commits: list[dict] = []
+
+    def fresh(value: str) -> bool:
+        value = value.lower()
+        return not any(k.startswith(value[:7]) or value.startswith(k[:7]) for k in known)
+
+    for commit in git or []:
+        known.append(commit["hash"])
+        commits.append({"id": None, "kind": "commit", "value": commit["hash"][:12],
+                        "title": commit["subject"] or commit["repository"]})
+    for item in items:
+        if item["kind"] == "commit" and fresh(item["value"]):
+            known.append(item["value"].lower())
+            commits.append(item)
+    unnamed = 0
+    for sid, value in agent:
+        if not value:
+            unnamed += 1
+        elif fresh(value):
+            known.append(value)
+            commits.append({"id": sid, "kind": "commit", "value": value[:12],
+                            "title": titles.get(sid, sid[:8])})
+    shipped["items"] = commits + [item for item in items if item["kind"] == "pr"]
+    shipped["commits"] = len(commits) + unnamed
+    shipped["unnamed_commits"] = unnamed
+    shipped["commits_from"] = [source for source, found in (
+        ("git", git), ("copilot", any(i["kind"] == "commit" for i in items)),
+        ("agent commands", agent)) if found]
+    return shipped
 
 
 def _day_tools(ids: list[str], since: str, until: str, memo: dict | None) -> dict | None:
@@ -499,6 +613,7 @@ def _day_tools(ids: list[str], since: str, until: str, memo: dict | None) -> dic
         "calls": counts["calls"],
         "failures": counts["failures"],
         "subagents": counts["subagents"],
+        "commits": counts["commits"],
         "by_tool": [{"tool": _clean(name), "calls": calls, "failures": failures}
                     for name, (calls, failures) in sorted(
                         counts["tools"].items(), key=lambda item: (-item[1][0], item[0]))],
@@ -571,6 +686,27 @@ def _day_format(key: str, value: float | None) -> str:
     if key == "tokens":
         return _live_short(value)
     return _day_count(value)
+
+
+def _day_nice(value: float) -> float:
+    """The smallest round number at or above `value`, for the top of an axis:
+    1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten."""
+    if value <= 0:
+        return 1.0
+    magnitude = 1.0
+    while magnitude * 10 <= value:
+        magnitude *= 10
+    while magnitude > value:
+        magnitude /= 10
+    return next(step * magnitude for step in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10)
+                if step * magnitude >= value * (1 - 1e-9))
+
+
+def _day_tick(aiu: float) -> str:
+    """An axis value in AIU: 0, 0.5, 150, 2.5k."""
+    if aiu >= 1000:
+        return f"{aiu / 1000:g}k"
+    return f"{aiu:g}" if aiu >= 1 else f"{aiu:.2g}"
 
 
 def _day_bar(share: float, cells: int) -> str:
@@ -794,35 +930,6 @@ def _day_columns(values: list, cols: int, rows: int, peak: float,
              for c in range(cols)] for r in range(rows)]
 
 
-def _day_track(slots: list[int], asked: list[int], cells: int, peak: float,
-               upto: int | None, chip: str, now_cell: int | None
-               ) -> list[tuple[int, str, str]]:
-    """One session across the day: shaded by what it spent in each step, a
-    light mark where you asked something and it billed nothing, and a line
-    where now is."""
-    count = len(slots)
-    out: list[tuple[str, str]] = []
-    for col in range(cells):
-        low = col * count // cells
-        high = max((col + 1) * count // cells, low + 1)
-        spent = sum(slots[low:high])
-        asks = sum(asked[low:high])
-        if col == now_cell:
-            out.append(("│", "title"))
-        elif upto is not None and low > upto:
-            out.append((" ", ""))
-        elif spent > 0 and peak:
-            level = min(max(-(-spent * 4 // max(peak, 1)), 1), 4)
-            out.append((_DAY_SHADES[int(level)], chip))
-        elif asks:
-            out.append(("░", chip))
-        elif (low * _DAY_CURVE_MINUTES) % 360 == 0:
-            out.append(("·", "separator"))
-        else:
-            out.append((" ", ""))
-    return _day_runs(out)
-
-
 def _day_rank_rows(items: list[tuple], inner: int) -> list[list]:
     """Ranked rows: a chip, a name, a bar of its share, and its figures.
 
@@ -856,17 +963,6 @@ def _day_rank_rows(items: list[tuple], inner: int) -> list[list]:
             row += _live_right(figures, inner)
         rows.append(row)
     return rows
-
-
-def _day_mark(session: dict, motion: dict) -> tuple[str, str]:
-    """A session's mark: spinning while it runs, + if it began today."""
-    if session.get("status"):
-        return _live_status_mark({"status": session["status"]}, motion)
-    if session["live"]:
-        return "●", motion.get("pulse", "active")
-    if session["new"]:
-        return "+", "active"
-    return "·", "separator"
 
 
 # ── The frame: title, tabs, ticker ───────────────────────────────────
@@ -1170,7 +1266,8 @@ def _day_hero_facts(data: dict) -> list[tuple[str, list[tuple[str, str]]]]:
         hour = data["by_hour"][data["now_hour"]]
         facts.append(("this hour", [(_day_aiu(hour["nano_aiu"]), "credits"),
                                     (" AIU · ", "help"),
-                                    (f"{hour['calls']:,} calls", "number")]))
+                                    (f"{hour['calls']:,} call{'s' if hour['calls'] != 1 else ''}",
+                                     "number")]))
     if data.get("aiu_per_minute") is not None:
         facts.append(("per model-minute", [(_day_rate(data["aiu_per_minute"]), "number"),
                                            (" AIU", "help")]))
@@ -1333,10 +1430,14 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
                  for n, new in enumerate(today)]
     known = [value for value in today if value is not None]
     peak = max(known + [0])
-    title = [("Spend over the day", "header")]
+    title = [(f"AI spend in each {minutes} minutes", "header")]
     if not peak:
         return title, [], [_live_line([("Nothing billed on this day.", "help")], inner)]
-    gutter = 7 if inner >= 50 else 0
+    # The axis runs to a round figure just above the dearest step, and says
+    # its unit, so a reading is a number of AIU rather than a fraction of
+    # whatever the peak happened to be.
+    scale = _day_nice(peak / 1e9) * 1e9
+    gutter = 10 if inner >= 50 else 0
     cols = max(inner - gutter, 8)
     grad = max(motion.get("grad", 1), 1)
     grow = _day_ease(motion, 0.6, 1.0)
@@ -1347,15 +1448,16 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
                    "" if ch == " " else "bar" if ch != "▁" else "zero")
                   for c, ch in enumerate(line)] for line in lines]
     else:
-        cells = _day_columns(today, cols, rows, peak, grow)
+        cells = _day_columns(today, cols, rows, scale, grow)
     top = max(range(len(today)), key=lambda n: today[n] or 0)
     body: list[list] = []
     label_at = None
     for r, line in enumerate(cells):
         row: list = []
         if gutter:
-            label = (_day_aiu(peak) if r == 0 else _day_aiu(peak / 2) if r == rows // 2
-                     and rows >= 5 else "0" if r == rows - 1 else "")
+            label = (f"{_day_tick(scale / 1e9)} AIU" if r == 0 else
+                     _day_tick(scale / 2e9) if r == rows // 2 and rows >= 5 else
+                     "0" if r == rows - 1 else "")
             if label:
                 row.append((max(gutter - 2 - ui.cells(label), 0), label, "help"))
             row.append((gutter - 1, "┤" if label else "│", "separator"))
@@ -1366,7 +1468,7 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
             elif kind == "bar":
                 value = today[step] or 0
                 role = (motion.get("pulse", "title") if step == now and data["live"]
-                        else f"g{min(int(value / peak * grad), grad - 1)}" if grad > 1
+                        else f"g{min(int(value / scale * grad), grad - 1)}" if grad > 1
                         else "credits")
                 painted.append((ch, role))
                 if step == top and label_at is None:
@@ -1378,7 +1480,7 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
     # The dearest step carries its figure, just above or beside its bar.
     if label_at and grow >= 1:
         r, c = label_at
-        text = f" {_day_aiu(peak)}"
+        text = f" {_day_aiu(peak)} AIU"
         x = gutter + c + 1
         y = max(r - 1, 0) if r > 0 else r
         if x + ui.cells(text) > inner:
@@ -1396,37 +1498,11 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
                      "title" if hour == data["now_hour"] else "help"))
     body.append(axis)
     when = (datetime.fromisoformat(data["date"]) + timedelta(minutes=top * minutes))
-    note = [(f"AIU per {minutes} min", "help")]
-    if width >= 70:
-        note += [("  ·  dearest ", "separator"), (when.strftime("%H:%M"), "number"),
-                 (" ", ""), (_day_aiu(peak), "credits")]
+    note: list[tuple[str, str]] = []
+    if width >= 60:
+        note = [("dearest ", "help"), (when.strftime("%H:%M"), "number"), (" · ", "separator"),
+                (_day_aiu(peak), "credits"), (" AIU", "help")]
     return title, [(t, r or "help") for t, r in note], body
-
-
-def _day_top(data: dict, width: int, motion: dict, limit: int
-             ) -> tuple[list, list, list, list[int]]:
-    """The day's dearest sessions, each with its share of the spend."""
-    inner = width - 4
-    sessions = data["by_session"][:limit]
-    title = [("Top sessions", "header")]
-    if not sessions:
-        return title, [], [_live_line([("No sessions.", "help")], inner)], []
-    spent = data["spend"]["nano_aiu"] or 0
-    chips = max(motion.get("chips", 8), 1)
-    items = [(s["title"], s["nano_aiu"] / spent if spent else 0.0, f"c{n % chips}",
-              [(ui.fmt_aiu(s["nano_aiu"]).rjust(6), "credits")], f"c{n % chips}",
-              s["title"]) for n, s in enumerate(sessions)]
-    body = []
-    cursor = motion.get("cursor")
-    moved = motion.get("moved")
-    for n, row in enumerate(_day_rank_rows(items, inner)):
-        row[0] = (0, *_day_mark(sessions[n], motion))
-        if n == cursor:
-            sweep = 1.0 if moved is None else min(moved / ui.SWEEP_SECONDS, 1.0)
-            row = _live_lit(row, round(inner * (1 - (1 - sweep) ** 2)))
-        body.append(row)
-    note = [(f"{len(data['by_session'])} today", "help")]
-    return title, note, body, list(range(len(body)))
 
 
 def _day_models_mini(data: dict, width: int, motion: dict, limit: int
@@ -1552,14 +1628,14 @@ def _day_overview(data: dict, usable: int, room: int | None, motion: dict
     if room is not None:
         limit = min(max(room - len(body) - 4 - 6 - 2, 3), 8)
     if usable >= 110:
-        specs = [(lambda w: _day_top(data, w, motion, limit), 4),
-                 (lambda w: _day_models_mini(data, w, motion, limit), 3),
-                 (lambda w: _day_repos(data, w, motion, limit), 3)]
+        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1),
+                 (lambda w: _day_repos(data, w, motion, limit), 1),
+                 (lambda w: _day_tool_panel(data, w, motion, limit), 1)]
     elif usable >= 70:
-        specs = [(lambda w: _day_top(data, w, motion, limit), 1),
-                 (lambda w: _day_models_mini(data, w, motion, limit), 1)]
+        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1),
+                 (lambda w: _day_repos(data, w, motion, limit), 1)]
     else:
-        specs = [(lambda w: _day_top(data, w, motion, limit), 1)]
+        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1)]
     bottom, hits = _day_row_of(specs, usable, motion, 1.05)
     chart_rows = 7
     if room is not None:
@@ -1573,133 +1649,6 @@ def _day_overview(data: dict, usable: int, room: int | None, motion: dict
     start = len(body)
     _day_put(body, bottom, start, 0)
     return body, [(start + y, left, right_x, index) for y, left, right_x, index in hits]
-
-
-# ── Sessions ─────────────────────────────────────────────────────────
-
-def _day_sessions_tab(data: dict, usable: int, room: int | None, motion: dict
-                      ) -> tuple[list[list], list]:
-    """Every session of the day on one timeline, with what it asked and spent.
-
-    On a screen the list scrolls inside its panel, so the hours stay put.
-    """
-    inner = usable - 4
-    sessions = data["by_session"]
-    rows: list[list] = [[]]
-    if not sessions:
-        rows.append(_live_line([("No session did anything on this day.", "help")],
-                               usable - 1, 1))
-        return rows, []
-    cols: list[tuple[str, int]] = [("aiu", 7)]
-    if inner >= 56:
-        cols.append(("track", 0))
-    if inner >= 64:
-        cols.insert(0, ("asks", 5))
-    if inner >= 90:
-        cols.insert(0, ("repo", 16))
-    if inner >= 112:
-        cols.append(("span", 11))
-    fixed = sum(width + 2 for key, width in cols if key != "track")
-    track = 0
-    if any(key == "track" for key, _w in cols):
-        track = min(max(inner - 2 - 24 - fixed - 2, 24), 96)
-    title_w = max(inner - 2 - fixed - (track + 2 if track else 0), 8)
-    head: list = [(2, "SESSION", "label")]
-    x = 2 + title_w + 2
-    places = {}
-    for key, width in cols:
-        width = track if key == "track" else width
-        places[key] = (x, width)
-        x += width + 2
-    for key, (x, width) in places.items():
-        if key == "track":
-            hours = len(data["hours"])
-            for hour in range(0, hours, 6 if width < 48 else 3):
-                at = x + round(hour * width / hours)
-                if at + 2 <= x + width:
-                    head.append((at, data["hours"][hour][:2], "label"))
-        else:
-            text = {"aiu": "AIU", "asks": "ASKS", "repo": "REPOSITORY",
-                    "span": "ACTIVE"}[key]
-            align = ">" if key in ("aiu", "asks") else "<"
-            head.append((x + (width - len(text) if align == ">" else 0), text, "label"))
-    body: list[list] = [head]
-    chips = max(motion.get("chips", 8), 1)
-    count = len(data["slots"]["today"])
-    peak = 0
-    if track:
-        for s in sessions:
-            for col in range(track):
-                low = col * count // track
-                high = max((col + 1) * count // track, low + 1)
-                peak = max(peak, sum(s["slots"][low:high]))
-    now_cell = (int(data["now_slot"] * track / count)
-                if track and data["now_slot"] is not None else None)
-    grow = _day_ease(motion, 0.3, 0.9)
-    cursor = motion.get("cursor")
-    moved = motion.get("moved")
-    lines = []
-    for index, s in enumerate(sessions):
-        mark = _day_mark(s, motion)
-        row: list = [(0, *mark), (2, ui.trunc(s["title"], title_w),
-                                  "title" if s["live"] else "summary")]
-        for key, (x, width) in places.items():
-            if key == "repo":
-                repo = (s["repository"] or "—").rsplit("/", 1)[-1]
-                row.append((x, ui.trunc(repo, width), "repo"))
-            elif key == "asks":
-                row.append((x, f"{s['asks']:>{width}}", "number"))
-            elif key == "aiu":
-                row.append((x, f"{ui.fmt_aiu(s['nano_aiu']):>{width}}", "credits"))
-            elif key == "track":
-                # The timelines draw across from midnight as the tab opens.
-                shown = max(1, round(width * grow))
-                for sx, text, role in _day_track(s["slots"], s["asked"], width, peak,
-                                                 data["now_slot"], f"c{index % chips}",
-                                                 now_cell):
-                    if sx < shown:
-                        row.append((x + sx, text[:shown - sx], role))
-            elif key == "span":
-                span = f"{s['first']}–{s['last']}" if s["first"] else ""
-                row.append((x, span, "help"))
-        row = [seg for seg in row if seg[0] + ui.cells(seg[1]) <= inner]
-        if index == cursor:
-            sweep = 1.0 if moved is None else min(moved / ui.SWEEP_SECONDS, 1.0)
-            row = _live_lit(row, round(inner * (1 - (1 - sweep) ** 2)))
-        lines.append(len(body))
-        body.append(row)
-    legend = [("● ", "active"), ("running   ", "help"), ("+ ", "active"),
-              ("started today   ", "help")]
-    if track:
-        legend += [("░▒▓█ ", "c0"), (f"spend in each {_DAY_CURVE_MINUTES} minutes   ", "help")]
-        if now_cell is not None:
-            legend += [("│ ", "title"), ("now", "help")]
-    # On a screen the rows scroll inside the panel, keeping the cursor in view.
-    view = len(body) - 1
-    scroll = 0
-    if room is not None:
-        view = max(room - 1 - 2 - 2, 3)
-        if cursor is not None:
-            scroll = max(0, min(cursor - view + 1, len(sessions) - view))
-            scroll = max(min(scroll, cursor), 0)
-    listed = body[1:]
-    shown_rows = [body[0], *listed[scroll:scroll + view], [],
-                  _live_line(_day_fit([legend, legend[:4]], inner), inner)]
-    live = sum(1 for s in sessions if s["live"])
-    note = [(f"{len(sessions)} today", "help")]
-    if live:
-        note += [(" · ", "separator"), ("●", motion.get("pulse", "active")),
-                 (f" {live} running", "active")]
-    if scroll:
-        note.insert(0, ("↑ ", "help"))
-    if scroll + view < len(sessions):
-        note.append((" ↓", "help"))
-    panel = _live_panel([("Sessions", "header")], note, shown_rows, usable)
-    panel = _day_reveal(panel, _day_due(motion, 0.1, 0.6), usable, contents=False)
-    _day_put(rows, panel, 1, 0)
-    hits = [(1 + 1 + 1 + n, 0, usable, index)
-            for n, index in enumerate(range(scroll, min(scroll + view, len(sessions))))]
-    return rows, hits
 
 
 # ── Breakdown ────────────────────────────────────────────────────────
@@ -1956,7 +1905,10 @@ def _day_breakdown_tab(data: dict, usable: int, room: int | None, motion: dict
     if room is None or len(rows) + 3 <= room:
         foot = ("Every figure is cut to this day by its own time. Active time counts "
                 f"{_DAY_SLOT_MINUTES}-minute slots that held an ask or a model call. "
-                "AIU/min is spend over the time the model spent answering.")
+                "AIU/min is spend over the time the model spent answering. Commits are "
+                "counted once each from git in every folder a session ran in, the "
+                "commits Copilot recorded, and the git commit commands the agents ran "
+                "that exited 0 — one per command where git printed no hash.")
         if data["live"]:
             foot += " Spend is compared with yesterday up to the same time."
         rows.append([])
@@ -2041,11 +1993,19 @@ def _day_shipped(data: dict, width: int, motion: dict, limit: int = _DAY_SHIPPED
                 [_live_line([("Commits and PRs carry no time on this store.", "help")],
                             inner)])
     items = shipped["items"]
-    if not items:
+    unnamed = shipped.get("unnamed_commits", 0)
+    if not items and not unnamed:
         return ([("Shipped", "header")], [],
                 [_live_line([("Nothing shipped yet." if data["live"]
                               else "Nothing shipped.", "help")], inner)])
     body = []
+    if unnamed:
+        # Commits an agent made with output that named none of them.
+        body.append(_live_line(_day_fit([
+            [("◆ ", "active"), (f"{unnamed}", "number"),
+             (f" commit{'s' if unnamed != 1 else ''} from the agents' git commands", "help")],
+            [("◆ ", "active"), (f"{unnamed}", "number"), (" from agents' commits", "help")]],
+            inner), inner))
     for item in items[:limit]:
         pr = item["kind"] == "pr"
         mark = ("PR " if pr else "◆ ", "turns" if pr else "active")
@@ -2163,8 +2123,6 @@ def _day_activity_tab(data: dict, usable: int, room: int | None, motion: dict
 def _day_body(data: dict, usable: int, room: int | None, motion: dict, tab: int
               ) -> tuple[list[list], list]:
     key = _DAY_TABS[tab][0]
-    if key == "sessions":
-        return _day_sessions_tab(data, usable, room, motion)
     if key == "breakdown":
         return _day_breakdown_tab(data, usable, room, motion)
     if key == "activity":
@@ -2202,9 +2160,9 @@ def _day_screen(data: dict, width: int, height: int | None = None,
     return head, body, foot, hits
 
 
-_DAY_HINTS = (" ⇥ tabs · ←→ day · ↑↓ session · ↵ open · r refresh · q back ",
-              " ⇥ tabs · ←→ day · ↵ open · q back ",
-              " ⇥ · ←→ · ↵ · q ", " q ")
+_DAY_HINTS = (" ⇥ tabs · ←→ day · ↑↓ scroll · r refresh · q back ",
+              " ⇥ tabs · ←→ day · q back ",
+              " ⇥ · ←→ · q ", " q ")
 
 
 def _day_hint(width: int) -> str:
@@ -2340,7 +2298,7 @@ def _day_collect(state: dict) -> dict | None:
 
 
 def _day_tui(screen, state: dict):
-    """The page. Returns a session id to open, or None to go back."""
+    """The page, until you go back."""
     import curses
 
     screen.keypad(True)
@@ -2369,7 +2327,6 @@ def _day_tui(screen, state: dict):
     slide_at, slide_dir = None, 0
     ticker_key, ticker_at = None, None
     slots_from, slots_at = None, None
-    moved_at = None
     try:
         while True:
             clock = time.monotonic()
@@ -2419,11 +2376,6 @@ def _day_tui(screen, state: dict):
             if newest != ticker_key:
                 ticker_at = clock if ticker_key is not None else None
                 ticker_key = newest
-            sessions = data["by_session"]
-            key_tab = _DAY_TABS[tab][0]
-            listed = (min(len(sessions), 8) if key_tab == "overview" else len(sessions))
-            cursor = state["cursor"] = min(max(state.get("cursor", 0), 0),
-                                           max(listed - 1, 0))
             height, width = screen.getmaxyx()
             elapsed = None if opened is None else (clock - opened) * pace
             if elapsed is not None and elapsed >= _DAY_INTRO_SECONDS:
@@ -2435,7 +2387,6 @@ def _day_tui(screen, state: dict):
                      else min((clock - slide_at) / _DAY_SLIDE_SECONDS, 1.0))
             ticker = (1.0 if ticker_at is None or not ui.MOTION
                       else min((clock - ticker_at) / _DAY_TICK_SECONDS, 1.0))
-            moved = None if moved_at is None else clock - moved_at
             blend = (1.0 if slots_at is None or not ui.MOTION
                      else min((clock - slots_at) / _DAY_ROLL_SECONDS, 1.0))
             blend = 1 - (1 - blend) ** 3
@@ -2445,8 +2396,6 @@ def _day_tui(screen, state: dict):
                 "flash": {key: clock - at for key, at in lit.items()},
                 "delta": deltas,
                 "arrivals": {key: clock - at for key, at in arrivals.items()},
-                "cursor": cursor if sessions and key_tab in ("overview", "sessions") else None,
-                "moved": moved,
                 "spin": int(clock * 1000 / _DAY_SPIN_MS) if ui.MOTION else 0,
                 "pulse": ui.pulse_role(clock) if ui.MOTION else "active",
                 "clock": time.strftime("%H:%M:%S"),
@@ -2455,7 +2404,7 @@ def _day_tui(screen, state: dict):
                 "slots_from": slots_from, "slots_blend": blend,
                 "grad": grad, "chips": chips,
             }
-            head, body, foot, hits = _day_screen(data, width, height, motion, tab)
+            head, body, foot, _hits = _day_screen(data, width, height, motion, tab)
             view = max(height - len(head) - 2, 1)
             most = max(len(body) - view, 0)
             scroll = state["scroll"] = min(max(state.get("scroll", 0), 0), most)
@@ -2491,8 +2440,7 @@ def _day_tui(screen, state: dict):
             screen.refresh()
             painted = True
             moving = (opened is not None or rolls or lit or arrivals or glide < 1
-                      or slide < 1 or ticker < 1 or blend < 1
-                      or (moved is not None and moved < ui.SWEEP_SECONDS))
+                      or slide < 1 or ticker < 1 or blend < 1)
             alive = data["live"] and (data.get("running") or data["live_sessions"])
             if moving and ui.MOTION:
                 wait = ui.MOTION_MS
@@ -2523,14 +2471,6 @@ def _day_tui(screen, state: dict):
                             glide_at = slide_at = time.monotonic()
                             state["tab"], state["scroll"] = tab, 0
                             opened, pace = time.monotonic(), _DAY_SWITCH_PACE
-                elif kind in ("click", "double"):
-                    for hit_y, left, right, index in hits:
-                        if hit_y - scroll + top == y and left <= x < right:
-                            if index != cursor:
-                                moved_at = time.monotonic()
-                            state["cursor"] = index
-                            if kind == "double":
-                                return sessions[index]["id"]
                 elif kind == "wheel-up":
                     state["scroll"] = scroll - 3
                 elif kind == "wheel-down":
@@ -2538,9 +2478,6 @@ def _day_tui(screen, state: dict):
                 continue
             if key in (27, ord("q"), ord("Q")):
                 return None
-            if key in (10, 13, curses.KEY_ENTER) and sessions and \
-                    key_tab in ("overview", "sessions"):
-                return sessions[cursor]["id"]
             chosen = None
             if key == 9:
                 chosen = (tab + 1) % len(_DAY_TABS)
@@ -2563,7 +2500,7 @@ def _day_tui(screen, state: dict):
                 offset = min(max(state.get("offset", 0) + step_day, 0), _DAY_BACK)
                 if offset != state.get("offset", 0):
                     state["offset"] = offset
-                    state["cursor"] = state["scroll"] = 0
+                    state["scroll"] = 0
                     state.pop("box", None)
                     _day_read(state, tools=False)
                     rolls.clear()
@@ -2579,17 +2516,9 @@ def _day_tui(screen, state: dict):
                 if not data["live"]:
                     _day_refresh(state)
             elif key in (curses.KEY_UP, ord("k")):
-                if key_tab in ("overview", "sessions") and sessions:
-                    state["cursor"] = cursor - 1
-                    moved_at = time.monotonic()
-                else:
-                    state["scroll"] = scroll - 1
+                state["scroll"] = scroll - 1
             elif key in (curses.KEY_DOWN, ord("j")):
-                if key_tab in ("overview", "sessions") and sessions:
-                    state["cursor"] = cursor + 1
-                    moved_at = time.monotonic()
-                else:
-                    state["scroll"] = scroll + 1
+                state["scroll"] = scroll + 1
             elif key in (curses.KEY_NPAGE, ord(" "), ord("f")):
                 state["scroll"] = scroll + view - 2
             elif key in (curses.KEY_PPAGE, ord("b")):
@@ -2607,7 +2536,6 @@ def cmd_day(offset: int = 0) -> bool:
     """The whole day on one page: spend, sessions, repositories, models and
     more, since local midnight, kept current while it is today."""
     import curses
-    import shutil
 
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         sys.stdout.write(_day_text(min(shutil.get_terminal_size().columns, 140), offset))
@@ -2616,24 +2544,15 @@ def cmd_day(offset: int = 0) -> bool:
     # Read before curses starts, so a store that cannot be opened says so in
     # plain words rather than from inside a blanked screen.
     _day_read(state, tools=False, fatal=True)
-    while True:
-        try:
-            chosen = _curses_wrapper(_day_tui, state)
-        except KeyboardInterrupt:
-            return True
-        except curses.error:
-            sys.stdout.write(_day_text(min(shutil.get_terminal_size().columns, 140),
-                                       state.get("offset", offset)))
-            return False
-        if chosen is None:
-            return True
-        try:
-            cmd_show(chosen)
-        except SystemExit:
-            pass
-        # Back from a session: no entrance again, and today reread at once.
-        state["dealt"] = True
-        state["read_at"] = 0.0
+    try:
+        _curses_wrapper(_day_tui, state)
+    except KeyboardInterrupt:
+        return True
+    except curses.error:
+        sys.stdout.write(_day_text(min(shutil.get_terminal_size().columns, 140),
+                                   state.get("offset", offset)))
+        return False
+    return True
 
 
 def _day_export(offset: int = 0) -> dict:
