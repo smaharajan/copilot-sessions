@@ -356,7 +356,7 @@ brew install smaharajan/tap/copilot-sessions
 Check it worked:
 
 ```bash
-cs --version        # cs 2.3.0
+cs --version        # cs 2.4.0
 cs recent           # your sessions from the last 7 days
 ```
 
