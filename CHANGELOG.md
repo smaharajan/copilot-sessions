@@ -7,10 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`cs day` puts the whole day on one live dashboard, and it is the first
+  row on the home screen.** A new **Now** group leads the menu with 🌅 Today
+  and the live sessions. Everything since local midnight: a one-sentence
+  summary, then tiles for AI spend against yesterday *by the same time of
+  day*, sessions (new and live), asks and their busiest hour, commits and
+  PRs, repositories, model calls and model time, tokens and cache share,
+  tool calls and failures, files created and edited, and active time. Spend
+  by hour is a gradient bar chart with asks beneath it; panels follow for
+  models, repositories, how it ran (cache, reasoning, first-token p50/p95,
+  tokens, model time), every session of the day with an hour-by-hour
+  sparkline, what shipped, tools and skills, and who did the work.
+- **Every figure is cut to the day by its own time.** A session opened last
+  night counts only what it did today, tool calls are counted from the event
+  log by timestamp and read on incrementally, and a figure an older store
+  cannot time is left off rather than shown as zero.
+- **It opens with motion and holds still.** The title types in, counts roll
+  up tile by tile, the hour chart rises and sweeps in from midnight, and each
+  panel wipes in with its bars filling. Today rereads every five seconds and
+  flashes a figure that moved (`▲2.00`); the hour you are in breathes.
+  `CS_MOTION=off` draws it settled. The store is read before the first frame
+  and the logs after it, so the page is on screen at once.
+- **Any day, from the page or the shell.** `←`/`→` step back through earlier
+  days and `t` returns to today; `cs day yesterday`, `cs day 3` and
+  `cs day 2026-09-30` open one directly. Enter opens the chosen session.
+  Piped, it prints the same page (coloured on a terminal), and
+  `cs day --json` gives every figure.
+
 ### Changed
 
 - **Session titles are read only for the sessions being shown.** Listing
-  rows fetched by id (the live page) used to read every
+  rows fetched by id (the live page, the day page) used to read every
   `workspace.yaml` in the store to title a handful of rows; on a store of
   two thousand sessions that was most of a second before the first frame.
 

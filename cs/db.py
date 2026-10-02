@@ -2394,6 +2394,144 @@ def spend_since(conn: sqlite3.Connection, since: str) -> int | None:
     ).fetchone()[0]
 
 
+# ── One day, whole ───────────────────────────────────────────────────
+# What `cs day` asks: everything recorded between two moments. The moments
+# are UTC stamps in the `YYYY-MM-DDTHH:MM:SS` shape — local midnight to the
+# next, worked out by the caller — and every row comes back with its own
+# time, so the caller can fold it into local hours wherever the clock sits,
+# half-hour time zones included.
+
+def _between(column: str) -> str:
+    """`column` held to [since, until) — two arguments, in that order.
+
+    `date()` drops a value that was never a time: compared as text, a stray
+    word sorts above every real stamp and would land inside the window.
+    """
+    stamp = _stamp_sql(column)
+    return f"date({column}) IS NOT NULL AND {stamp} >= ? AND {stamp} < ?"
+
+
+def day_usage(conn: sqlite3.Connection, since: str, until: str) -> list[tuple]:
+    """One row per billed call in the window, oldest first:
+
+    (session, model, nano, input, output, cache_read, cache_write, reasoning,
+     duration_ms, ttft_ms, initiator, at)
+
+    Columns this store predates read as 0 or ''. Empty where the store keeps
+    no usage, or keeps it without times — a day cannot be cut from that.
+    """
+    if not _has_usage(conn) or not usage_is_windowable(conn):
+        return []
+    columns = ", ".join(
+        f"COALESCE({_usage_optional(conn, name)}, 0)"
+        for name in ("total_nano_aiu", "input_tokens", "output_tokens",
+                     "cache_read_tokens", "cache_write_tokens",
+                     "reasoning_tokens", "duration_ms", "time_to_first_token_ms"))
+    model = _usage_optional(conn, "model", "''")
+    initiator = _usage_optional(conn, "initiator", "''")
+    return conn.execute(
+        f"""SELECT session_id, COALESCE({model}, ''), {columns},
+                   COALESCE({initiator}, ''), {_stamp_sql('created_at')}
+            FROM assistant_usage_events
+            WHERE {_between('created_at')}
+            ORDER BY rowid""",
+        (since, until),
+    ).fetchall()
+
+
+def day_turns(conn: sqlite3.Connection, since: str,
+              until: str) -> list[tuple[str, str]]:
+    """(session, at) for every turn in the window — each one something asked.
+
+    Empty where turns carry no time.
+    """
+    if not _has_columns(conn, "turns", "timestamp"):
+        return []
+    return conn.execute(
+        f"""SELECT session_id, {_stamp_sql('timestamp')} FROM turns
+            WHERE {_between('timestamp')} ORDER BY timestamp""",
+        (since, until),
+    ).fetchall()
+
+
+def day_files(conn: sqlite3.Connection, since: str,
+              until: str) -> list[tuple[str, str, str]] | None:
+    """(session, file_path, tool_name) for each file first touched in the window.
+
+    A file carries its own time on some stores; elsewhere it is timed by the
+    turn that touched it. None when neither is recorded — the day's files
+    are then unknown, which is not the same answer as none.
+    """
+    if not _has_files(conn):
+        return None
+    tool = optional(conn, "session_files", "tool_name", "f", "''")
+    if _has_columns(conn, "session_files", "first_seen_at"):
+        return conn.execute(
+            f"""SELECT f.session_id, f.file_path, COALESCE({tool}, '')
+                FROM session_files f
+                WHERE {_between('f.first_seen_at')}""",
+            (since, until),
+        ).fetchall()
+    if (_has_columns(conn, "session_files", "turn_index")
+            and _has_columns(conn, "turns", "timestamp")):
+        return conn.execute(
+            f"""SELECT f.session_id, f.file_path, COALESCE({tool}, '')
+                FROM session_files f
+                JOIN turns t ON t.session_id = f.session_id
+                            AND t.turn_index = f.turn_index
+                WHERE {_between('t.timestamp')}""",
+            (since, until),
+        ).fetchall()
+    return None
+
+
+def day_refs(conn: sqlite3.Connection, since: str,
+             until: str) -> list[tuple[str, str, str]] | None:
+    """(session, ref_type, value) for each commit or PR recorded in the window.
+
+    None where refs carry no time: which day they landed on is not recorded.
+    """
+    if not _has_table(conn, "session_refs") or not _has_columns(
+            conn, "session_refs", "created_at"):
+        return None
+    return conn.execute(
+        f"""SELECT session_id, ref_type, ref_value FROM session_refs
+            WHERE {_between('created_at')} ORDER BY rowid""",
+        (since, until),
+    ).fetchall()
+
+
+def day_started(conn: sqlite3.Connection, since: str, until: str) -> set[str]:
+    """The sessions created in the window."""
+    return {sid for (sid,) in conn.execute(
+        f"SELECT id FROM sessions WHERE {_between('created_at')}",
+        (since, until))}
+
+
+def spend_windows(conn: sqlite3.Connection,
+                  windows: list[tuple[str, str]]) -> list[int] | None:
+    """Nano-AIU billed in each [since, until) window, read in one pass.
+
+    One scan rather than one per window: on a store of a few hundred
+    thousand calls each scan is most of what a page refresh costs. None
+    when the store cannot say.
+    """
+    if not windows or not _has_usage(conn) or not usage_is_windowable(conn):
+        return None
+    stamp = _stamp_sql("created_at")
+    sums = ", ".join(
+        f"COALESCE(SUM(CASE WHEN {stamp} >= ? AND {stamp} < ? "
+        f"THEN total_nano_aiu END), 0)" for _ in windows)
+    bounds = tuple(edge for window in windows for edge in window)
+    row = conn.execute(
+        f"""SELECT {sums} FROM assistant_usage_events
+            WHERE {_between('created_at')}""",
+        (*bounds, min(since for since, _ in windows),
+         max(until for _, until in windows)),
+    ).fetchone()
+    return list(row)
+
+
 def opening_prompts(conn: sqlite3.Connection, session_ids: list[str],
                     first_only: bool = False) -> dict[str, list[tuple[int, str]]]:
     """(turn_index, prompt) per session, in order — the caller picks the openers.

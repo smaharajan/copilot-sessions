@@ -49,14 +49,15 @@ class HomeMenuTest(StoreTest):
         from cs import cli
 
         labels = [label for _, label, _, _, _ in cli._home_items()]
-        for wanted in ("Autonomy", "Handoffs", "Security",
+        for wanted in ("Today", "Autonomy", "Handoffs", "Security",
                        "Efficiency", "Hooks", "Repositories"):
             self.assertIn(wanted, labels)
         # Practice, Rhythm, Standup and Working days are commands, not rows.
         # Asserting both halves keeps a restored view from quietly rotting
-        # and a retired command from disappearing.
+        # and a retired command from disappearing. (The Today row is the day
+        # dashboard, `cs day`; `cs today` itself stays a command.)
         for wanted in ("Practice", "Rhythm", "Standup", "Working days",
-                       "Watch live", "Doctor", "Today", "Theme", "Help",
+                       "Watch live", "Doctor", "Theme", "Help",
                        "Saved searches",
                        "Spend anomalies", "Team rollup", "Unclean endings",
                        "Context", "Repo health", "Prompt patterns",
@@ -205,7 +206,7 @@ class HomeMenuTest(StoreTest):
                 heads = [value for kind, value in layout if kind == "head"]
                 expected = len(cli._HOME_GROUPS) if grouped else 0
                 self.assertEqual(len(heads), expected)
-        self.assertEqual(cli._home_layout(range(count), True)[0], ("head", "Find"))
+        self.assertEqual(cli._home_layout(range(count), True)[0], ("head", "Now"))
 
     def test_the_menu_is_grouped_at_every_size_worth_grouping(self):
         """Nineteen options in one column is the thing being fixed.

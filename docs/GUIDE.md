@@ -28,8 +28,11 @@ single line:
   ↻ last  Refactor cart service · acme/webshop · 2h ago · ⇥ Tab resumes
   activity ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄ all time · since 9 Mar 2026
   ────────────────────────────────────────────────────────────────────────────────────────────
+   ▌NOW  ───────────────────────────────────────────────────────────────────────────────────
+  ▌  🌅  Today             the whole day at a glance · spend, sessions, repos, models, live
+     📡  Live sessions     every Copilot CLI running now · status, tools, spend
    ▌FIND  ──────────────────────────────────────────────────────────────────────────────────
-  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
+     🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
@@ -135,7 +138,8 @@ types a greeting for the time of day with your session count, then the key
 hints type in over it. Any key skips straight to the finished screen, and
 coming back from a view never replays it.
 
-**Each group is drawn in its own hue.** `▌FIND` in the product blue, `▌MEASURE`
+**Each group is drawn in its own hue.** `▌NOW` in green, for what is
+happening today, `▌FIND` in the product blue, `▌MEASURE`
 in the violet that spend is drawn in everywhere else, `▌GOVERN` in amber
 because that block exists to tell you something is wrong, and `▌REFERENCE` in
 mint because it is simply there. It is the same accent bar `ui.heading` draws
@@ -241,8 +245,61 @@ stateDiagram-v2
 
 ## ☀️ Today
 
-These views are about now: what to pick up, and what the day and the week
-came to. None of them is on the home screen; `cs today` puts them on one page.
+These views are about now: the day so far, what to pick up, and what the day
+and the week came to. The day dashboard is the first row on the home screen;
+the rest are commands, and `cs today` puts them on one page.
+
+### 🌅 `cs day` — the whole day, on one dashboard
+
+The first row on the home screen, under **Now**. Everything since local
+midnight on one page that keeps itself current:
+
+<img src="img/day.svg" alt="cs day — the day's spend against yesterday, sessions, asks, what shipped, repositories, model calls, tokens, tool calls, files and active time as tiles, spend by hour as a gradient bar chart with asks beneath, then models, repositories, how it ran, every session of the day, what shipped, tools, and who did the work" width="980">
+
+- **The day in a sentence** — what was spent, across how many sessions and
+  repositories, and how that compares with yesterday *up to the same time
+  of day*. A morning set against a whole yesterday always reads as a quiet
+  one, so the comparison stops where today has got to; when yesterday had
+  nothing by now, it says what yesterday came to in all.
+- **Tiles** — AI spend, sessions (new today and live now), asks with their
+  busiest hour, commits and PRs, repositories, model calls and model time,
+  tokens with the share served from cache, tool calls and failures, files
+  created and edited, and active time with the first and last moment.
+- **Spend by hour** — a column per local hour in the theme's gradient, with
+  the asks you sent beneath on the same columns. Hours still to come are
+  dotted, and the hour you are in breathes while the page is live.
+- **Panels** — models by spend with their calls, average and first-token
+  time; repositories by spend with sessions and what shipped; how it ran
+  (cache hit rate, reasoning share, first-token p50 and p95, tokens in and
+  out, model time); every session of the day, dearest first, with its asks,
+  spend, an hour-by-hour sparkline and when it was active; the commits and
+  PRs; the tools called, their failures and the skills invoked; and who
+  started the calls — you, the agent, sub-agents or compaction.
+
+**Every figure is cut to the day by its own time**, not by when its session
+began, so a session opened last night counts only what it did today. Tool
+calls come from each session's event log, read on from where the last look
+stopped, so a refresh costs what was written since. A figure the store
+cannot time — refs or files on an older Copilot — is left off the page
+rather than shown as a zero. Active time is an inference and says so: it
+counts the five-minute slots that held an ask or a model call.
+
+**It opens with motion and then holds still.** The title types in, the
+counts roll up one tile after another, the bars rise and sweep in from
+midnight, and each panel wipes in a beat after the one before it, its bars
+filling and its figures counting up. Today rereads every five seconds and a
+figure a reread changes flashes with the change (`▲2.00`); otherwise the
+page redraws once a second for the clock. Under `CS_MOTION=off` the first
+frame is the finished page.
+
+The store is read before the first frame and the event logs after it, so
+the page is on screen at once. `←`/`→` (or `h`/`l`) step to earlier days and
+back, `t` returns to today, `↑↓` choose a session and Enter opens it, and
+PgUp/PgDn, Space and the wheel scroll; `r` rereads now and `q` goes back. A
+past day holds still. `cs day yesterday`, `cs day 3` or `cs day 2026-09-30`
+open another day; piped, `cs day` prints the same page as text,
+`cs day --json` gives every figure, and `cs day --csv` the day hour by hour
+(spend, calls and asks).
 
 ### 👉 `cs next` — what to pick up
 
@@ -315,7 +372,7 @@ event; `cs hooks` will then count its runs and failures.
 
 ### 📡 `cs live` — every session running now, on one page
 
-The first row on the home screen. It finds each running Copilot CLI by the
+The second row on the home screen, under **Now**. It finds each running Copilot CLI by the
 lock file it holds in its session folder (`inuse.<pid>.lock`, with the pid
 still alive) and lists each, most urgent first. The status comes from the
 tail of that session's event log:

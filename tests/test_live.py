@@ -451,14 +451,14 @@ class LiveTest(StoreTest):
         self.assertEqual(payload["view"], "live")
         self.assertEqual([s["id"] for s in payload["sessions"]], ["sess-alpha"])
 
-    def test_the_home_menu_opens_it_first(self):
+    def test_the_home_menu_opens_it_second_under_now(self):
         from cs import cli
 
-        _icon, label, _what, action, asks = cli._home_items()[0]
+        _icon, label, _what, action, asks = cli._home_items()[1]
         self.assertEqual((label, asks), ("Live sessions", ""))
-        self.assertEqual(cli._home_group(0), "Find")
+        self.assertEqual(cli._home_group(1), "Now")
         with mock.patch.object(cli, "cmd_live", return_value=True) as live:
-            self.assertTrue(cli._home_items()[0][3]())
+            self.assertTrue(cli._home_items()[1][3]())
         live.assert_called_once()
 
     # ── The home strip ───────────────────────────────────────────────

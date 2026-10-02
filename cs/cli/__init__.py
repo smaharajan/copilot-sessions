@@ -47,6 +47,7 @@ from .. import (  # noqa: F401
 from . import (  # noqa: E402
     _common,
     analysis,
+    day,
     dispatch,
     evidence,
     governance,
@@ -78,6 +79,7 @@ _SUBMODULES = (
     analysis,
     ops,
     live,
+    day,
     home,
     dispatch,
 )

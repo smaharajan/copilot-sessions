@@ -301,14 +301,18 @@ class TodayHomeTest(StoreTest):
         by_group: dict[str, list[str]] = {}
         for index, label in enumerate(labels):
             by_group.setdefault(cli._home_group(index), []).append(label)
-        self.assertNotIn("Today", labels)
-        self.assertNotIn("Today", by_group)
+        # The Today row is the day dashboard and leads the menu, with the
+        # live sessions beside it under Now; `cs today` stays a command.
+        self.assertEqual(by_group["Now"], ["Today", "Live sessions"])
+        with mock.patch.object(cli, "cmd_day", return_value=True) as day:
+            self.assertTrue(cli._home_items(7)[0][3]())
+        day.assert_called_once_with()
         self.assertNotIn("Saved searches", labels)
         self.assertNotIn("Similar work", labels)
         self.assertNotIn("My asks", labels)
         self.assertNotIn("File history", labels)
         self.assertNotIn("Improve", by_group)
-        self.assertEqual(labels[:2], ["Live sessions", "Recent sessions"])
+        self.assertEqual(labels[:3], ["Today", "Live sessions", "Recent sessions"])
 
     def test_the_day_commands_off_the_menu_still_open(self):
         from cs import cli

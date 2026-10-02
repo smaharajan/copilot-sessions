@@ -39,7 +39,15 @@ calls that expects the package namespace (`_page` looks up `_read_in_place`
 there) fails with a `KeyError`. Import at module level, or resolve through
 `globals()["name"]` where a module-level import would be circular. The view
 modules added for the day-to-day features are `evidence.py`, `today.py` and
-`analysis.py`.
+`analysis.py`; the live views are `live.py` and `day.py`.
+
+Lifting has a second consequence for a new module: every function and
+module-level name lands in **one** namespace, and the first module to define a
+non-callable name wins it. A constant called `_BINS` in a new view would
+silently read `today.py`'s. That is why `day.py` prefixes every name with
+`_day_`, and why a module may only use standard-library modules that
+`cli/__init__.py` itself imports (a lifted function looks `math` up in the
+package, which never imported it).
 
 ```mermaid
 flowchart TD
@@ -359,7 +367,7 @@ counts, not a menu row; it ticks about every five seconds and does not move
 the 60-second refresh. Every action is callable, so
 choosing a row cannot call something that isn't there: the menu collects what
 the row asks for and `cmd_home` passes it in. The groups are anchored by label
-in `_HOME_GROUP_STARTS` — Find, Measure, Govern, Reference —
+in `_HOME_GROUP_STARTS` — Now, Find, Measure, Govern, Reference, Settings —
 and a label that is not on the menu fails at start-up.
 
 The loop is the same shape as the listing's: the menu **returns a choice**, the
@@ -547,6 +555,52 @@ window the full seven-line mark steps down to a four-line one, and below about
 20 rows it gives up its space entirely and the old title line returns. Each
 step is a real terminal size, and `banner()` is pure — it takes two numbers and
 returns lines, which is why it can be tested without a terminal at all.
+
+## The day dashboard
+
+`cs day` (`cli/day.py`) is the first row on the menu: one local day, whole.
+It is built the way the live page is — `_day_data()` returns plain,
+already-masked data, which is also what `--json` hands back, and
+`_day_screen()` turns it into rows of `(x, text, role)` segments that the
+curses loop, the printed form and the width tests all read. Nothing in the
+drawing reads the clock; whatever moves arrives in a `motion` dict, which is
+what lets the tests play the entrance frame by frame.
+
+**A day is cut by each figure's own time.** The window is local midnight to
+the next, built from the calendar date so a day across a clock change is 23
+or 25 hours long, and written as UTC stamps. `db.day_usage`, `day_turns`,
+`day_files` and `day_refs` each return rows *with* their times, so the page
+folds them into local hours itself — a half-hour time zone gets its hours
+right. Each holds its column to the window with `date(col) IS NOT NULL`
+first: compared as text, a stray word sorts above every real stamp and would
+land inside any window. Files are timed by their own column where a store has
+one and by the turn that touched them where it does not; refs and files that
+cannot be timed come back `None`, and the page leaves their tiles out rather
+than drawing a zero. The three comparison sums (yesterday by now, yesterday
+in all, the week before) are one scan, `db.spend_windows`.
+
+**Tool calls are counted from the event log by timestamp.** A digest counts a
+whole log, which would credit today with a session's yesterday.
+`events.window_counts` reads only the five event types it needs, joins a
+completion to its start on `toolCallId` (a call begun before midnight and
+finished after is today's, with its name), and keeps a `memo` of how far each
+log was read. A page that refreshes passes the same memo back and reads only
+the bytes appended since; a half-written last line is left for the next look.
+
+**The first frame does not wait for the logs.** The store is read before
+curses starts — so a store that cannot be opened says so in plain words — and
+the logs on the first pass after a frame is on screen, behind the entrance.
+Until then the tool-calls tile holds its place with `…`, and only when one of
+the day's sessions has a log at all.
+
+**Motion is tied to arrival, as on the menu.** The title types, the tiles
+count up a beat apart, the hour chart rises and sweeps in from midnight, and
+each panel wipes in a row at a time behind a slanted edge (`_day_reveal`),
+growing its bars with `ui.grow` and counting its figures with `ui.count_up` —
+but never a clock time or a PR number, which `count_up` would otherwise roll.
+Once that has played, the loop waits a second at a time for the clock; today
+rereads every `DAY_REFRESH_SECONDS` and a tile whose value moved flashes with
+the change. Every helper answers "finished" under `CS_MOTION=off`.
 
 ## The interactive listing
 

@@ -109,6 +109,7 @@ responsible for. Put a test next to the behaviour it describes:
 | `test_ops.py` | Watch (tick, tail, timer discipline), doctor, the schema drift guard, and the rollup's no-fixture-text proof | 17 |
 | `test_analysis.py` | Compare, replay and its stepping, spend anomalies and their evidence, repo health, prompt patterns, agent-config columns, and the listing keys that open them | 17 |
 | `test_today.py` | Next up, end of day, weekly review, saved searches, the budget check, clean-up | 22 |
+| `test_day.py` | The day dashboard: cutting by each figure's own time, yesterday by the same hour, windowed tool calls read incrementally, widths, masking, the entrance and refresh | 19 |
 | `test_evidence.py` | Tool failures, stuck loops, sub-agents, model switches, unclean endings, hook runs and recorded autonomy — each with its evidence and masked | 19 |
 | `test_events.py` | The event log: malformed lines, the digest cache and its misses, and that no result text reaches the cache | 14 |
 | `test_security.py` | Hostile stored text — terminal control sequences that must never reach the screen | 2 |

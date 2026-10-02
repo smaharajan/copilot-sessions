@@ -53,7 +53,7 @@ DATA_COMMANDS = (
     "recent", "all", "search", "stats", "timeline", "cost", "efficiency",
     "agents", "repos", "skills", "profiles", "standup", "export",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "today", "saved", "cleanup", "budget",
+    "next", "eod", "weekly", "today", "day", "saved", "cleanup", "budget",
     "anomalies", "health", "patterns", "doctor", "rollup", "live",
 )
 
@@ -445,6 +445,12 @@ def weekly() -> dict:
 def today() -> dict:
     from .cli.today import _today_data
     return {"view": "today", **_today_data()}
+
+
+def day(offset: int = 0) -> dict:
+    """One local day, whole — see `cli.day` for how each figure is cut."""
+    from .cli.day import _day_export
+    return {"view": "day", **_day_export(offset)}
 
 
 def saved() -> dict:

@@ -1,11 +1,45 @@
 # Handover
 
-**Updated:** 2026-09-25
+**Updated:** 2026-10-02
 **Repository:** `smaharajan/copilot-sessions`
 **Branch:** `main`. Each phase is one signed commit, pushed straight to `main`.
 **Baseline:** `acf2b50` (`feat: split cs.cli into a package; add pins, budget, standup`)
 
 ## Current task
+
+A day dashboard, `cs day`, as the first row of the home screen under a new
+**Now** group (Today, Live sessions). The design and its reasons are in
+ARCHITECTURE.md, "The day dashboard"; the user-facing description is in
+GUIDE.md under Today.
+
+| Piece | State |
+|---|---|
+| `db.day_*` window queries and one-pass `spend_windows` | **done** |
+| `events.window_counts`: tool calls by timestamp, read incrementally | **done** |
+| `cli/day.py`: data, layout, entrance, live refresh, ←/→ days, Enter opens | **done** |
+| Home row, dispatch, `--json`, completion, help | **done** |
+| `tests/test_day.py` (19), README/GUIDE/CHANGELOG, `docs/img/day.svg` | **done** |
+
+`db.sessions_by_id` now reads the names of only the sessions it returns.
+It read every `workspace.yaml` in the store before, which on a store of about
+two thousand sessions was 0.4 s of every first frame that titled a row.
+
+Measured read-only on the reference store, 2026-10-02 (84k billed calls,
+six sessions today with 63 MB of event logs):
+
+| Run | Time |
+|---|---|
+| First store read, before the change to `sessions_by_id` | 1.29 s |
+| First store read, after | 0.21 s |
+| The day's event logs, cold | 0.06 s more |
+| A refresh, warm (store, running CLIs, appended log bytes) | 0.12 s |
+
+`docs/img/day.svg` was regenerated alone (`make_screens.shoot_day`), so the
+other screenshots are unchanged; `make_screens.py` now also points
+`CS_CONFIG_HOME` at the scratch store, so a saved theme or budget cannot leak
+into a picture.
+
+## Earlier task
 
 Slim the home screen, replace the weak views, and make the first frame fast.
 Baseline for this round: `77da3f3`. The five phases below are the previous

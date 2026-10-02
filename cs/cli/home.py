@@ -28,6 +28,7 @@ from ._common import (
     _visible,
     _window_label,
 )
+from .day import cmd_day
 from .evidence import _clean, cmd_failures, cmd_subagents, cmd_switches
 from .governance import cmd_audit, cmd_handoff, cmd_yolo
 from .inventory import (
@@ -73,11 +74,13 @@ def _home_items(period: int = 30,
     and the shape of a row is what you actually remember about it.
     """
     return [
-        # The day-to-day views are commands, not rows: `cs today`, and next,
-        # standup, eod, weekly and budget before it. The live session is
-        # drawn on this screen rather than opened as its own view, and the
-        # last session sits under the counts with Tab to resume it.
-        # (ui.menu_icon("today"), "Today", ... cmd_today),
+        # The day, whole, is the first row: the one view worth opening every
+        # morning and glancing at all day. The other day-to-day views stay
+        # commands — `cs today`, next, standup, eod, weekly and budget — and
+        # the last session sits under the counts with Tab to resume it.
+        (ui.menu_icon("today"), "Today",
+         "the whole day at a glance · spend, sessions, repos, models, live",
+         cmd_day, ""),
         (ui.menu_icon("live"), "Live sessions",
          "every Copilot CLI running now · status, tools, spend",
          cmd_live, ""),
@@ -193,6 +196,7 @@ def _step_period(current: int, delta: int) -> int:
 
 
 _HOME_GROUP_TONE = {
+    "Now": "turns",         # green — what is happening today
     "Find": "title",        # 39  — the product blue
     "Measure": "credits",   # 177 — violet, as spend is everywhere else
     "Govern": "warn",       # 214 — amber: this group is the bad news
@@ -208,7 +212,8 @@ _WINDOWED_GROUPS = frozenset({"Measure", "Govern"})
 
 
 _HOME_GROUP_STARTS: tuple[tuple[str, str], ...] = (
-    ("Live sessions", "Find"),
+    ("Today", "Now"),
+    ("Recent sessions", "Find"),
     ("Stats", "Measure"),
     ("Autonomy", "Govern"),
     ("Skills", "Reference"),
@@ -1499,6 +1504,12 @@ def cmd_help() -> None:
     cs home               The same, by name
 
   {ui.BOLD}Today{ui.RST}
+    cs day [when]         The whole day on one dashboard: spend against yesterday
+                          at the same hour, sessions, asks, repos, models, what
+                          shipped, files, tokens, cache, latency and tool calls
+                          {ui.DIM}when: today (default), yesterday, N days back or a
+                          date · today re-reads every 5s · ←→ other days · ↵ opens
+                          a session · the first row on the home screen{ui.RST}
     cs today              Where you are, on one page: the session running now,
                           what to pick up, since midnight, and this week
                           {ui.DIM}The home screen also draws the live sessions under the

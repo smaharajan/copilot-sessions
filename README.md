@@ -40,8 +40,11 @@ needs nothing beyond Python itself.
   ↻ last  Refactor cart service · acme/webshop · 2h ago · ⇥ Tab resumes
   activity ▂▂▁  ▁▃  ▂▂▂▁▂▂▅▂▁  ▂▂▂▂▃▂  ▃▁▂▁  ▂▆▂▄▁ ▁▂▃▃▂▃ ▂▂▄▃▄▂▁ ▅▄▃▂▄ all time · since 9 Mar 2026
   ────────────────────────────────────────────────────────────────────────────────────────────
+   ▌NOW  ───────────────────────────────────────────────────────────────────────────────────
+  ▌  🌅  Today             the whole day at a glance · spend, sessions, repos, models, live
+     📡  Live sessions     every Copilot CLI running now · status, tools, spend
    ▌FIND  ──────────────────────────────────────────────────────────────────────────────────
-  ▌  🕒  Recent sessions   browse, read and resume · last 7 days
+     🕒  Recent sessions   browse, read and resume · last 7 days
      📌  Pinned            sessions you marked to keep handy
      📚  All sessions      every session ever recorded · scroll to browse
      🔍  Search            full text across every turn and checkpoint
@@ -118,6 +121,26 @@ your thirty were ever reached for; the other nineteen are quietly rotting.
 
 ## ✨ What you get
 
+### 🌅 The whole day, on one dashboard
+
+The first row on the home screen. **`cs day`** puts everything since
+midnight on one live page: what you have spent against yesterday *by the
+same time of day*, sessions, asks, repositories, models, commits and PRs,
+files, tokens and cache, first-token latency, tool calls and their failures,
+active time, and who did the work — you, the agent or its sub-agents. Spend
+by hour is drawn as a gradient bar chart with your asks beneath it, and every
+session of the day is listed with its own hour-by-hour sparkline; Enter
+opens one.
+
+<img src="docs/img/day.svg" alt="cs day — tiles for spend, sessions, asks, shipped work, repositories, model calls, tokens, tool calls, files and active time; spend by hour as a gradient bar chart; then models, repositories, how it ran, every session of the day, what shipped, tools, and who did the work" width="980">
+
+Every figure is cut to the local day by its own timestamp, so a session
+opened last night counts only what it did today. The page opens with motion —
+counts roll up, bars rise and sweep in from midnight, panels wipe in one after
+another — rereads itself every five seconds, and flashes a figure when it
+moves (`▲2.00`). `←`/`→` step back through earlier days; `cs day yesterday`
+does the same from the shell, and `cs day --json` gives every figure.
+
 ### 🎓 Which of your skills and agents are earning their keep
 
 Everyone accumulates skills. Nobody knows which ones they use. `cs skills`
@@ -178,7 +201,8 @@ group.
 
 ### ☀️ Today, and finding the work again
 
-**`cs today`** is where you are, on one page (it is not on the home screen): the
+**`cs day`** is the whole day as a dashboard (above). **`cs today`** is where
+you are, on one page (it is not on the home screen): the
 session running now (its name, the last ten minutes, and today's budget), the
 top sessions to pick up (each with its reason and `cs resume`), what happened
 since midnight, and this week against the week before. Empty sections are
@@ -378,6 +402,7 @@ your `PATH` is shadowing it — `which -a cs` will show you what.
 
 ```bash
 cs                 # the home screen — every view is one keypress from here
+cs day             # today on one live dashboard: spend, sessions, repos, models
 cs search cache    # full-text across every turn and checkpoint
 cs read #3         # read the third session in the last listing
 cs resume #3       # jump back into it

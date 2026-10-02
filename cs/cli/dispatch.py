@@ -24,6 +24,7 @@ from .analysis import (
     cmd_health,
     cmd_patterns,
 )
+from .day import _day_offset, cmd_day
 from .evidence import (
     cmd_endings,
     cmd_failures,
@@ -85,7 +86,7 @@ _COMPLETION_COMMANDS = (
     "instructions", "hooks", "mcp", "standup", "daily", "coach", "rhythm",
     "context", "pin", "unpin", "pins", "note", "tag", "untag", "budget",
     "failures", "loops", "subagents", "switches", "endings",
-    "next", "eod", "weekly", "today", "saved", "cleanup",
+    "next", "eod", "weekly", "today", "day", "saved", "cleanup",
     "anomalies", "health", "patterns",
     "doctor", "rollup", "live",
     "show", "brief", "read",
@@ -496,6 +497,14 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         export.emit(export.saved(), fmt)
         return 0
 
+    if cmd == "day":
+        offset, error = _day_argument(rest)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        export.emit(export.day(offset), fmt)
+        return 0
+
     if cmd in ("anomalies", "patterns"):
         days, _sort, _desc, _word, _flags, error = _report_options(
             rest, None, days=True)
@@ -900,6 +909,12 @@ def _dispatch(argv: list[str] | None = None) -> int:
             print(f"error: unexpected argument '{rest[0]}'", file=sys.stderr)
             return 1
         cmd_today()
+    elif cmd == "day":
+        offset, error = _day_argument(rest)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        cmd_day(offset)
     elif cmd == "saved":
         if len(rest) > 1:
             print(f"error: unexpected argument '{rest[1]}'", file=sys.stderr)
@@ -950,6 +965,17 @@ def _dispatch(argv: list[str] | None = None) -> int:
         print(f"error: unknown command '{cmd}' — run 'cs help'", file=sys.stderr)
         return 1
     return 0
+
+
+def _day_argument(rest: list[str]) -> tuple[int, str | None]:
+    """Which day `cs day` was asked for, as days back from today."""
+    if len(rest) > 1:
+        return 0, f"unexpected argument '{rest[1]}'"
+    offset = _day_offset(rest[0] if rest else None)
+    if offset is None:
+        return 0, (f"not a day: '{rest[0]}' — use today, yesterday, a number of "
+                   "days back, or a date like 2026-09-30 within the last year")
+    return offset, None
 
 
 def _save_option(rest: list[str]) -> tuple[str | None, list[str], str | None]:

@@ -413,6 +413,105 @@ def digests(ids: Iterable[str] | None = None, days: int | None = None,
     return out
 
 
+# ── A window of a log ────────────────────────────────────────────────
+# A digest counts a whole log. A day has to count only its own part of a
+# session that began yesterday, so this reads each event's time instead.
+# A page that refreshes hands back the same `memo`, and each log is read on
+# from where the last look stopped: a running session's log is only ever
+# appended to, so a refresh costs what was written since, not the file.
+
+_WINDOW_TYPES = ("tool.execution_start", "tool.execution_complete",
+                 "subagent.completed", "subagent.failed", "skill.invoked")
+
+
+def window_counts(session_ids: Iterable[str], since: str, until: str,
+                  memo: dict | None = None) -> dict:
+    """Tool calls, failures, sub-agent runs and skills in [since, until).
+
+    `since` and `until` are `YYYY-MM-DDTHH:MM:SS` in UTC, the log's own
+    shape. Returns ``{"calls", "failures", "tools": {name: [calls,
+    failures]}, "subagents", "skills": {name: count}, "logs"}`` — names and
+    counts only, never text. `logs` is how many of the sessions had a log
+    to read, so a caller can tell "no tool calls" from "nothing to read".
+    """
+    memo = {} if memo is None else memo
+    prefixes = tuple(_prefix(kind) for kind in _WINDOW_TYPES)
+    total: dict = {"calls": 0, "failures": 0, "tools": {}, "subagents": 0,
+                   "skills": {}, "logs": 0}
+    for session_id in session_ids:
+        path = events_path(session_id)
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        entry = memo.get(session_id)
+        if (entry is None or entry["window"] != (since, until)
+                or size < entry["offset"]):
+            entry = memo[session_id] = {
+                "window": (since, until), "offset": 0, "open": {},
+                "calls": 0, "failures": 0, "tools": {}, "subagents": 0,
+                "skills": {}}
+        if size > entry["offset"]:
+            _window_read(path, entry, prefixes)
+        total["logs"] += 1
+        for key in ("calls", "failures", "subagents"):
+            total[key] += entry[key]
+        for name, (calls, failures) in entry["tools"].items():
+            counts = total["tools"].setdefault(name, [0, 0])
+            counts[0] += calls
+            counts[1] += failures
+        for name, count in entry["skills"].items():
+            total["skills"][name] = total["skills"].get(name, 0) + count
+    return total
+
+
+def _window_read(path: Path, entry: dict, prefixes: tuple[bytes, ...]) -> None:
+    """Read one log on from `entry["offset"]`, counting what falls in its window."""
+    since, until = entry["window"]
+    try:
+        handle = open(path, "rb")
+    except OSError:
+        return
+    with handle:
+        handle.seek(entry["offset"])
+        for line in handle:
+            if not line.endswith(b"\n"):
+                break  # still being written: read it whole next time
+            entry["offset"] += len(line)
+            if not line.startswith(prefixes) and line.startswith(b'{"type":"'):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict) or event.get("type") not in _WINDOW_TYPES:
+                continue
+            kind = event["type"]
+            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            call = _name(data.get("toolCallId"))
+            if kind == "tool.execution_start":
+                if call:
+                    entry["open"][call] = _name(data.get("toolName")) or "unknown"
+                continue
+            tool = entry["open"].pop(call, "") if call else ""
+            if not since <= _stamp(event) < until:
+                continue
+            if kind == "tool.execution_complete":
+                tool = tool or _name(data.get("toolName")) or "unknown"
+                counts = entry["tools"].setdefault(tool, [0, 0])
+                counts[0] += 1
+                entry["calls"] += 1
+                if data.get("success") is False:
+                    counts[1] += 1
+                    entry["failures"] += 1
+            elif kind == "skill.invoked":
+                skill = _name(data.get("name"))
+                if skill:
+                    entry["skills"][skill] = entry["skills"].get(skill, 0) + 1
+            else:
+                entry["subagents"] += 1
+
+
 def _stderr_is_tty() -> bool:
     try:
         return sys.stderr.isatty()

@@ -246,6 +246,98 @@ def _seed_disk(home: Path, project: Path) -> None:
         "# Agent brief\n\n## Build\n`make build`\n\n## Review\nOne test per fix.\n")
 
 
+def _seed_today(base: Path) -> None:
+    """A working day for `cs day`, spread over the hours so far.
+
+    The rest of the store is stamped in whole days back from now, which puts
+    a day's work in the same second — and a dashboard of one day is about
+    its shape. These times are worked out in local time, so the bars land in
+    hours that have already happened wherever and whenever this is run.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now().astimezone()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = max(midnight + timedelta(hours=8), now - timedelta(hours=9))
+    if start >= now:
+        start = midnight
+    span = (now - start).total_seconds()
+
+    def at(share: float) -> str:
+        moment = start + timedelta(seconds=span * min(max(share, 0.0), 1.0))
+        return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    conn = sqlite3.connect(base / "session-store.db")
+    # A commit lands when its session ran, not when this store was built.
+    conn.execute("UPDATE session_refs SET created_at = (SELECT created_at FROM "
+                 "sessions s WHERE s.id = session_refs.session_id)")
+    work = (  # repository, summary, first and last share of the day, weight, model
+        ("acme/portal", "Build the customer portal shell", 0.00, 0.35, 3,
+         "claude-opus-4.8"),
+        ("acme/payments", "Fix flaky payment tests", 0.18, 0.55, 2, "gpt-5.5"),
+        ("acme/webshop", "Add checkout validation", 0.42, 0.82, 4,
+         "claude-sonnet-4.6"),
+        ("acme/infra", "Migrate CI to GitHub Actions", 0.70, 1.00, 2, "gpt-5.5"),
+    )
+    tools = ("bash", "view", "edit", "grep", "bash", "create")
+    for n, (repo, summary, first, last, weight, model) in enumerate(work):
+        sid = f"da7da7da-2222-4222-8222-{n:012x}"
+        folder = f"/work/{repo.split('/')[1]}"
+        conn.execute("INSERT INTO sessions VALUES (?,?,?,'github','main',?,?,?)",
+                     (sid, folder, repo, f"{summary} · today", at(first), at(last)))
+        lines = []
+        steps = 16
+        for k in range(steps):
+            share = first + (last - first) * k / (steps - 1)
+            if k % 3 == 0:
+                conn.execute(
+                    "INSERT INTO turns (session_id, turn_index, user_message,"
+                    " assistant_response, timestamp) VALUES (?,?,?,?,?)",
+                    (sid, k // 3, "carry on", "Done.", at(share)))
+            initiator = ("compaction" if k == steps - 1 else "user" if k % 3 == 0
+                         else "sub-agent" if k % 7 == 3 else "agent")
+            conn.execute(
+                """INSERT INTO assistant_usage_events
+                   (session_id, turn_index, model, total_nano_aiu, input_tokens,
+                    output_tokens, cache_read_tokens, reasoning_tokens,
+                    duration_ms, time_to_first_token_ms, finish_reason,
+                    content_filter_triggered, initiator, agent_id, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,'stop',0,?,?,?)""",
+                (sid, k // 3, "gpt-5.4-mini" if k % 5 == 4 else model,
+                 weight * (70 + 30 * (k % 4)) * 1_000_000, 1800 + 90 * k,
+                 300 + 20 * k, 14000 + 700 * k, 90 * (k % 3), 3000 + 250 * (k % 6),
+                 600 + 45 * (k % 5), initiator,
+                 f"toolu_{sid[-4:]}_{k}" if initiator == "sub-agent" else None,
+                 at(share)))
+            if k % 4 == 1:
+                conn.execute(
+                    "INSERT INTO session_files (session_id, file_path, tool_name,"
+                    " first_seen_at) VALUES (?,?,?,?)",
+                    (sid, f"{folder}/src/part_{k}.py",
+                     "create" if k % 8 == 1 else "edit", at(share)))
+            for call in range(3):
+                stamp = at(share)[:19]
+                name = tools[(k + call) % len(tools)]
+                ident = f"call-{n}-{k}-{call}"
+                lines.append({"type": "tool.execution_start", "timestamp": stamp,
+                              "data": {"toolCallId": ident, "toolName": name}})
+                lines.append({"type": "tool.execution_complete", "timestamp": stamp,
+                              "data": {"toolCallId": ident,
+                                       "success": (k * 3 + call) % 17 != 5}})
+        if n in (0, 2):
+            conn.executemany(
+                "INSERT INTO session_refs (session_id, ref_type, ref_value,"
+                " created_at) VALUES (?,?,?,?)",
+                [(sid, "commit", f"{n + 7:x}c41d9e", at(last)),
+                 (sid, "pr", str(240 + n), at(last))])
+        log = base / "session-state" / sid
+        log.mkdir(parents=True, exist_ok=True)
+        (log / "events.jsonl").write_text(
+            "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines))
+    conn.commit()
+    conn.close()
+
+
 # ── terminal capture ─────────────────────────────────────────────────────────
 
 def capture(argv: list[str], home: Path, cwd: Path, columns: int = 92) -> str:
@@ -263,6 +355,9 @@ def capture(argv: list[str], home: Path, cwd: Path, columns: int = 92) -> str:
         # permanently, which is the one thing this script exists to prevent.
         "CS_AGENTS_HOME": str(home / ".agents"),
         "COLUMNS": str(columns), "LINES": "60",
+        # Settings too: a maintainer's saved theme or daily budget is not
+        # part of the picture.
+        "CS_CONFIG_HOME": str(home / ".config"),
         "TERM": "xterm-256color",
         # `PAGER`, which is the variable `_page` actually reads. This said
         # `CS_PAGER`, which nothing in the package has ever honoured — so a
@@ -445,6 +540,14 @@ SHOTS: tuple[tuple[str, list[str], str], ...] = (
 )
 
 
+def shoot_day(home: Path, project: Path) -> None:
+    """`cs day` at the width where its panels sit three abreast."""
+    _seed_today(home)
+    raw = capture(["day"], home, project, columns=120)
+    (OUT / "day.svg").write_text(to_svg(raw, "cs day"), encoding="utf-8")
+    print("  wrote docs/img/day.svg")
+
+
 def main() -> int:
     # A fixed, anonymous path rather than a random temporary one: `cs` prints
     # the directory it audited, so a random name would put a different string
@@ -464,6 +567,8 @@ def main() -> int:
             raw = capture(argv, home, project)
             (OUT / f"{name}.svg").write_text(to_svg(raw, title), encoding="utf-8")
             print(f"  wrote docs/img/{name}.svg")
+        # Last, because it adds today's work to the store the others shared.
+        shoot_day(home, project)
     finally:
         shutil.rmtree(root, ignore_errors=True)
     return 0
