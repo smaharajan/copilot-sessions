@@ -258,7 +258,7 @@ there are, and a long list scrolls inside its own panel. `⇥`/`⇧⇥` or `1`�
 switch tabs (a click on one works too); the content slides in from the side
 you chose and the underline glides across.
 
-<img src="img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the AI spend in each ten minutes as braille bars on a round AIU scale, and models, repositories and tools" width="980">
+<img src="img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the AI spend in each ten minutes as braille bars on a round AIU scale, and the top sessions, models and repositories" width="980">
 
 **Overview** — what to read if nothing else.
 
@@ -283,11 +283,13 @@ you chose and the underline glides across.
   and figure. A quiet hour is a flat baseline and a burst stands up on its
   own — a running total would only ever rise, and draw three bursts as a
   day of steady spending.
-- **Models, repositories and tools**, each with its share; models show the
-  time they ran beside what they cost.
+- **Top sessions, models and repositories**, each with its share of the
+  spend. A session that is running spins (`◆` when it is your turn, `▲` when
+  it is asking you) and `+` marks one started today; models show the time
+  they ran beside what they cost. Tool calls are on the Activity tab.
 
-The page lists no sessions: it is the day in figures. `cs today`, `cs live`
-and the listings are where individual sessions are.
+The sessions are listed, not opened: there is no per-session tab. `cs live`
+and the listings are where you go into one.
 
 <img src="img/day-breakdown.svg" alt="cs day, Breakdown tab — every model's AIU, share of spend, time, share of time and AIU per minute, with an all-models total and spend and time drawn as two stacked bars; then how the calls ran, who did the work, and repositories" width="980">
 

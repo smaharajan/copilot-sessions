@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (sessions, asks, model calls, tool calls, shipped, active time) with
     their hour-by-hour shape; the AI spend actually billed in each ten
     minutes, drawn as braille bars coloured by cost on a round AIU scale
-    with the dearest labelled; and models, repositories and tools.
+    with the dearest labelled; and the top sessions, models and
+    repositories.
   - **Breakdown** — each model's AIU and share against **the time it ran,
     its share of time and AIU per minute of model time**, with an
     all-models total and spend and time as paired stacked bars; then cache,

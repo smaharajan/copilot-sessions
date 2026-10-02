@@ -627,7 +627,8 @@ log tails. The tests set `state["threaded"] = False` to read in place.
 header and the ticker and lays itself out to them: on the Overview the
 lists take what they need up to a cap and the spend chart takes the rest; on
 Sessions the rows scroll inside their panel under fixed column headings;
-on Activity the feed fills what is left. The page lists no sessions. Page scrolling is the fallback for
+on Activity the feed fills what is left. The Overview lists the dearest
+sessions but has no cursor: there is nothing on the page to open. Page scrolling is the fallback for
 a window too small for any of that.
 
 **Motion is tied to arrival, as on the menu.** The entrance is one clock:

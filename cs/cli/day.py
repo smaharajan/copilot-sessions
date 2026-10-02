@@ -48,6 +48,7 @@ from .live import (
     _live_short,
     _live_span,
     _live_status,
+    _live_status_mark,
     _live_theme,
     _live_wave,
     _LiveTail,
@@ -1505,6 +1506,37 @@ def _day_spend_chart(data: dict, width: int, rows: int, motion: dict
     return title, [(t, r or "help") for t, r in note], body
 
 
+def _day_mark(session: dict, motion: dict) -> tuple[str, str]:
+    """A session's mark: spinning while it runs, + if it began today."""
+    if session.get("status"):
+        return _live_status_mark({"status": session["status"]}, motion)
+    if session["live"]:
+        return "●", motion.get("pulse", "active")
+    if session["new"]:
+        return "+", "active"
+    return "·", "separator"
+
+
+def _day_top(data: dict, width: int, motion: dict, limit: int
+             ) -> tuple[list, list, list]:
+    """The day's dearest sessions, each with its share of the spend."""
+    inner = width - 4
+    sessions = data["by_session"][:limit]
+    title = [("Top sessions", "header")]
+    if not sessions:
+        return title, [], [_live_line([("No sessions.", "help")], inner)]
+    spent = data["spend"]["nano_aiu"] or 0
+    chips = max(motion.get("chips", 8), 1)
+    items = [(s["title"], s["nano_aiu"] / spent if spent else 0.0, f"c{n % chips}",
+              [(ui.fmt_aiu(s["nano_aiu"]).rjust(6), "credits")], f"c{n % chips}",
+              s["title"]) for n, s in enumerate(sessions)]
+    body = []
+    for n, row in enumerate(_day_rank_rows(items, inner)):
+        row[0] = (0, *_day_mark(sessions[n], motion))
+        body.append(row)
+    return title, [(f"{len(data['by_session'])} today", "help")], body
+
+
 def _day_models_mini(data: dict, width: int, motion: dict, limit: int
                      ) -> tuple[list, list, list]:
     """Models by spend, with the time each one ran beside it."""
@@ -1628,14 +1660,14 @@ def _day_overview(data: dict, usable: int, room: int | None, motion: dict
     if room is not None:
         limit = min(max(room - len(body) - 4 - 6 - 2, 3), 8)
     if usable >= 110:
-        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1),
-                 (lambda w: _day_repos(data, w, motion, limit), 1),
-                 (lambda w: _day_tool_panel(data, w, motion, limit), 1)]
+        specs = [(lambda w: _day_top(data, w, motion, limit), 4),
+                 (lambda w: _day_models_mini(data, w, motion, limit), 3),
+                 (lambda w: _day_repos(data, w, motion, limit), 3)]
     elif usable >= 70:
-        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1),
-                 (lambda w: _day_repos(data, w, motion, limit), 1)]
+        specs = [(lambda w: _day_top(data, w, motion, limit), 1),
+                 (lambda w: _day_models_mini(data, w, motion, limit), 1)]
     else:
-        specs = [(lambda w: _day_models_mini(data, w, motion, limit), 1)]
+        specs = [(lambda w: _day_top(data, w, motion, limit), 1)]
     bottom, hits = _day_row_of(specs, usable, motion, 1.05)
     chart_rows = 7
     if room is not None:

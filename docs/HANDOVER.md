@@ -21,6 +21,7 @@ GUIDE.md under Today.
 | Redesign after first look: four tabs fitted to the screen, cards, braille spend per ten minutes, session timeline | **done** |
 | Second look: the spend at the size of every other figure; the running total replaced by what was billed in each ten minutes, which it misrepresented | **done** |
 | Third look: a round AIU axis with its unit; the Sessions tab and Top sessions panel removed; commits counted from git, Copilot's refs and the agents' `git commit` commands | **done** |
+| Fourth look: Top sessions back on the Overview (listed, not opened) in place of Tools, which stays on Activity | **done** |
 | Model time: each model's time, share of time and AIU a minute | **done** |
 | Background reread, rolling figures, spinners, ticker and live feed | **done** |
 | `tests/test_day.py` (25), README/GUIDE/CHANGELOG, `docs/img/day*.svg` | **done** |

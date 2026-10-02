@@ -613,6 +613,20 @@ class DayTest(StoreTest):
         with self.assertRaises(KeyError):
             cli._day_collect(state)
 
+    def test_the_overview_lists_the_dearest_sessions_and_not_the_tools(self):
+        from cs import cli
+
+        self._session("sess-wide", "Tidy the release notes", self.today)
+        self._spend("sess-wide", self.today + timedelta(minutes=3), 1)
+        data = cli._day_data(0)
+        _head, body, _foot, hits = cli._day_screen(data, 140, 48, {"grad": 8}, 0)
+        text = "\n".join(" ".join(t for _x, t, _r in line) for line in body)
+        self.assertIn("Top sessions", text)
+        self.assertLess(text.index("Build Three.js portal"), text.index("Tidy the release notes"),
+                        "dearest first")
+        self.assertNotIn("Tools", text)
+        self.assertEqual(hits, [], "listed, not opened: the page has no session cursor")
+
     def test_it_is_the_first_row_on_the_home_menu(self):
         from cs import cli
 

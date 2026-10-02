@@ -131,7 +131,7 @@ as a dashboard in three tabs, each fitted to one screen:
   minute of model time; six cards for sessions, asks, model calls, tool
   calls, what shipped and active time, each with its hour-by-hour shape;
   the AI spend in each ten minutes, on a round AIU scale, so quiet hours sit
-  flat and bursts stand out; and models, repositories and tools.
+  flat and bursts stand out; and the top sessions, models and repositories.
 - **Breakdown** — each model's spend *against the time it ran*: AIU, share,
   time, share of time and **AIU per minute of model time**, with an
   all-models total; then cache, reasoning, latency and tokens, who did the
@@ -142,7 +142,7 @@ as a dashboard in three tabs, each fitted to one screen:
   recorded, and from the `git commit` commands the agents ran — which is
   where a commit made in a scratch clone shows up.
 
-<img src="docs/img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the AI spend in each ten minutes as braille bars on a round AIU scale, and models, repositories and tools" width="980">
+<img src="docs/img/day.svg" alt="cs day, Overview tab — the day's spend against yesterday with what it came to per hour, per ask and per model-minute, six cards with hourly sparklines, the AI spend in each ten minutes as braille bars on a round AIU scale, and the top sessions, models and repositories" width="980">
 
 <img src="docs/img/day-breakdown.svg" alt="cs day, Breakdown tab — every model's AIU, share of spend, time, share of time and AIU per minute, with an all-models total and spend and time drawn as two stacked bars; then how the calls ran, who did the work, and repositories" width="980">
 
