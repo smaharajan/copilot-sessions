@@ -2508,6 +2508,23 @@ def day_started(conn: sqlite3.Connection, since: str, until: str) -> set[str]:
         (since, until))}
 
 
+def spend_times(conn: sqlite3.Connection, since: str,
+                until: str) -> list[tuple[str, int]]:
+    """(at, nano-AIU) for each billed call in the window, oldest first.
+
+    The shape of a day's spending without the rest of each row — what a
+    comparison curve needs. Empty where the store cannot time its calls.
+    """
+    if not _has_usage(conn) or not usage_is_windowable(conn):
+        return []
+    return conn.execute(
+        f"""SELECT {_stamp_sql('created_at')}, COALESCE(total_nano_aiu, 0)
+            FROM assistant_usage_events
+            WHERE {_between('created_at')} ORDER BY rowid""",
+        (since, until),
+    ).fetchall()
+
+
 def spend_windows(conn: sqlite3.Connection,
                   windows: list[tuple[str, str]]) -> list[int] | None:
     """Nano-AIU billed in each [since, until) window, read in one pass.

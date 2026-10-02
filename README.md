@@ -121,25 +121,40 @@ your thirty were ever reached for; the other nineteen are quietly rotting.
 
 ## ✨ What you get
 
-### 🌅 The whole day, on one dashboard
+### 🌅 The whole day, on one live dashboard
 
-The first row on the home screen. **`cs day`** puts everything since
-midnight on one live page: what you have spent against yesterday *by the
-same time of day*, sessions, asks, repositories, models, commits and PRs,
-files, tokens and cache, first-token latency, tool calls and their failures,
-active time, and who did the work — you, the agent or its sub-agents. Spend
-by hour is drawn as a gradient bar chart with your asks beneath it, and every
-session of the day is listed with its own hour-by-hour sparkline; Enter
-opens one.
+The first row on the home screen. **`cs day`** is everything since midnight
+as a dashboard in four tabs, each fitted to one screen:
 
-<img src="docs/img/day.svg" alt="cs day — tiles for spend, sessions, asks, shipped work, repositories, model calls, tokens, tool calls, files and active time; spend by hour as a gradient bar chart; then models, repositories, how it ran, every session of the day, what shipped, tools, and who did the work" width="980">
+- **Overview** — the day's spend in large figures, set against yesterday
+  *by the same time of day*, with a gauge and the cost of a model-minute;
+  six cards for sessions, asks, model calls, tool calls, what shipped and
+  active time, each with its hour-by-hour shape; the spend as a running
+  total drawn beside yesterday's; and the top sessions, models and
+  repositories.
+- **Sessions** — every session of the day on a 24-hour timeline, shaded by
+  what it spent in each ten minutes, a line marking now, and a spinner on
+  the ones still running. Enter opens one.
+- **Breakdown** — each model's spend *against the time it ran*: AIU, share,
+  time, share of time and **AIU per minute of model time**, with an
+  all-models total; then cache, reasoning, latency and tokens, who did the
+  work, and repositories.
+- **Activity** — spend and asks by hour, tools and their failures, commits
+  and PRs, and a live feed of what the running sessions are doing.
+
+<img src="docs/img/day.svg" alt="cs day, Overview tab — the day's spend in large gradient figures against yesterday, six cards with hourly sparklines, the spend as a running total beside yesterday's, and the top sessions, models and repositories" width="980">
+
+<img src="docs/img/day-breakdown.svg" alt="cs day, Breakdown tab — every model's AIU, share of spend, time, share of time and AIU per minute, with an all-models total and spend and time drawn as two stacked bars; then how the calls ran, who did the work, and repositories" width="980">
 
 Every figure is cut to the local day by its own timestamp, so a session
-opened last night counts only what it did today. The page opens with motion —
-counts roll up, bars rise and sweep in from midnight, panels wipe in one after
-another — rereads itself every five seconds, and flashes a figure when it
-moves (`▲2.00`). `←`/`→` step back through earlier days; `cs day yesterday`
-does the same from the shell, and `cs day --json` gives every figure.
+opened last night counts only what it did today. It opens with motion — the
+spend rolls up like an odometer, the cards deal in, the running total draws
+itself across the day — and stays alive while you watch: today rereads in the
+background every few seconds, figures roll to their new value, running
+sessions spin, and the newest event types into the ticker at the foot of the
+page. `⇥` or `1`–`4` switch tabs, `←`/`→` step through earlier days;
+`cs day yesterday` does the same from the shell, and `cs day --json` gives
+every figure.
 
 ### 🎓 Which of your skills and agents are earning their keep
 

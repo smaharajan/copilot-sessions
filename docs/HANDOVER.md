@@ -18,7 +18,16 @@ GUIDE.md under Today.
 | `events.window_counts`: tool calls by timestamp, read incrementally | **done** |
 | `cli/day.py`: data, layout, entrance, live refresh, ←/→ days, Enter opens | **done** |
 | Home row, dispatch, `--json`, completion, help | **done** |
-| `tests/test_day.py` (19), README/GUIDE/CHANGELOG, `docs/img/day.svg` | **done** |
+| Redesign after first look: four tabs fitted to the screen, hero figures, cards, braille running total, session timeline | **done** |
+| Model time: each model's time, share of time and AIU a minute | **done** |
+| Background reread, rolling figures, spinners, ticker and live feed | **done** |
+| `tests/test_day.py` (25), README/GUIDE/CHANGELOG, `docs/img/day*.svg` | **done** |
+
+The first version was one long page of ten tiles and eight panels, and its
+only motion was a 1.3 s entrance that a synchronous log read partly hid.
+Seen in a real terminal it read as crowded and still, so the page became
+four tabs that each fit a screen, and the reread moved to a thread so the
+motion after the entrance never stalls. Each frame builds in 1–4 ms.
 
 `db.sessions_by_id` now reads the names of only the sessions it returns.
 It read every `workspace.yaml` in the store before, which on a store of about
@@ -34,8 +43,9 @@ six sessions today with 63 MB of event logs):
 | The day's event logs, cold | 0.06 s more |
 | A refresh, warm (store, running CLIs, appended log bytes) | 0.12 s |
 
-`docs/img/day.svg` was regenerated alone (`make_screens.shoot_day`), so the
-other screenshots are unchanged; `make_screens.py` now also points
+`docs/img/day.svg` and `day-breakdown.svg` were regenerated alone
+(`make_screens.shoot_day`, which cuts each tab out of the printed page), so
+the other screenshots are unchanged; `make_screens.py` now also points
 `CS_CONFIG_HOME` at the scratch store, so a saved theme or budget cannot leak
 into a picture.
 

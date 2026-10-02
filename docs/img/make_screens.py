@@ -540,12 +540,32 @@ SHOTS: tuple[tuple[str, list[str], str], ...] = (
 )
 
 
+def _section(raw: str, start: str | None, end: str | None) -> str:
+    """The lines of a capture from the one naming `start` up to `end`.
+
+    `cs day` prints every tab in turn under a heading of its name; each
+    picture is one tab, cut from that real output rather than drawn.
+    """
+    lines = raw.replace("\r\n", "\n").split("\n")
+    plain = [_OTHER_ESCAPE.sub("", _SGR.sub("", line)) for line in lines]
+    first = next((n for n, line in enumerate(plain) if start and f"── {start} " in line), 0)
+    last = next((n for n, line in enumerate(plain)
+                 if n > first and end and f"── {end} " in line), len(lines))
+    title = lines[:1] if first else []
+    return "\n".join(title + lines[first + (1 if first else 0):last])
+
+
 def shoot_day(home: Path, project: Path) -> None:
-    """`cs day` at the width where its panels sit three abreast."""
+    """`cs day` at the width where its panels sit three abreast: the
+    Overview, and the Breakdown with each model's spend against its time."""
     _seed_today(home)
     raw = capture(["day"], home, project, columns=120)
-    (OUT / "day.svg").write_text(to_svg(raw, "cs day"), encoding="utf-8")
-    print("  wrote docs/img/day.svg")
+    for name, start, end, title in (
+            ("day", None, "Sessions", "cs day · Overview"),
+            ("day-breakdown", "Breakdown", "Activity", "cs day · Breakdown")):
+        (OUT / f"{name}.svg").write_text(to_svg(_section(raw, start, end), title),
+                                        encoding="utf-8")
+        print(f"  wrote docs/img/{name}.svg")
 
 
 def main() -> int:

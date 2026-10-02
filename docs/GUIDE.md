@@ -249,32 +249,63 @@ These views are about now: the day so far, what to pick up, and what the day
 and the week came to. The day dashboard is the first row on the home screen;
 the rest are commands, and `cs today` puts them on one page.
 
-### 🌅 `cs day` — the whole day, on one dashboard
+### 🌅 `cs day` — the whole day, on one live dashboard
 
 The first row on the home screen, under **Now**. Everything since local
-midnight on one page that keeps itself current:
+midnight as a dashboard in four tabs. Each tab is fitted to the window, so
+on a normal terminal nothing scrolls: the charts and lists take the rows
+there are, and a long list scrolls inside its own panel. `⇥`/`⇧⇥` or `1`–`4`
+switch tabs (a click on one works too); the content slides in from the side
+you chose and the underline glides across.
 
-<img src="img/day.svg" alt="cs day — the day's spend against yesterday, sessions, asks, what shipped, repositories, model calls, tokens, tool calls, files and active time as tiles, spend by hour as a gradient bar chart with asks beneath, then models, repositories, how it ran, every session of the day, what shipped, tools, and who did the work" width="980">
+<img src="img/day.svg" alt="cs day, Overview tab — the day's spend in large gradient figures against yesterday, six cards with hourly sparklines, the spend as a running total beside yesterday's, and the top sessions, models and repositories" width="980">
 
-- **The day in a sentence** — what was spent, across how many sessions and
-  repositories, and how that compares with yesterday *up to the same time
-  of day*. A morning set against a whole yesterday always reads as a quiet
-  one, so the comparison stops where today has got to; when yesterday had
-  nothing by now, it says what yesterday came to in all.
-- **Tiles** — AI spend, sessions (new today and live now), asks with their
-  busiest hour, commits and PRs, repositories, model calls and model time,
-  tokens with the share served from cache, tool calls and failures, files
-  created and edited, and active time with the first and last moment.
-- **Spend by hour** — a column per local hour in the theme's gradient, with
-  the asks you sent beneath on the same columns. Hours still to come are
-  dotted, and the hour you are in breathes while the page is live.
-- **Panels** — models by spend with their calls, average and first-token
-  time; repositories by spend with sessions and what shipped; how it ran
-  (cache hit rate, reasoning share, first-token p50 and p95, tokens in and
-  out, model time); every session of the day, dearest first, with its asks,
-  spend, an hour-by-hour sparkline and when it was active; the commits and
-  PRs; the tools called, their failures and the skills invoked; and who
-  started the calls — you, the agent, sub-agents or compaction.
+**Overview** — what to read if nothing else.
+
+- **The day in a sentence**: what was spent, across how many sessions and
+  repositories, over how much model time, and how that compares with
+  yesterday *up to the same time of day*. A morning set against a whole
+  yesterday always reads as a quiet one, so the comparison stops where today
+  has got to; when yesterday had nothing by now, it says what yesterday came
+  to in all.
+- **AI spend** in large figures, in the theme's gradient, with the change
+  against yesterday, a gauge (against your daily budget when one is set,
+  else against all of yesterday, else the 7-day average), the cost of a
+  minute of model time, and the 7-day average.
+- **Six cards**: sessions (new, live), asks (and their busiest hour), model
+  calls (and model time), tool calls (failures, the busiest tools), what
+  shipped, and active time — each with its shape hour by hour. A figure the
+  store cannot give makes room for files or tokens.
+- **Spend through the day**: the running total, drawn in braille as a filled
+  area in the gradient, beside the day before's as a line, with the figure
+  at its head. Where today crosses yesterday's line is where you passed it.
+- **Top sessions, models and repositories**, each with its share of the
+  spend; models show the time they ran beside what they cost.
+
+**Sessions** — every session of the day on one 24-hour timeline, shaded by
+what it spent in each ten minutes (a light mark where you asked something
+and nothing was billed), with a line where now is, its asks, spend and
+repository, and when it was active. Running sessions spin (`▲` when one is
+asking you, `◆` when it is your turn); `+` marks one started today. `↑↓`
+choose and Enter opens it.
+
+<img src="img/day-breakdown.svg" alt="cs day, Breakdown tab — every model's AIU, share of spend, time, share of time and AIU per minute, with an all-models total and spend and time drawn as two stacked bars; then how the calls ran, who did the work, and repositories" width="980">
+
+**Breakdown** — where the money went. Every model with its AIU and share,
+**the time it spent answering and its share of the day's model time, and
+AIU per minute of model time** — the figure that says what a minute of each
+model costs — then its calls, time per call and first-token latency, with an
+all-models row. Spend and time are drawn again as two stacked bars, so a
+model whose share of spend outruns its share of time stands out. Below:
+how the calls ran (cache hit rate, reasoning share, first-token p50 and p95,
+tokens in and out, files), who started them (you, the agent, sub-agents,
+compaction), and repositories by spend with their sessions, asks and what
+shipped.
+
+**Activity** — spend and asks by hour, the tools called with their failures
+and the skills invoked, the commits and PRs, and, while today is live, a
+feed of what the running sessions are doing, newest first, each line lit as
+it lands.
 
 **Every figure is cut to the day by its own time**, not by when its session
 began, so a session opened last night counts only what it did today. Tool
@@ -282,24 +313,27 @@ calls come from each session's event log, read on from where the last look
 stopped, so a refresh costs what was written since. A figure the store
 cannot time — refs or files on an older Copilot — is left off the page
 rather than shown as a zero. Active time is an inference and says so: it
-counts the five-minute slots that held an ask or a model call.
+counts the five-minute slots that held an ask or a model call. AIU per
+minute is spend over the time the model spent answering.
 
-**It opens with motion and then holds still.** The title types in, the
-counts roll up one tile after another, the bars rise and sweep in from
-midnight, and each panel wipes in a beat after the one before it, its bars
-filling and its figures counting up. Today rereads every five seconds and a
-figure a reread changes flashes with the change (`▲2.00`); otherwise the
-page redraws once a second for the clock. Under `CS_MOTION=off` the first
-frame is the finished page.
+**It opens with motion, and stays alive while today is.** The title types
+in, the tabs fade up, the spend rolls up like an odometer, the cards deal in
+one after another with their sparklines rising, yesterday's line draws
+across the chart and today's area sweeps in behind it, the panels below wipe
+in, and the ticker types last. Today then rereads every three seconds *in
+the background*, so nothing on screen waits for the store: a figure that
+moved rolls from its old value to its new one and flashes with the change
+(`▲1`), running sessions spin, the head of the running total breathes, and
+the newest event types into the ticker at the foot of the page. A past day
+holds still. Under `CS_MOTION=off` the first frame is the finished page.
 
 The store is read before the first frame and the event logs after it, so
 the page is on screen at once. `←`/`→` (or `h`/`l`) step to earlier days and
-back, `t` returns to today, `↑↓` choose a session and Enter opens it, and
-PgUp/PgDn, Space and the wheel scroll; `r` rereads now and `q` goes back. A
-past day holds still. `cs day yesterday`, `cs day 3` or `cs day 2026-09-30`
-open another day; piped, `cs day` prints the same page as text,
-`cs day --json` gives every figure, and `cs day --csv` the day hour by hour
-(spend, calls and asks).
+back, `t` returns to today, `r` rereads now and `q` goes back.
+`cs day yesterday`, `cs day 3` or `cs day 2026-09-30` open another day;
+piped, `cs day` prints every tab in turn as text, `cs day --json` gives
+every figure (models with `time_ms`, `time_share` and `aiu_per_minute`), and
+`cs day --csv` the day hour by hour.
 
 ### 👉 `cs next` — what to pick up
 

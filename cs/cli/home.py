@@ -1504,12 +1504,15 @@ def cmd_help() -> None:
     cs home               The same, by name
 
   {ui.BOLD}Today{ui.RST}
-    cs day [when]         The whole day on one dashboard: spend against yesterday
-                          at the same hour, sessions, asks, repos, models, what
-                          shipped, files, tokens, cache, latency and tool calls
+    cs day [when]         The whole day as a live dashboard in four tabs: an
+                          Overview (spend against yesterday by the same hour, six
+                          cards, the day's running total), every Session on a
+                          timeline, a Breakdown of models by spend and by time
+                          (AIU a minute), repos and tokens, and the Activity feed
                           {ui.DIM}when: today (default), yesterday, N days back or a
-                          date · today re-reads every 5s · ←→ other days · ↵ opens
-                          a session · the first row on the home screen{ui.RST}
+                          date · ⇥ or 1-4 tabs · ←→ other days · ↵ opens a session
+                          · today rereads every 3s · the first row on the home
+                          screen{ui.RST}
     cs today              Where you are, on one page: the session running now,
                           what to pick up, since midnight, and this week
                           {ui.DIM}The home screen also draws the live sessions under the

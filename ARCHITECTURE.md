@@ -558,26 +558,36 @@ returns lines, which is why it can be tested without a terminal at all.
 
 ## The day dashboard
 
-`cs day` (`cli/day.py`) is the first row on the menu: one local day, whole.
-It is built the way the live page is — `_day_data()` returns plain,
-already-masked data, which is also what `--json` hands back, and
-`_day_screen()` turns it into rows of `(x, text, role)` segments that the
-curses loop, the printed form and the width tests all read. Nothing in the
-drawing reads the clock; whatever moves arrives in a `motion` dict, which is
-what lets the tests play the entrance frame by frame.
+`cs day` (`cli/day.py`) is the first row on the menu: one local day, whole,
+in four tabs. It is built the way the live page is — `_day_data()` returns
+plain, already-masked data, which is also what `--json` hands back, and
+`_day_screen(data, width, height, motion, tab)` turns it into the pinned
+rows above (title, tabs, underline), the body, and the ticker below, all as
+`(x, text, role)` segments that the curses loop, the printed form and the
+width tests read. Nothing in the drawing reads the clock; whatever moves
+arrives in a `motion` dict, which is what lets the tests play the entrance
+frame by frame.
 
 **A day is cut by each figure's own time.** The window is local midnight to
 the next, built from the calendar date so a day across a clock change is 23
 or 25 hours long, and written as UTC stamps. `db.day_usage`, `day_turns`,
 `day_files` and `day_refs` each return rows *with* their times, so the page
-folds them into local hours itself — a half-hour time zone gets its hours
-right. Each holds its column to the window with `date(col) IS NOT NULL`
-first: compared as text, a stray word sorts above every real stamp and would
-land inside any window. Files are timed by their own column where a store has
-one and by the turn that touched them where it does not; refs and files that
-cannot be timed come back `None`, and the page leaves their tiles out rather
-than drawing a zero. The three comparison sums (yesterday by now, yesterday
-in all, the week before) are one scan, `db.spend_windows`.
+folds them into local hours and ten-minute slots itself — a half-hour time
+zone gets its hours right. Each holds its column to the window with
+`date(col) IS NOT NULL` first: compared as text, a stray word sorts above
+every real stamp and would land inside any window. Files are timed by their
+own column where a store has one and by the turn that touched them where it
+does not; refs and files that cannot be timed come back `None`, and the page
+leaves their cards out rather than drawing a zero. Yesterday comes from
+`db.spend_times` — its calls' times and spend only — which gives the
+comparison by the same time of day, yesterday's whole total, and the curve
+drawn beside today's.
+
+**Models are measured in time as well as money.** `duration_ms` per call is
+summed per model, so the Breakdown can set each model's share of spend
+beside its share of model time and give AIU per minute of model time, with
+the same three figures for the day as a whole. They are in `--json` as
+`time_ms`, `time_share` and `aiu_per_minute`.
 
 **Tool calls are counted from the event log by timestamp.** A digest counts a
 whole log, which would credit today with a session's yesterday.
@@ -586,21 +596,39 @@ completion to its start on `toolCallId` (a call begun before midnight and
 finished after is today's, with its name), and keeps a `memo` of how far each
 log was read. A page that refreshes passes the same memo back and reads only
 the bytes appended since; a half-written last line is left for the next look.
+The ticker and the live feed reuse the live page's `_LiveTail` for each
+running session, read on the same way.
 
-**The first frame does not wait for the logs.** The store is read before
-curses starts — so a store that cannot be opened says so in plain words — and
-the logs on the first pass after a frame is on screen, behind the entrance.
-Until then the tool-calls tile holds its place with `…`, and only when one of
-the day's sessions has a log at all.
+**Nothing on screen waits for a read.** The store is read before curses
+starts — so a store that cannot be opened says so in plain words — and the
+logs after the first frame. Every later reread runs on a background thread
+(`_day_refresh`) and the loop picks the result up between frames
+(`_day_collect`); a store that is busy is skipped, anything else that goes
+wrong is raised on the loop's thread so it is seen. A synchronous read — a
+day switch — first waits for a running reread, because both touch the same
+log tails. The tests set `state["threaded"] = False` to read in place.
 
-**Motion is tied to arrival, as on the menu.** The title types, the tiles
-count up a beat apart, the hour chart rises and sweeps in from midnight, and
+**Each tab fits the window.** A tab is given the rows between the pinned
+header and the ticker and lays itself out to them: on the Overview the
+lists take what they need up to a cap and the curve takes the rest; on
+Sessions the rows scroll inside their panel under fixed column headings;
+on Activity the feed fills what is left. Page scrolling is the fallback for
+a window too small for any of that.
+
+**Motion is tied to arrival, as on the menu.** The entrance is one clock:
+the title types, the spend rolls up through `ui.count_up` drawn in the
+three-row block figures, the cards deal in with their sparklines rising,
+the curve's yesterday line draws and today's area sweeps behind it
+(`_day_plot` builds the braille cells; `trace` and `sweep` say how far), and
 each panel wipes in a row at a time behind a slanted edge (`_day_reveal`),
-growing its bars with `ui.grow` and counting its figures with `ui.count_up` —
-but never a clock time or a PR number, which `count_up` would otherwise roll.
-Once that has played, the loop waits a second at a time for the clock; today
-rereads every `DAY_REFRESH_SECONDS` and a tile whose value moved flashes with
-the change. Every helper answers "finished" under `CS_MOTION=off`.
+growing its bars and counting its figures — never a clock time or a PR
+number. A tab switch replays its panels at `_DAY_SWITCH_PACE` while the
+content slides in and the underline glides. After that, motion follows the
+data: a figure a reread changed rolls from old to new and flashes, the
+ticker types each new event, and while a session is running the loop wakes
+every `_DAY_SPIN_MS` for its spinner and the curve's breathing head; with
+nothing moving it waits a second at a time for the clock. Every helper
+answers "finished" under `CS_MOTION=off`.
 
 ## The interactive listing
 

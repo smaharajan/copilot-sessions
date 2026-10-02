@@ -11,30 +11,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`cs day` puts the whole day on one live dashboard, and it is the first
   row on the home screen.** A new **Now** group leads the menu with 🌅 Today
-  and the live sessions. Everything since local midnight: a one-sentence
-  summary, then tiles for AI spend against yesterday *by the same time of
-  day*, sessions (new and live), asks and their busiest hour, commits and
-  PRs, repositories, model calls and model time, tokens and cache share,
-  tool calls and failures, files created and edited, and active time. Spend
-  by hour is a gradient bar chart with asks beneath it; panels follow for
-  models, repositories, how it ran (cache, reasoning, first-token p50/p95,
-  tokens, model time), every session of the day with an hour-by-hour
-  sparkline, what shipped, tools and skills, and who did the work.
+  and the live sessions. Four tabs, each fitted to one screen:
+  - **Overview** — the day's spend in large gradient figures against
+    yesterday *by the same time of day*, a gauge (budget, else yesterday,
+    else the 7-day average) and the cost of a model-minute; six cards
+    (sessions, asks, model calls, tool calls, shipped, active time) with
+    their hour-by-hour shape; the spend as a running total drawn in braille
+    beside yesterday's; and the top sessions, models and repositories.
+  - **Sessions** — every session on a 24-hour timeline shaded by spend per
+    ten minutes, with a now line and spinners on running sessions.
+  - **Breakdown** — each model's AIU and share against **the time it ran,
+    its share of time and AIU per minute of model time**, with an
+    all-models total and spend and time as paired stacked bars; then cache,
+    reasoning, latency, tokens and files, who did the work, and
+    repositories.
+  - **Activity** — spend and asks by hour, tools and failures, commits and
+    PRs, and a live feed of what running sessions are doing.
 - **Every figure is cut to the day by its own time.** A session opened last
   night counts only what it did today, tool calls are counted from the event
   log by timestamp and read on incrementally, and a figure an older store
   cannot time is left off rather than shown as zero.
-- **It opens with motion and holds still.** The title types in, counts roll
-  up tile by tile, the hour chart rises and sweeps in from midnight, and each
-  panel wipes in with its bars filling. Today rereads every five seconds and
-  flashes a figure that moved (`▲2.00`); the hour you are in breathes.
-  `CS_MOTION=off` draws it settled. The store is read before the first frame
-  and the logs after it, so the page is on screen at once.
-- **Any day, from the page or the shell.** `←`/`→` step back through earlier
-  days and `t` returns to today; `cs day yesterday`, `cs day 3` and
+- **Motion that opens the page and keeps it alive.** The spend rolls up like
+  an odometer, cards deal in, the running total draws itself across the day,
+  panels wipe in, and tabs slide with a gliding underline. Today rereads in
+  a background thread every three seconds, so animation never stalls:
+  figures roll to their new value and flash with the change, running
+  sessions spin, and the newest event types into a ticker at the foot of the
+  page. `CS_MOTION=off` draws everything settled.
+- **Any day, from the page or the shell.** `←`/`→` step through earlier days
+  and `t` returns to today; `cs day yesterday`, `cs day 3` and
   `cs day 2026-09-30` open one directly. Enter opens the chosen session.
-  Piped, it prints the same page (coloured on a terminal), and
-  `cs day --json` gives every figure.
+  Piped, it prints every tab (coloured on a terminal); `cs day --json` gives
+  every figure and `cs day --csv` the day hour by hour.
 
 ### Changed
 

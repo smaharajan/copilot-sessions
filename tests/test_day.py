@@ -10,6 +10,7 @@ it prints, opens with motion that stops, and stays still under CS_MOTION=off.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -182,6 +183,37 @@ class DayTest(StoreTest):
         self.assertGreater(data["tokens"]["cache_hit"], 0.5)
         self.assertEqual(data["first_token_ms"]["p50"], 800)
 
+    def test_each_model_carries_the_time_it_ran_and_what_a_minute_of_it_cost(self):
+        from cs import cli
+
+        data = cli._day_data(0)
+        models = {m["model"]: m for m in data["models"]}
+        # claude: 2.5 AIU over 6 s of model time; gpt: 1.5 AIU over 4 s.
+        self.assertEqual(models["claude-opus-4.8"]["time_ms"], 6000)
+        self.assertAlmostEqual(models["claude-opus-4.8"]["time_share"], 0.6)
+        self.assertAlmostEqual(models["claude-opus-4.8"]["aiu_per_minute"], 25.0)
+        self.assertAlmostEqual(models["gpt-5.5"]["aiu_per_minute"], 22.5)
+        self.assertEqual(data["model_ms"], 10_000)
+        self.assertAlmostEqual(data["aiu_per_minute"], 24.0)
+        text = cli._day_text(140)
+        for heading in ("AIU %", "TIME %", "AIU/MIN", "all models"):
+            self.assertIn(heading, text)
+        self.assertIn("25.0", text)
+
+    def test_the_running_total_stops_at_now_and_yesterday_runs_the_whole_day(self):
+        from cs import cli
+
+        self._session("sess-prev", "Yesterday's work", self.yesterday)
+        self._spend("sess-prev", self.yesterday + timedelta(hours=1), 3)
+        data = cli._day_data(0)
+        today, before = data["curve"]["today"], data["curve"]["before"]
+        now = data["now_slot"]
+        self.assertEqual(today[now], 4_000_000_000)
+        self.assertTrue(all(value is None for value in today[now + 1:]))
+        self.assertEqual(before[-1], 3_000_000_000)
+        self.assertEqual(len(today), 24 * 60 // data["slot_minutes"]
+                         if len(today) % 24 == 0 else len(today))
+
     def test_a_commit_from_a_quiet_session_still_carries_its_title(self):
         from cs import cli
 
@@ -215,7 +247,7 @@ class DayTest(StoreTest):
         data = cli._day_data(0)
         self.assertIsNone(data["shipped"])
         self.assertIsNone(data["files"])
-        keys = {tile[0] for tile in cli._day_tiles_of(data)}
+        keys = {card["key"] for card in cli._day_cards_of(data, {})}
         self.assertNotIn("shipped", keys)
         self.assertNotIn("files", keys)
         self.assertIn("carry no time", cli._day_text(120))
@@ -281,7 +313,7 @@ class DayTest(StoreTest):
 
         data = cli._day_data(0)
         self.assertIsNone(data["tools"])
-        self.assertNotIn("tools", {tile[0] for tile in cli._day_tiles_of(data)})
+        self.assertNotIn("tools", {card["key"] for card in cli._day_cards_of(data, {})})
 
     # ── What it prints ───────────────────────────────────────────────
 
@@ -311,15 +343,23 @@ class DayTest(StoreTest):
         self._spend("sess-wide", self.today + timedelta(minutes=1), 2,
                     model="a-model-with-an-unusually-long-name-indeed")
         data = cli._day_data(0)
+        motion = {"grad": 8, "chips": 8, "clock": "12:00:00"}
         for width in (40, 60, 80, 100, 140):
             for height in (None, 24, 48):
-                with self.subTest(width=width, height=height):
-                    header, body, hits = cli._day_screen(data, width, height)
-                    for line in [header, *body]:
-                        for x, text, _role in line:
-                            self.assertLessEqual(x + ui.cells(text), width - 1, text)
-                    self.assertIn("Today", " ".join(t for _x, t, _r in header))
-                    self.assertEqual({index for *_rest, index in hits}, {0, 1})
+                for tab in range(len(cli._DAY_TABS) if height else 1):
+                    with self.subTest(width=width, height=height, tab=tab):
+                        head, body, foot, hits = cli._day_screen(
+                            data, width, height, motion, tab)
+                        for line in [*head, *body, foot]:
+                            for x, text, _role in line:
+                                self.assertGreaterEqual(x, 0, text)
+                                self.assertLessEqual(x + ui.cells(text), width - 1, text)
+                        self.assertIn("Today", " ".join(t for _x, t, _r in head[0]))
+                        if cli._DAY_TABS[tab][0] in ("overview", "sessions"):
+                            self.assertEqual({index for *_rest, index in hits}, {0, 1})
+                        # A tab fits a full-size window without scrolling.
+                        if height and height >= 48 and width >= 100:
+                            self.assertLessEqual(len(body), height - len(head) - 2)
             self.assertLessEqual(ui.cells(cli._day_hint(width)), width - 1)
             hint, stamp = cli._day_status(
                 width, ["↓ more  40% updated 12:00:00 · every 5s ", "↓ more  40% "])
@@ -346,7 +386,7 @@ class DayTest(StoreTest):
         code, out = self._run("day", "--csv")
         self.assertEqual(code, 0)
         rows = out.splitlines()
-        self.assertEqual(rows[0], "hour,nano_aiu,calls,asks")
+        self.assertEqual(rows[0], "hour,nano_aiu,calls,asks,sessions,active_minutes")
         self.assertTrue(rows[1].startswith("00:00,"))
         self.assertIn(",4000000000,2,", out)
         code, err = self._run_err("day", "someday")
@@ -371,6 +411,7 @@ class DayTest(StoreTest):
 
         screen = _ClockScreen(keys)
         state = {"offset": 0} if state is None else state
+        state.setdefault("threaded", False)
         # Not time.strftime: datetime formats through it, and the day's
         # window would be written as a clock. The clock rows are left out of
         # every comparison instead (see `_still`).
@@ -404,11 +445,17 @@ class DayTest(StoreTest):
         screen, chosen, state = self._play([-1] * 80 + [ord("q")])
         self.assertIsNone(chosen)
         first, last = self._text(screen.frames[0]), self._text(screen.frames[-1])
-        # The counts roll up from nothing, and the panels deal in after.
-        self.assertIn("0.00 AIU", first)
-        self.assertNotIn("Spend by hour", first)
-        self.assertIn("4.00 AIU", last)
-        self.assertIn("Spend by hour", last)
+        # The sentence types in, the cards deal in, the chart draws last.
+        self.assertNotIn("4.00 AIU so far", first)
+        self.assertNotIn("Spend through the day", first)
+        self.assertNotIn("MODEL CALLS", first)
+        self.assertIn("4.00 AIU so far", last)
+        self.assertIn("Spend through the day", last)
+        self.assertIn("MODEL CALLS", last)
+        # Somewhere between, the counts were on their way up.
+        middle = [self._text(f) for f in screen.frames[5:40]]
+        self.assertTrue(any("MODEL CALLS" in text and "Spend through" not in text
+                            for text in middle), "the cards did not deal in before the chart")
         self.assertTrue(state["dealt"])
         # Settled: redrawn once a second for the clock, and nothing moves.
         self.assertEqual(screen.delay, 1000)
@@ -416,8 +463,8 @@ class DayTest(StoreTest):
 
     def test_with_motion_off_the_first_frame_is_the_last(self):
         screen, _chosen, _state = self._play([-1] * 3 + [ord("q")], motion=False)
-        self.assertIn("4.00 AIU", self._text(screen.frames[0]))
-        self.assertIn("Spend by hour", self._text(screen.frames[0]))
+        self.assertIn("4.00 AIU so far", self._text(screen.frames[0]))
+        self.assertIn("Spend through the day", self._text(screen.frames[0]))
         self.assertEqual(self._still(screen.frames[0]), self._still(screen.frames[-1]))
 
     def test_the_logs_are_read_after_the_first_frame(self):
@@ -436,10 +483,11 @@ class DayTest(StoreTest):
             return real(*args, **kwargs)
 
         with mock.patch.object(cli, "_day_data", side_effect=spy):
-            screen, _chosen, _state = self._play([-1] * 40 + [ord("q")])
+            screen, _chosen, _state = self._play([-1] * 40 + [ord("q")],
+                                                 {"offset": 0, "dealt": True})
         self.assertEqual(seen[:2], [False, True])
-        # The tile holds its place, waiting, on the first frame…
-        self.assertRegex(self._text(screen.frames[0]), r"TOOL CALLS(.|\n)*…")
+        # The card holds its place, waiting, while the log is read…
+        self.assertIn("reading the logs…", self._text(screen.frames[0]))
         # …and carries the count once the log has been read.
         self.assertRegex(self._text(screen.frames[-1]), r"0 failed")
 
@@ -457,7 +505,7 @@ class DayTest(StoreTest):
     def test_a_reread_lights_the_figure_that_changed(self):
         from cs import cli, ui
 
-        state = {"offset": 0, "dealt": True}
+        state = {"offset": 0, "dealt": True, "threaded": False}
         screen = _ClockScreen([-1] * 3)
         moved: list = []
 
@@ -474,8 +522,72 @@ class DayTest(StoreTest):
                 mock.patch.object(ui, "PULSE_MS", 10**9):
             cli._day_tui(screen, state)
         self.assertEqual(state["data"]["spend"]["nano_aiu"], 6_000_000_000)
-        self.assertTrue(any("▲2.00" in self._text(f) for f in screen.frames),
-                        "the spend tile did not show what changed")
+        self.assertTrue(any("▲1" in self._text(f) for f in screen.frames),
+                        "the calls card did not show what changed")
+
+    def test_tabs_switch_with_a_slide_and_keep_their_place(self):
+        screen, _chosen, state = self._play(
+            [9, *[-1] * 30, ord("3"), *[-1] * 30, 353, *[-1] * 30, ord("q")],
+            {"offset": 0, "dealt": True})
+        texts = [self._text(f) for f in screen.frames]
+        self.assertTrue(any("SESSION" in t and "REPOSITORY" in t for t in texts))
+        self.assertTrue(any("AIU/MIN" in t for t in texts))
+        # Shift-Tab from Breakdown lands on Sessions, and the page remembers it.
+        self.assertEqual(state["tab"], 1)
+        # The new tab's content slid in: its rows started further right.
+        def left_edge(frame):
+            return min((x for (y, x), text in frame.items() if 3 <= y < 38 and text.strip()),
+                       default=0)
+        switch = next(n for n, t in enumerate(texts) if "REPOSITORY" in t)
+        self.assertGreater(left_edge(screen.frames[switch]), 0)
+        self.assertEqual(left_edge(screen.frames[switch + 25]), 0)
+
+    def test_a_running_session_spins_and_the_ticker_types_its_newest_event(self):
+        from cs import cli
+
+        folder = _write_events(self.base, "sess-alpha", [
+            _event("user.message", _log_stamp(datetime.now() - timedelta(seconds=40)),
+                   {"content": "ship the portal"}),
+            _event("tool.execution_start", _log_stamp(datetime.now() - timedelta(seconds=5)),
+                   {"toolCallId": "c1", "toolName": "bash",
+                    "arguments": {"description": "Run the tests"}}),
+        ]).parent
+        (folder / f"inuse.{os.getpid()}.lock").write_text(str(os.getpid()))
+        data = cli._day_data(0)
+        self.assertEqual(data["running"], 1)
+        self.assertEqual(self._card(data, "sess-alpha")["status"], "working")
+        self.assertEqual(data["feed"][0]["what"], "bash")
+        screen, _chosen, _state = self._play([-1] * 30 + [ord("q")],
+                                             {"offset": 0, "dealt": True})
+        foot = [text for (y, _x), text in screen.frames[-1].items() if y == 38]
+        self.assertIn("Run the tests", " ".join(foot))
+        # The spinner turns: the mark beside the session changes frame to frame.
+        marks = {text for f in screen.frames for (y, x), text in f.items() if x == 2
+                 and text in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏|/-\\"}
+        self.assertGreater(len(marks), 1)
+        self.assertEqual(screen.delay, 110)
+
+    def test_a_reread_runs_in_the_background(self):
+        from cs import cli
+
+        state: dict = {"offset": 0}
+        cli._day_refresh(state)
+        state["worker"].join(10)
+        data = cli._day_collect(state)
+        self.assertEqual(data["spend"]["nano_aiu"], 4_000_000_000)
+        self.assertIsNone(cli._day_collect(state), "a result is handed over once")
+
+    def test_a_reread_that_breaks_says_so_but_a_busy_store_does_not(self):
+        from cs import cli
+
+        state: dict = {"offset": 0, "threaded": False}
+        with mock.patch.object(cli, "_day_data", side_effect=sqlite3.OperationalError):
+            cli._day_refresh(state)
+        self.assertIsNone(cli._day_collect(state))
+        with mock.patch.object(cli, "_day_data", side_effect=KeyError("bug")):
+            cli._day_refresh(state)
+        with self.assertRaises(KeyError):
+            cli._day_collect(state)
 
     def test_it_is_the_first_row_on_the_home_menu(self):
         from cs import cli
