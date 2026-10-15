@@ -3259,6 +3259,57 @@ class CSTest(StoreTest):
         code, out = self._run("bogus")
         self.assertEqual(code, 1)
 
+    def test_cost_efficiency_and_show_separate_local_models_from_zero_credit_noise(self):
+        from datetime import datetime
+
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute("ALTER TABLE assistant_usage_events ADD COLUMN request_multiplier REAL")
+        conn.execute("UPDATE assistant_usage_events SET request_multiplier = 1.0")
+        now_iso = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute(
+            "INSERT INTO sessions VALUES ('sess-local','/tmp/scratch','','local','',"
+            "'Local model run',?,?)",
+            (now_iso, now_iso),
+        )
+        conn.executemany(
+            """INSERT INTO assistant_usage_events
+               (session_id, turn_index, model, input_tokens, output_tokens,
+                cache_read_tokens, reasoning_tokens,
+                request_multiplier, duration_ms, time_to_first_token_ms,
+                finish_reason, total_nano_aiu, initiator, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [
+                ("sess-local", 0, "phi4-mini:latest", 500, 120, 100, 0,
+                 0.0, 9500, 4200, "stop", 0, "user", now_iso),
+                ("sess-local", 1, "gpt-broken-cloud", 0, 0, 0, 0,
+                 3.0, 1200, 800, "content_filter", 0, "user", now_iso),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        code, cost_out = self._run("cost", "7")
+        self.assertEqual(code, 0)
+        self.assertIn("Local models · 1 calls · 0 AIU", cost_out)
+        self.assertIn("0× local", cost_out)
+        self.assertIn("phi4-mini:latest", cost_out)
+        self.assertNotIn("gpt-broken-cloud", cost_out)
+        self.assertNotIn("scratch", cost_out)
+        self.assertNotIn("Local model run", cost_out)
+
+        code, eff_out = self._run("efficiency", "7")
+        self.assertEqual(code, 0)
+        self.assertIn("0× · local (unbilled)", eff_out)
+        self.assertIn("Local models · 1 calls · 0 AIU", eff_out)
+        self.assertIn("phi4-mini:latest", eff_out)
+        self.assertNotIn("gpt-broken-cloud", eff_out)
+
+        code, show_out = self._run("show", "sess-local")
+        self.assertEqual(code, 0)
+        self.assertIn("0× local", show_out)
+        self.assertIn("phi4-mini:latest", show_out)
+        self.assertNotIn("gpt-broken-cloud", show_out)
+
 
 class InterpreterFloorTest(StoreTest):
     """The Python floor is declared in three places and enforced in one.

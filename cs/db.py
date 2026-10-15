@@ -1761,6 +1761,25 @@ def sessions_referencing(conn: sqlite3.Connection, name: str) -> int:
 # All read from assistant_usage_events, which older stores lack entirely —
 # every helper returns an empty result there rather than raising.
 
+_LOCAL_MODEL_PREFIXES = (
+    "ollama", "local", "mlx", "gguf", "llama", "phi", "qwen",
+    "mistral", "gemma", "deepseek-r1:", "codellama", "starcoder",
+)
+
+
+def is_local_model(model: str, multiplier: float | None = None) -> bool:
+    """Whether `model` is a zero-rate local model (Ollama, MLX, GGUF, etc.).
+
+    Copilot records `request_multiplier = 0` and no `total_nano_aiu` for local
+    models, whereas a cloud model that billed 0 AIU on a single call was a
+    filtered or failed request at a non-zero multiplier.
+    """
+    if multiplier is not None and multiplier == 0:
+        return True
+    low = (model or "").strip().lower()
+    return ":" in low or low.startswith(_LOCAL_MODEL_PREFIXES)
+
+
 def has_usage(conn: sqlite3.Connection) -> bool:
     return _has_usage(conn)
 
@@ -1977,7 +1996,8 @@ def cost_by_repo(conn: sqlite3.Connection, days: int, limit: int = 10) -> list[t
             FROM assistant_usage_events u
             JOIN sessions s ON s.id = u.session_id
             {where.replace('created_at', 'u.created_at')}
-            GROUP BY place ORDER BY nano_aiu DESC LIMIT ?""",
+            GROUP BY place HAVING COALESCE(SUM(u.total_nano_aiu), 0) > 0
+            ORDER BY nano_aiu DESC LIMIT ?""",
         (*args, limit),
     ).fetchall()
 
@@ -1992,7 +2012,8 @@ def cost_by_day(conn: sqlite3.Connection, days: int) -> list[tuple]:
                    COALESCE(SUM(total_nano_aiu), 0) AS nano_aiu,
                    COUNT(*) AS calls
             FROM assistant_usage_events {where}
-            GROUP BY day ORDER BY day""",
+            GROUP BY day HAVING COALESCE(SUM(total_nano_aiu), 0) > 0
+            ORDER BY day""",
         args,
     ).fetchall()
 
@@ -2009,7 +2030,8 @@ def cost_top_sessions(conn: sqlite3.Connection, days: int, limit: int = 5) -> li
             FROM assistant_usage_events u
             LEFT JOIN sessions s ON s.id = u.session_id
             {where.replace('created_at', 'u.created_at')}
-            GROUP BY u.session_id ORDER BY nano_aiu DESC LIMIT ?""",
+            GROUP BY u.session_id HAVING COALESCE(SUM(u.total_nano_aiu), 0) > 0
+            ORDER BY nano_aiu DESC LIMIT ?""",
         (*args, limit),
     ).fetchall()
 

@@ -454,6 +454,7 @@ def _day_data(offset: int = 0, memo: dict | None = None, tools: bool = True,
         "by_hour": by_hour,
         "models": [
             {"model": name, "calls": calls, "nano_aiu": nano,
+             "local": nano <= 0 and db.is_local_model(name),
              "share": nano / spent if spent else 0.0,
              "time_ms": duration,
              "time_share": duration / model_ms if model_ms else 0.0,
@@ -1265,11 +1266,12 @@ def _day_hero_facts(data: dict) -> list[tuple[str, list[tuple[str, str]]]]:
     facts: list[tuple[str, list[tuple[str, str]]]] = []
     if data["live"] and data["now_hour"] is not None and nano is not None:
         hour = data["by_hour"][data["now_hour"]]
-        facts.append(("this hour", [(_day_aiu(hour["nano_aiu"]), "credits"),
-                                    (" AIU · ", "help"),
-                                    (f"{hour['calls']:,} call{'s' if hour['calls'] != 1 else ''}",
-                                     "number")]))
-    if data.get("aiu_per_minute") is not None:
+        if hour["nano_aiu"] > 0:
+            calls_s = f"{hour['calls']:,} call{'s' if hour['calls'] != 1 else ''}"
+            facts.append(("this hour", [(_day_aiu(hour["nano_aiu"]), "credits"),
+                                        (" AIU · ", "help"),
+                                        (calls_s, "number")]))
+    if data.get("aiu_per_minute"):
         facts.append(("per model-minute", [(_day_rate(data["aiu_per_minute"]), "number"),
                                            (" AIU", "help")]))
     if nano and data["asks"]:
@@ -1280,7 +1282,7 @@ def _day_hero_facts(data: dict) -> list[tuple[str, list[tuple[str, str]]]]:
                                        (" · ", "separator"),
                                        (_day_aiu(data["peak"]["nano_aiu"]), "credits"),
                                        (" AIU", "help")]))
-    if spend["week_average_nano_aiu"] is not None:
+    if spend["week_average_nano_aiu"]:
         facts.append(("7-day average", [(_day_aiu(spend["week_average_nano_aiu"]), "number"),
                                         (" AIU a day", "help")]))
     return facts
@@ -1318,15 +1320,20 @@ def _day_cards_of(data: dict, motion: dict) -> list[dict]:
                   "strip": [h["asks"] for h in hours], "strip_role": "turns",
                   "sub": [[(f"{busy['asks']} in the busiest hour", "help")]] if busy else [[]]})
     cache = data["tokens"]["cache_hit"]
-    models = len(data["models"])
+    aic_count = sum(1 for m in data["models"] if m["nano_aiu"] > 0)
+    local_count = sum(1 for m in data["models"] if m["nano_aiu"] <= 0 and m.get("local"))
+    models = aic_count + local_count
+    model_sub = (f"{aic_count} AIC · {local_count} local"
+                 if aic_count and local_count
+                 else f"{models} model{'s' if models != 1 else ''}")
     cards.append({"key": "calls", "label": "MODEL CALLS", "value": values["calls"],
                   "role": "title",
                   "right": [(_day_ms(data["model_ms"]), "number")] if data["model_ms"] else [],
                   "strip": [h["calls"] for h in hours], "strip_role": "repo",
-                  "sub": [[(f"{models} model{'s' if models != 1 else ''}", "help")]
+                  "sub": [[(model_sub, "help")]
                           + ([(" · ", "separator"), (_day_pct(cache), "number"),
                               (" from cache", "help")] if cache is not None else []),
-                          [(f"{models} models", "help")]]})
+                          [(model_sub, "help")]]})
     if tools is not None or (data.get("tools_pending") and data.get("tools_expected")):
         if tools is None:
             cards.append({"key": "tools", "label": "TOOL CALLS", "value": "…",
@@ -1521,10 +1528,11 @@ def _day_top(data: dict, width: int, motion: dict, limit: int
              ) -> tuple[list, list, list]:
     """The day's dearest sessions, each with its share of the spend."""
     inner = width - 4
-    sessions = data["by_session"][:limit]
+    billed = [s for s in data["by_session"] if s["nano_aiu"] > 0]
+    sessions = billed[:limit]
     title = [("Top sessions", "header")]
     if not sessions:
-        return title, [], [_live_line([("No sessions.", "help")], inner)]
+        return title, [], [_live_line([("No billed sessions.", "help")], inner)]
     spent = data["spend"]["nano_aiu"] or 0
     chips = max(motion.get("chips", 8), 1)
     items = [(s["title"], s["nano_aiu"] / spent if spent else 0.0, f"c{n % chips}",
@@ -1534,30 +1542,41 @@ def _day_top(data: dict, width: int, motion: dict, limit: int
     for n, row in enumerate(_day_rank_rows(items, inner)):
         row[0] = (0, *_day_mark(sessions[n], motion))
         body.append(row)
-    return title, [(f"{len(data['by_session'])} today", "help")], body
+    return title, [(f"{len(billed)} today", "help")], body
 
 
 def _day_models_mini(data: dict, width: int, motion: dict, limit: int
                      ) -> tuple[list, list, list]:
     """Models by spend, with the time each one ran beside it."""
     inner = width - 4
-    models = data["models"][:limit]
+    billed = [m for m in data["models"] if m["nano_aiu"] > 0]
+    local = [m for m in data["models"] if m["nano_aiu"] <= 0 and m.get("local")]
+    models = billed[:limit]
     chips = max(motion.get("chips", 8), 1)
     title = [("Models", "header")]
-    if not models:
+    if not models and not local:
         return title, [], [_live_line([("No model calls.", "help")], inner)]
+    if not models:
+        shown = local[:limit]
+        peak_calls = max((m["calls"] for m in shown), default=1) or 1
+        items = [(m["model"], m["calls"] / peak_calls, "active",
+                  [("0× local".rjust(8), "active"),
+                   (f"{_day_ms(m['time_ms']) if m['time_ms'] else '—':>8}", "number")],
+                  "active", m["model"]) for m in shown]
+        return title, [("local · time", "help")], _day_rank_rows(items, inner)
     items = [(m["model"], m["share"], f"c{n % chips}",
               [(_day_aiu(m["nano_aiu"]).rjust(6), "credits"),
                (f"{_day_ms(m['time_ms']) if m['time_ms'] else '—':>8}", "number")],
               f"c{n % chips}", m["model"]) for n, m in enumerate(models)]
-    note = [("AIU · time", "help")]
+    note = ([(f"+{len(local)} local · AIU", "help")]
+            if local else [("AIU · time", "help")])
     return title, note, _day_rank_rows(items, inner)
 
 
 def _day_repos(data: dict, width: int, motion: dict, limit: int = _DAY_REPOS
                ) -> tuple[list, list, list]:
     inner = width - 4
-    places = data["repositories_by_spend"]
+    places = [p for p in data["repositories_by_spend"] if p["nano_aiu"] > 0]
     spent = data["spend"]["nano_aiu"] or 0
     chips = max(motion.get("chips", 8), 1)
     if not places:
@@ -1689,9 +1708,13 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
     """Every model: what it cost, how long it ran, and so what a minute of
     it cost — then the same split drawn twice, by spend and by time."""
     inner = width - 4
-    models = data["models"]
+    aic = [m for m in data["models"] if m["nano_aiu"] > 0]
+    local = [m for m in data["models"] if m["nano_aiu"] <= 0 and m.get("local")]
+    shown_aic = aic[:_DAY_MODELS]
+    shown_local = local[:4]
+    shown_all = shown_aic + shown_local
     title = [("Models", "header")]
-    if not models:
+    if not shown_all:
         return title, [], [_live_line([("No model calls.", "help")], inner)]
     chips = max(motion.get("chips", 8), 1)
     cols = [("aiu", "AIU", 8), ("time", "TIME", 8)]
@@ -1708,7 +1731,7 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
     if inner >= 108:
         cols.append(("ttft", "1ST TOKEN", 10))
     figures = sum(width + 1 for _k, _l, width in cols)
-    name_w = min(max(ui.cells(m["model"]) for m in models[:_DAY_MODELS]) + 1, 24)
+    name_w = min(max(ui.cells(m["model"]) for m in shown_all) + 1, 24)
     bar_w = inner - 2 - name_w - figures - 1
     if bar_w < 6:
         bar_w = 0
@@ -1724,6 +1747,17 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
     body: list[list] = [head]
 
     def cells_for(m: dict | None) -> dict[str, str]:
+        if m is not None and m.get("local"):
+            return {
+                "aiu": "0 AIU",
+                "share": "—",
+                "tshare": _day_pct(m["time_share"]) if m["time_ms"] else "—",
+                "time": _day_ms(m["time_ms"]) if m["time_ms"] else "—",
+                "rate": "0×",
+                "calls": f"{m['calls']:,}",
+                "avg": _day_ms(m["average_ms"]),
+                "ttft": _day_ms(m["first_token_ms"]),
+            }
         source = m or {"nano_aiu": data["spend"]["nano_aiu"] or 0, "share": 1.0,
                        "time_share": 1.0 if data["model_ms"] else 0.0,
                        "time_ms": data["model_ms"], "aiu_per_minute": data["aiu_per_minute"],
@@ -1740,7 +1774,9 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
 
     roles = {"aiu": "credits", "time": "number", "rate": "warn", "share": "number",
              "tshare": "number", "calls": "number", "avg": "help", "ttft": "help"}
-    for n, m in enumerate(models[:_DAY_MODELS] + [None]):
+    local_roles = {**roles, "aiu": "active", "share": "help", "rate": "active"}
+    rows_to_draw = (shown_aic + [None]) if shown_aic else []
+    for n, m in enumerate(rows_to_draw):
         chip = f"c{n % chips}"
         values = cells_for(m)
         row: list = []
@@ -1758,18 +1794,31 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
         if m is None:
             body.append([])
         body.append(row)
+    if shown_local:
+        if shown_aic:
+            body.append([])
+        for m in shown_local:
+            values = cells_for(m)
+            row = [(0, "○", "active"), (2, ui.trunc(m["model"], name_w), "summary")]
+            if bar_w:
+                row.append((2 + name_w, ui.trunc("0× local", bar_w), "active"))
+            x = inner - figures
+            for key, _label, width in cols:
+                x += 1
+                row.append((x, f"{values[key]:>{width}}", local_roles[key]))
+                x += width
+            body.append(row)
     # Spend and time as two stacked bars: a model dearer than its time is
     # the one to look at.
-    if len(models) > 1 and inner >= 30:
+    if len(shown_aic) > 1 and inner >= 30:
         body.append([])
         for label, key in (("spend", "share"), ("time", "time_share")):
             bar_x = 8
             room = inner - bar_x
             row = [(2, label, "help")]
             x = 0
-            shown = models[:_DAY_MODELS]
-            for n, m in enumerate(shown):
-                cells = (room - x if n == len(shown) - 1
+            for n, m in enumerate(shown_aic):
+                cells = (room - x if n == len(shown_aic) - 1
                          else min(round(m[key] * room), room - x))
                 if cells > 0:
                     row.append((bar_x + x, "█" * cells, f"c{n % chips}"))
@@ -1778,7 +1827,7 @@ def _day_models_table(data: dict, width: int, motion: dict) -> tuple[list, list,
         # What each colour is, and its two shares side by side.
         legend: list[tuple[str, str]] = []
         used = 2
-        for n, m in enumerate(models[:_DAY_MODELS]):
+        for n, m in enumerate(shown_aic):
             entry = [("▌", f"c{n % chips}"), (f"{m['model']} ", "summary"),
                      (_day_pct(m["share"]), "credits"), (" of spend · ", "help"),
                      (_day_pct(m["time_share"]), "number"), (" of time", "help")]

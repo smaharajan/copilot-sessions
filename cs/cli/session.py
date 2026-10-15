@@ -329,13 +329,19 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
     # failed, and on which turn — the store keeps none of that.
     _print_session_failures(session_id, inner)
 
-    if usage:
+    shown_usage = [
+        (model, events, nano) for model, events, nano in usage
+        if nano > 0 or db.is_local_model(model)
+    ]
+    if shown_usage:
         # The total is already in the header; this block is the breakdown.
         print(ui.heading("Models", ui.VIOLET))
-        for model, events, nano in usage:
+        for model, events, nano in shown_usage:
             named = ui.trunc(redact.redact(model), 24)
+            spend_col = (f"{ui.VIOLET}{ui.fmt_aiu(nano):>8}{ui.RST}" if nano > 0
+                         else f"{ui.MINT}{'0× local':>8}{ui.RST}")
             print(
-                f"    {ui.VIOLET}{ui.fmt_aiu(nano):>8}{ui.RST}  {named:<24}"
+                f"    {spend_col}  {named:<24}"
                 f" {ui.MUTED}{events:>7,} calls{ui.RST}"
             )
         print()

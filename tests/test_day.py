@@ -723,3 +723,48 @@ class DayTest(StoreTest):
         self.assertIn("AI spend in each 10 minutes", text)
         self.assertIn("4 AIU ┤", text)
         self.assertIn("dearest", text)
+
+    def test_zero_credit_rows_are_filtered_and_local_models_show_as_zero_rate(self):
+        from cs import cli, db, ui
+
+        self.assertTrue(db.is_local_model("phi4-mini:latest"))
+        self.assertTrue(db.is_local_model("qwen3.5:9b-q4_K_M"))
+        self.assertTrue(db.is_local_model("custom-model", multiplier=0.0))
+        self.assertFalse(db.is_local_model("claude-opus-4.8"))
+
+        # A zero-credit session in a scratch folder running a local model plus a
+        # content-filtered 0-AIU cloud call.
+        self._session("sess-local", "Probe local model",
+                      self.today + timedelta(hours=3), repo="acme/scratch")
+        self._spend("sess-local", self.today + timedelta(hours=3, minutes=5),
+                    0, model="phi4-mini:latest")
+        self._spend("sess-local", self.today + timedelta(hours=3, minutes=6),
+                    0, model="gpt-broken-cloud")
+
+        data = cli._day_data(0)
+        motion = {"grad": 8, "chips": 8, "clock": "12:00:00"}
+        _head, overview_body, _foot, _hits = cli._day_screen(data, 120, 48, motion, 0)
+        overview = "\n".join(" ".join(t for _x, t, _r in line) for line in overview_body)
+        # Main Overview screen omits 0-credit sessions, 0.00-AIU repos, and 0.00-AIU models.
+        self.assertNotIn("Probe local model", overview)
+        self.assertNotIn("scratch", overview)
+        self.assertNotIn("0.00", overview)
+        self.assertIn("2 AIC · 1 local", overview)
+        self.assertIn("+1 local · AIU", overview)
+
+        _head, breakdown_body, _foot, _hits = cli._day_screen(data, 120, 48, motion, 1)
+        breakdown = "\n".join(" ".join(t for _x, t, _r in line) for line in breakdown_body)
+        # Breakdown shows the local model with 0× local / 0 AIU and drops the 0-AIU cloud error.
+        self.assertIn("phi4-mini:latest", breakdown)
+        self.assertIn("0× local", breakdown)
+        self.assertIn("0 AIU", breakdown)
+        self.assertNotIn("gpt-broken-cloud", breakdown)
+        self.assertNotIn("scratch", breakdown)
+
+        for width in (40, 60, 80, 100, 140):
+            for tab in range(len(cli._DAY_TABS)):
+                _h, body, _f, _hits = cli._day_screen(data, width, 48, motion, tab)
+                for line in body:
+                    for x, text, _role in line:
+                        self.assertLessEqual(x + ui.cells(text), width - 1, text)
+

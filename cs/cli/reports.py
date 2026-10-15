@@ -304,26 +304,28 @@ def _spend_spans(inner: int, note: int) -> tuple[int, int]:
 
 
 def _spend_row(amount: str, name: str, bar: str, note: str,
-               span: int = _SPEND_NAME) -> str:
+               span: int = _SPEND_NAME, colour: str | None = None) -> str:
     # `name` is a model or a repository, both recorded from the environment
     # rather than typed here, so it is stripped before it is measured into
     # the column — every spend section shares this row, and so shares the
     # guarantee. `bar` arrives already the width of its column: see _bar.
     name = redact.one_line(name)
     gap = f"  {bar}" if bar else ""
+    ink = ui.VIOLET if colour is None else colour
     return (
-        f"    {ui.VIOLET}{amount:>8}{ui.RST}  "
+        f"    {ink}{amount:>8}{ui.RST}  "
         f"{ui._fit(name, span):<{span}}"
         f"{gap}  {ui.DIM}{note}{ui.RST}"
     )
 
 
 def _spend_header(name: str, note: str, span: int = _SPEND_NAME,
-                  gauge: int = _SPEND_BAR) -> str:
+                  gauge: int = _SPEND_BAR, amount: str = "spend",
+                  bar_label: str = "share") -> str:
     """Name the columns once, so the numbers under them need no explaining."""
-    share = f"  {'share':<{gauge}}" if gauge else ""
+    share = f"  {bar_label:<{gauge}}" if gauge else ""
     return (
-        f"    {ui.MUTED}{'spend':>8}  {name:<{span}}{share}  {note}{ui.RST}"
+        f"    {ui.MUTED}{amount:>8}  {name:<{span}}{share}  {note}{ui.RST}"
     )
 
 
@@ -405,14 +407,16 @@ def _render_cost(days: int = 30, column: str = "spend",
     # The timing columns are the first thing a narrow window loses: which
     # model, and what it cost, is what this section is for — how long its
     # calls took is a second question, and `cs stats` also answers it.
+    aic_models = [m for m in by_model if m[2] > 0]
+    local_models = [m for m in by_model if m[2] <= 0 and db.is_local_model(m[0])]
     print(ui.heading("By model", ui.VIOLET, inner))
     timings = inner >= 62
     span, gauge = _spend_spans(inner, 23 if timings else 9)
     print(_spend_header("model",
                         f"{'calls':>9}{'avg':>7}{'first':>7}" if timings
                         else f"{'calls':>9}", span, gauge))
-    peak = max((m[2] for m in by_model), default=0)
-    for model, calls, nano, avg_ms, ttft_ms in by_model:
+    peak = max((m[2] for m in aic_models), default=0)
+    for model, calls, nano, avg_ms, ttft_ms in aic_models:
         avg = f"{(avg_ms or 0) / 1000:.1f}s"
         first = f"{ttft_ms / 1000:.1f}s" if ttft_ms else "-"
         print(_spend_row(
@@ -421,6 +425,24 @@ def _render_cost(days: int = 30, column: str = "spend",
             span,
         ))
     print()
+
+    if local_models:
+        local_calls = sum(m[1] for m in local_models)
+        print(ui.heading(f"Local models · {local_calls:,} calls · 0 AIU", ui.MINT, inner))
+        print(_spend_header("model",
+                            f"{'calls':>9}{'avg':>7}{'first':>7}" if timings
+                            else f"{'calls':>9}", span, gauge,
+                            amount="rate", bar_label="calls"))
+        peak_calls = max((m[1] for m in local_models), default=0)
+        for model, calls, _nano, avg_ms, ttft_ms in local_models:
+            avg = f"{(avg_ms or 0) / 1000:.1f}s"
+            first = f"{ttft_ms / 1000:.1f}s" if ttft_ms else "-"
+            print(_spend_row(
+                "0× local", model, _bar(calls, peak_calls, gauge, ui.MINT),
+                f"{calls:>9,}{avg:>7}{first:>7}" if timings else f"{calls:>9,}",
+                span, colour=ui.MINT,
+            ))
+        print()
 
     print(ui.heading("By repository", ui.MINT, inner))
     span, gauge = _spend_spans(inner, 9)
@@ -538,6 +560,13 @@ def _render_efficiency(days: int = 30) -> None:
         print(_spend_header("multiplier", f"{'calls':>9}", span, gauge))
         peak = max(nano for _rate, _calls, nano in multipliers)
         for rate, calls, nano in multipliers:
+            if rate == 0 and nano <= 0:
+                print(_spend_row(
+                    "0 AIU", "0× · local (unbilled)",
+                    _bar(0, peak, gauge, ui.MINT), f"{calls:>9,}", span,
+                    colour=ui.MINT,
+                ))
+                continue
             colour = ui.ROSE if rate > 1 else ui.MINT
             print(_spend_row(
                 ui.fmt_aiu(nano), f"{rate:g}× · {nano / total * 100:.0f}% of spend",
@@ -578,21 +607,43 @@ def _render_efficiency(days: int = 30) -> None:
         print()
 
     by_model = reading.get("by_model") or []
-    if by_model:
+    aic_models = [row for row in by_model if row[2] > 0]
+    local_models = [row for row in by_model if row[2] <= 0 and db.is_local_model(row[0])]
+    if aic_models:
         print(ui.heading("By model", ui.MINT, inner))
         timings = inner >= 62
         span, gauge = _spend_spans(inner, 21 if timings else 9)
         print(_spend_header("model",
                             f"{'calls':>9}{'cache':>6}{'first':>6}" if timings
                             else f"{'calls':>9}", span, gauge))
-        peak = max(row[2] for row in by_model)
-        for model, calls, nano, cached, offered, ttft in by_model:
+        peak = max(row[2] for row in aic_models)
+        for model, calls, nano, cached, offered, ttft in aic_models:
             hit = f"{cached / offered * 100:.0f}%" if offered else "-"
             first = f"{ttft / 1000:.1f}s" if ttft else "-"
             print(_spend_row(
                 ui.fmt_aiu(nano), model, _bar(nano, peak, gauge, ui.SKY),
                 f"{calls:>9,}{hit:>6}{first:>6}" if timings else f"{calls:>9,}",
                 span,
+            ))
+        print()
+
+    if local_models:
+        local_calls = sum(row[1] for row in local_models)
+        print(ui.heading(f"Local models · {local_calls:,} calls · 0 AIU", ui.MINT, inner))
+        timings = inner >= 62
+        span, gauge = _spend_spans(inner, 21 if timings else 9)
+        print(_spend_header("model",
+                            f"{'calls':>9}{'cache':>6}{'first':>6}" if timings
+                            else f"{'calls':>9}", span, gauge,
+                            amount="rate", bar_label="calls"))
+        peak_calls = max(row[1] for row in local_models)
+        for model, calls, _nano, cached, offered, ttft in local_models:
+            hit = f"{cached / offered * 100:.0f}%" if offered else "-"
+            first = f"{ttft / 1000:.1f}s" if ttft else "-"
+            print(_spend_row(
+                "0× local", model, _bar(calls, peak_calls, gauge, ui.MINT),
+                f"{calls:>9,}{hit:>6}{first:>6}" if timings else f"{calls:>9,}",
+                span, colour=ui.MINT,
             ))
         print()
 
