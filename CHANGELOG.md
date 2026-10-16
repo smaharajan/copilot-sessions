@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sessions served over ACP now appear in every listing.** A session hosted
+  by `copilot --acp` (a phone bridge, an editor, an SDK client) writes its log
+  and `workspace.yaml` but never a row in the store, so `cs`, `today` and the
+  home screen missed it. Those sessions are now listed from their own log: the
+  name from `workspace.yaml`, turns from your messages and credits from the
+  log's usage records.
+
 ## [2.4.0] — 2026-10-02
 
 ### Added

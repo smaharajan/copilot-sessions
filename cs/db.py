@@ -474,7 +474,75 @@ def recent_sessions(conn: sqlite3.Connection, days: int) -> list[tuple]:
             ORDER BY MAX(s.created_at, s.updated_at) DESC""",
         (f"-{days} days",) if days > 0 else (),
     ).fetchall()
+    known = {row[0] for row in conn.execute("SELECT id FROM sessions")}
+    extra = unindexed_sessions(days, known)
+    if extra:
+        rows = sorted(rows + extra, key=lambda row: row[1] or "", reverse=True)
     return _given_names(rows, session_names())
+
+
+_UNINDEXED: dict[str, tuple[tuple, tuple]] = {}
+
+
+def _log_ids(days: int) -> list[str]:
+    """Session folders whose log moved in the last `days` (all when <= 0)."""
+    cutoff = time.time() - days * 86400 if days > 0 else 0
+    try:
+        entries = list(os.scandir(_session_state()))
+    except OSError:
+        return []
+    found = []
+    for entry in entries:
+        try:
+            if os.stat(os.path.join(entry.path, "events.jsonl")).st_mtime >= cutoff:
+                found.append(entry.name)
+        except OSError:
+            continue
+    return found
+
+
+def unindexed_sessions(days: int, known: set[str]) -> list[tuple]:
+    """Listing rows for sessions that have a log but no row in the store.
+
+    Copilot only indexes sessions it hosts itself; one served over ACP (a
+    phone bridge, an editor, an SDK client) writes its log and workspace.yaml
+    and never reaches `sessions`. Turns are your messages to the main agent,
+    credits the log's own usage records. Each log is read again only when it
+    changes.
+    """
+    from . import events  # events imports db
+
+    rows = []
+    for sid in _log_ids(days):
+        if sid in known:
+            continue
+        path = events.events_path(sid)
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        key = (stat.st_mtime, stat.st_size)
+        held = _UNINDEXED.get(sid)
+        if held and held[0] == key:
+            rows.append(held[1])
+            continue
+        turns = nano = 0
+        for event in events.iter_events(sid, ("user.message", "session.usage_record")):
+            if event["type"] == "user.message":
+                turns += not event.get("agentId")
+            else:
+                usage = event["data"].get("usage")
+                spent = usage.get("copilotUsage") if isinstance(usage, dict) else None
+                spent = spent.get("totalNanoAiu") if isinstance(spent, dict) else 0
+                if isinstance(spent, (int, float)) and math.isfinite(spent):
+                    nano += int(spent)
+        fields = session_workspace(sid, ("name", "repository", "cwd"))
+        last = time.strftime("%Y-%m-%dT%H:%M", time.gmtime(stat.st_mtime))
+        row = (sid, last, fields.get("name", ""), fields.get("repository", ""),
+               fields.get("cwd", ""), turns, nano)
+        _UNINDEXED[sid] = (key, row)
+        rows.append(row)
+    return rows
 
 
 def _has_fts(conn: sqlite3.Connection) -> bool:

@@ -2020,6 +2020,38 @@ class CSTest(StoreTest):
         )
         conn.close()
 
+    def test_sessions_served_over_acp_are_listed_from_their_log(self):
+        """A session hosted over ACP (a phone bridge, an editor) writes its
+        log and workspace.yaml but never a store row, so every listing
+        missed it while it ran and after it ended."""
+        from support import _event, _write_events
+
+        from cs import db
+
+        base = Path(os.environ["COPILOT_HOME"])
+        sid = "acp-only-0001"
+        _write_events(base, sid, [
+            _event("user.message", "2026-10-16T19:19:34", {"content": "hi"}),
+            _event("user.message", "2026-10-16T19:19:40", {}, agent="sub"),
+            _event("session.usage_record", "2026-10-16T19:19:41",
+                   {"usage": {"copilotUsage": {"totalNanoAiu": 2_500_000_000}}}),
+            '{"type":"session.usage_record","data":{"usage":{"copilotUsage":'
+            '{"totalNanoAiu":1e999}}}}',
+            _event("session.usage_record", "2026-10-16T19:19:42",
+                   {"usage": {"copilotUsage": "junk"}}),
+        ])
+        (base / "session-state" / sid / "workspace.yaml").write_text(
+            "id: acp-only-0001\nrepository: acme/phone\nname: Hello what is sprint\n")
+
+        conn = db.connect()
+        try:
+            row = {r[0]: r for r in db.recent_sessions(conn, 1)}[sid]
+        finally:
+            conn.close()
+        self.assertEqual(row[2:], ("Hello what is sprint", "acme/phone", "", 1,
+                                   2_500_000_000))
+        self.assertIn("Hello what is sprint", self._run("recent")[1])
+
     def test_repos(self):
         code, out = self._run("repos")
         self.assertEqual(code, 0)
