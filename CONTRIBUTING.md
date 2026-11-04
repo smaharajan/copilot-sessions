@@ -100,7 +100,7 @@ responsible for. Put a test next to the behaviour it describes:
 | `test_home.py` | The landing screen — menu rows, icons, banner, animation | 51 |
 | `test_views.py` | What a view may claim: clarity, restored state, quiet defaults, skill attribution | 50 |
 | `test_governance.py` | Unattended runs, handoff chains, the credential audit and its masking corpus | 46 |
-| `test_reports.py` | Sorting, spend windows, efficiency and the machine-readable output | 42 |
+| `test_reports.py` | Sorting, spend windows, efficiency and the machine-readable output | 49 |
 | `test_render.py` | Charts, themes, glyph fallback, cell widths, markdown shapes, search snippets | 31 |
 | `test_transcript.py` | How a conversation is set on the page: furniture, attribution, width | 27 |
 | `test_practice_rules.py` | Every `cs coach` rule, fired and silenced — one fixture each | 18 |

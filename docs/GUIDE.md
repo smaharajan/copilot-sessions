@@ -771,6 +771,16 @@ launched from. Named *skill* usage comes from `cs skills` / `cs profiles`.
        28.4k  Sat 07 Mar              ███████████             2,610
 ```
 
+**Month by month**, **Week by week** and **Day by day** split the open window
+along the calendar, newest first and on UTC dates. They ignore `--sort`, so
+Per day remains the place to find the dearest days. A partial period says so:
+`Nov 2026 · so far`, `Aug 2026 · from 07 Aug`, `02 Nov – now`.
+
+The store may not hold usage for your whole history. If sessions predate its
+first usage record, Totals has a `records` row giving that date and how many
+earlier sessions could not be counted, so a short "all time" is not mistaken
+for months that cost nothing.
+
 Each breakdown shares one column shape, named once in a header line, and the
 bar — the only variable-width field — always goes last, which is what keeps the
 columns still.

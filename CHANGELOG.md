@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AI spend splits by month, week and day.** `cs cost` now has **Month by
+  month**, **Week by week** and **Day by day** sections for whichever window is
+  open, newest first and on UTC dates. A month or week the window or today cuts
+  short says so. Day by day lists every day with spend; Per day remains the top
+  fourteen for the sort in force. `--json` gains `by_month`, `by_week` and
+  `usage_began`.
+- **AI spend says where its records begin.** When the store holds sessions
+  older than its first usage record, Totals gives that date and how many
+  earlier sessions could not be counted, and the first month and week start
+  there rather than reading as whole.
+- **Local models get their own section.** `cs cost` and `cs efficiency` list
+  them apart from billed models, and zero-credit rows no longer pad the tables.
+
+### Changed
+
+- **Cyberpunk is the default theme.**
+
 ### Fixed
 
 - **Sessions served over ACP now appear in every listing.** A session hosted

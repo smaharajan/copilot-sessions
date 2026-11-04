@@ -51,7 +51,7 @@ needs nothing beyond Python itself.
      📦  Repositories      sessions grouped by repository
    ▌MEASURE  ─────────────────────────────────────────────────────────────── last 30 days ──
      📊  Stats             commits, PRs, files and what they cost
-     💰  AI spend          credits by model, repository and day
+     💰  AI spend          credits by model, repo, month, week, day
      🔋  Efficiency        cache, rate multiplier, latency, reasoning
      👥  Delegation        you vs the main agent vs sub-agents
      🐝  Sub-agents        which agents ran, on which models, how long

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from datetime import date, datetime, timedelta, timezone
 
 from .. import (
     db,
@@ -329,6 +330,53 @@ def _spend_header(name: str, note: str, span: int = _SPEND_NAME,
     )
 
 
+def _iso_date(text: str | None) -> date | None:
+    try:
+        return date.fromisoformat(text or "")
+    except ValueError:
+        return None
+
+
+def _month_label(month: str, start: date | None, today: date) -> str:
+    """'2026-11' → 'Nov 2026', saying so when the month is not a whole one.
+
+    A window rarely starts on the 1st, and a short first month next to full
+    ones would otherwise read as a month when little was spent.
+    """
+    first = date.fromisoformat(f"{month}-01")
+    name = first.strftime("%b %Y")
+    if start and start > first and start.strftime("%Y-%m") == month:
+        return f"{name} · from {start.strftime('%d %b')}"
+    return f"{name} · so far" if month == today.strftime("%Y-%m") else name
+
+
+def _week_label(monday: str, start: date | None, today: date) -> str:
+    """The days a week row really covers: clipped to the window and to today."""
+    first = date.fromisoformat(monday)
+    last = first + timedelta(days=6)
+    if start and start > first:
+        first = start
+    end = "now" if last >= today else last.strftime("%d %b")
+    return f"{first.strftime('%d %b')} – {end}"
+
+
+def _print_period_split(title: str, head: str, rows: list[tuple], label,
+                        colour: str, inner: int) -> None:
+    """One calendar split, newest first: the order a calendar is read in."""
+    if not rows:
+        return
+    print(ui.heading(title, colour, inner))
+    span, gauge = _spend_spans(inner, 9)
+    print(_spend_header(head, f"{'calls':>9}", span, gauge))
+    peak = max(row[1] for row in rows)
+    for period, nano, calls in reversed(rows):
+        print(_spend_row(
+            ui.fmt_aiu(nano), label(period), _bar(nano, peak, gauge, colour),
+            f"{calls:>9,}", span,
+        ))
+    print()
+
+
 def cmd_cost(days: int = 30, sort_by: str | None = None,
              descending: bool | None = None) -> bool:
     return _page_report(
@@ -353,8 +401,19 @@ def _render_cost(days: int = 30, column: str = "spend",
     by_model = db.cost_by_model(conn, days)
     by_repo = db.cost_by_repo(conn, days)
     by_day = db.cost_by_day(conn, days)
+    by_week = db.weeks_of(by_day)
+    by_month = db.months_of(by_day)
     top = db.cost_top_sessions(conn, days)
+    began = _iso_date(db.usage_began(conn))
+    unrecorded = db.sessions_before_usage(conn, began.isoformat()) if began else 0
     conn.close()
+
+    # Usage is bucketed by its UTC stamp, so the labels work from the UTC date.
+    # A period is cut short by the window or by where the records begin.
+    today = datetime.now(timezone.utc).date()
+    window = today - timedelta(days=days) if days else None
+    start = max((d for d in (window, began) if d), default=None)
+    every_day = by_day
 
     # Every section shares a shape — spend, a name, a count — so one choice
     # sorts all four the same way.
@@ -396,6 +455,10 @@ def _render_cost(days: int = 30, column: str = "spend",
                              f"{_thousands(totals['reasoning_tokens'])} reasoning"))
     print(ui.field("cache", f"{_thousands(cache)} read ({cache_pct} of tokens sent)"))
     print(ui.field("time", f"{seconds / 3600:.1f}h of model time · {avg_call:.1f}s per call"))
+    if unrecorded and began and (window is None or window < began):
+        # Otherwise "all time" reads as if the months before this cost nothing.
+        print(ui.field("records", f"begin {began.strftime('%d %b %Y')} · "
+                                  f"{unrecorded:,} earlier sessions not counted"))
     # No `issues` row. It read "0 errors · 7 filtered" — thirteen events out of
     # thirty-nine thousand, on a page about where three hundred thousand
     # credits went, and a content filter is not a spend fact at all. Every
@@ -409,6 +472,15 @@ def _render_cost(days: int = 30, column: str = "spend",
     # calls took is a second question, and `cs stats` also answers it.
     aic_models = [m for m in by_model if m[2] > 0]
     local_models = [m for m in by_model if m[2] <= 0 and db.is_local_model(m[0])]
+    _print_period_split(
+        "Month by month", "month", by_month,
+        lambda month: _month_label(month, start, today), ui.ACCENT, inner,
+    )
+    _print_period_split(
+        "Week by week", "week", by_week,
+        lambda week: _week_label(week, start, today), ui.SKY, inner,
+    )
+
     print(ui.heading("By model", ui.VIOLET, inner))
     timings = inner >= 62
     span, gauge = _spend_spans(inner, 23 if timings else 9)
@@ -479,11 +551,13 @@ def _render_cost(days: int = 30, column: str = "spend",
         print(f"    {ui.VIOLET}{ui.fmt_aiu(nano):>8}{ui.RST}  {share}"
               f"{ui._fit(redact.one_line(redact.redact(summary)), max(10, inner - 16 - gauge))}")
     print()
+    # Last because it is the one section whose length grows with the window.
+    _print_period_split("Day by day", "day", every_day, _weekday, ui.VIOLET, inner)
     _note("Credits = AI units (AIU) spent · avg = per call · first = to "
           "first token. 'cs cost <days>' narrows the range; 'cs cost all' "
           "widens it. Per day is the top "
-          f"{_COST_DAYS} for the sort in force — 'cs timeline <days>' lists "
-          "every day.", inner)
+          f"{_COST_DAYS} for the sort in force; the month, week and day "
+          "splits stay in calendar order, newest first, on UTC dates.", inner)
     print(_sort_note("cost", column, descending, width - 4))
     print()
 

@@ -112,7 +112,7 @@ def _home_items(period: int = 30,
         # in its head.
         # (ui.menu_icon("days"), "Working days", ... cmd_timeline, "period"),
         (ui.menu_icon("spend"), "AI spend",
-         "credits by model, repository and day",
+         "credits by model, repo, month, week, day",
          cmd_cost, "period"),
         (ui.menu_icon("efficiency"), "Efficiency",
          "cache, rate multiplier, latency, reasoning",
@@ -1547,7 +1547,7 @@ def cmd_help() -> None:
     cs repos              Sessions grouped by repository
     cs stats [N|all]      Output ledger: commits, PRs, files, cost, delegation
     cs timeline [N|all]   Working days: sessions, turns and spend per day
-    cs cost [N|all]       AI spend by model, repo and day (default 30)
+    cs cost [N|all]       AI spend by model, repo, month, week, day (default 30)
     cs efficiency [N|all] Whether it had to cost that: cache hit rate, rate
                           multiplier, first-token latency, reasoning share
     cs agents [N|all]     Delegation: you vs main agent vs sub-agents

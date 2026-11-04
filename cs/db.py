@@ -13,6 +13,7 @@ import re
 import sqlite3
 import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -2084,6 +2085,58 @@ def cost_by_day(conn: sqlite3.Connection, days: int) -> list[tuple]:
             ORDER BY day""",
         args,
     ).fetchall()
+
+
+def _roll_up_days(by_day: list[tuple], period) -> list[tuple]:
+    """(period, nano_aiu, calls) in date order, summed from per-day rows.
+
+    Taking the rows rather than querying again means the month, week and day
+    splits of one report cannot disagree about what was spent. A stamp that is
+    not a date belongs to no period, and must not take the report down.
+    """
+    totals: dict[str, list[int]] = {}
+    for day, nano, calls in by_day:
+        try:
+            when = datetime.fromisoformat(day).date()
+        except (TypeError, ValueError):
+            continue
+        bucket = totals.setdefault(period(when), [0, 0])
+        bucket[0] += nano
+        bucket[1] += calls
+    return [(key, *totals[key]) for key in sorted(totals)]
+
+
+def months_of(by_day: list[tuple]) -> list[tuple]:
+    """`cost_by_day` rows as (YYYY-MM, nano_aiu, calls)."""
+    return _roll_up_days(by_day, lambda when: when.strftime("%Y-%m"))
+
+
+def weeks_of(by_day: list[tuple]) -> list[tuple]:
+    """`cost_by_day` rows as (the week's Monday, nano_aiu, calls)."""
+    return _roll_up_days(
+        by_day, lambda when: (when - timedelta(days=when.weekday())).isoformat()
+    )
+
+
+def usage_began(conn: sqlite3.Connection) -> str | None:
+    """The first day the store has a usage record for, as YYYY-MM-DD."""
+    if not _has_usage(conn) or not usage_is_windowable(conn):
+        return None
+    return conn.execute(
+        "SELECT MIN(substr(created_at, 1, 10)) FROM assistant_usage_events"
+    ).fetchone()[0]
+
+
+def sessions_before_usage(conn: sqlite3.Connection, began: str) -> int:
+    """Sessions opened before usage was recorded, which no total can include."""
+    if not _has_usage(conn) or not _has_columns(conn, "sessions", "created_at"):
+        return 0
+    return conn.execute(
+        """SELECT COUNT(*) FROM sessions s
+           WHERE s.created_at < ? AND NOT EXISTS (
+               SELECT 1 FROM assistant_usage_events u WHERE u.session_id = s.id)""",
+        (began,),
+    ).fetchone()[0]
 
 
 def cost_top_sessions(conn: sqlite3.Connection, days: int, limit: int = 5) -> list[tuple]:

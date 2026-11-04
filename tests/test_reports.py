@@ -8,12 +8,14 @@ import os
 import re
 import sqlite3
 from contextlib import redirect_stderr
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from support import CALM, PARENT, StoreTest, _add_governance_rows
 
+from cs import db
 from cs.cli import _COST_DAYS
+from cs.cli.reports import _month_label, _week_label
 from cs.ui import cells as ui_cells
 
 
@@ -490,6 +492,96 @@ class CostPerDayTest(StoreTest):
         first = next(line for line in self._per_day(out).splitlines()
                      if re.search(r"\d\d \w\w\w", line))
         self.assertIn(oldest.lstrip("0"), first)
+
+
+class CostCalendarSplitTest(StoreTest):
+    """The month, week and day splits of `cs cost`."""
+
+    def _seed(self, *stamps):
+        conn = sqlite3.connect(Path(self._tmp.name) / "session-store.db")
+        conn.execute("DELETE FROM assistant_usage_events")
+        conn.executemany(
+            """INSERT INTO assistant_usage_events
+               (session_id, model, total_nano_aiu, input_tokens, output_tokens,
+                cache_read_tokens, reasoning_tokens, duration_ms,
+                time_to_first_token_ms, finish_reason, content_filter_triggered,
+                initiator, created_at)
+               VALUES ('sess-alpha','gpt-5.5',?,10,10,10,0,100,10,'stop',0,'user',?)""",
+            stamps,
+        )
+        conn.commit()
+        conn.close()
+
+    def _connect(self):
+        return sqlite3.connect(Path(self._tmp.name) / "session-store.db")
+
+    def test_months_and_weeks_sum_the_days_across_their_boundaries(self):
+        """31 Aug 2026 is a Monday and 1 Sep the next day: one week, two months."""
+        self._seed(("3", "2026-08-30T12:00:00Z"), ("5", "2026-08-31T12:00:00Z"),
+                   ("7", "2026-08-31T13:00:00Z"), ("11", "2026-09-01T12:00:00Z"))
+        conn = self._connect()
+        try:
+            by_day = db.cost_by_day(conn, 0)
+        finally:
+            conn.close()
+        self.assertEqual(db.months_of(by_day),
+                         [("2026-08", 15, 3), ("2026-09", 11, 1)])
+        self.assertEqual(db.weeks_of(by_day),
+                         [("2026-08-24", 3, 1), ("2026-08-31", 23, 3)])
+
+    def test_a_stamp_that_is_not_a_date_does_not_take_the_page_down(self):
+        self._seed(("3", "not-a-date"), ("5", "2026-08-31T12:00:00Z"))
+        code, out = self._run("cost", "all")
+        self.assertEqual(code, 0)
+        self.assertIn("Month by month", out)
+
+    def test_all_time_says_where_the_records_begin(self):
+        """Sessions older than the first usage record are not free months."""
+        self._seed(("5", "2026-08-31T12:00:00Z"))
+        conn = self._connect()
+        conn.execute("""INSERT INTO sessions (id, created_at)
+                        VALUES ('sess-older', '2026-03-01T09:00:00Z')""")
+        conn.commit()
+        conn.close()
+        code, out = self._run("cost", "all")
+        self.assertEqual(code, 0)
+        self.assertIn("begin 31 Aug 2026", out)
+        self.assertRegex(out, r"[1-9]\d* earlier sessions not counted")
+        self.assertIn("Aug 2026 · from 31 Aug", out)
+
+    def test_labels_say_when_a_period_is_not_whole(self):
+        today = date(2026, 11, 4)
+        start = date(2026, 8, 7)
+        self.assertEqual(_month_label("2026-08", start, today), "Aug 2026 · from 07 Aug")
+        self.assertEqual(_month_label("2026-09", start, today), "Sep 2026")
+        self.assertEqual(_month_label("2026-11", start, today), "Nov 2026 · so far")
+        self.assertEqual(_week_label("2026-08-03", start, today), "07 Aug – 09 Aug")
+        self.assertEqual(_week_label("2026-10-26", start, today), "26 Oct – 01 Nov")
+        self.assertEqual(_week_label("2026-11-02", start, today), "02 Nov – now")
+
+    def test_every_day_is_listed_newest_first_whatever_the_sort(self):
+        now = datetime.now(timezone.utc)
+        days = [now - timedelta(days=back) for back in range(20)]
+        self._seed(*[(str(1_000_000_000_000 * (back + 1)), day.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                     for back, day in enumerate(days)])
+        code, out = self._run("cost", "all", "--sort", "spend", "--asc")
+        self.assertEqual(code, 0)
+        section = out.split("Day by day", 1)[1].split("Credits =", 1)[0]
+        drawn = re.findall(r"\w\w\w (\d\d \w\w\w)", section)
+        self.assertEqual(drawn, [day.strftime("%d %b") for day in days])
+        for heading in ("Month by month", "Week by week"):
+            self.assertIn(heading, out)
+
+    def test_json_carries_the_splits_and_csv_stays_on_the_models(self):
+        code, out = self._run("cost", "7", "--json")
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        spent = payload["totals"]["nano_aiu"]
+        self.assertEqual(sum(m["nano_aiu"] for m in payload["by_month"]), spent)
+        self.assertEqual(sum(w["nano_aiu"] for w in payload["by_week"]), spent)
+        code, out = self._run("cost", "7", "--csv")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("model,"))
 
 
 class KitColumnTest(StoreTest):

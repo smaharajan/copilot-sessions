@@ -154,10 +154,12 @@ def cost(days: int) -> dict:
     try:
         if not db.has_usage(conn):
             return {"view": "cost", "window_days": days, "usage_recorded": False}
+        by_day = db.cost_by_day(conn, days)
         return {
             "view": "cost",
             "window_days": days,
             "usage_recorded": True,
+            "usage_began": db.usage_began(conn),
             "totals": dict(db.cost_totals(conn, days)),
             "by_model": [
                 {"model": m, "calls": c, "nano_aiu": n,
@@ -170,7 +172,15 @@ def cost(days: int) -> dict:
             ],
             "by_day": [
                 {"day": d, "nano_aiu": n, "calls": c}
-                for d, n, c in db.cost_by_day(conn, days)
+                for d, n, c in by_day
+            ],
+            "by_week": [
+                {"week_start": w, "nano_aiu": n, "calls": c}
+                for w, n, c in db.weeks_of(by_day)
+            ],
+            "by_month": [
+                {"month": m, "nano_aiu": n, "calls": c}
+                for m, n, c in db.months_of(by_day)
             ],
         }
     finally:
