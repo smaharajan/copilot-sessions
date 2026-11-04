@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-11-04
+
 ### Added
 
 - **AI spend splits by month, week and day.** `cs cost` now has **Month by
@@ -727,7 +729,8 @@ only.
   masked at the render edge in `cs/redact.py`, and terminal control sequences
   and row-breaking characters are stripped before anything is drawn.
 
-[Unreleased]: https://github.com/smaharajan/copilot-sessions/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/smaharajan/copilot-sessions/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/smaharajan/copilot-sessions/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/smaharajan/copilot-sessions/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v2.3.0
 [2.2.0]: https://github.com/smaharajan/copilot-sessions/releases/tag/v2.2.0
