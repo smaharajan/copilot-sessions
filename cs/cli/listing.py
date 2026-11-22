@@ -483,7 +483,8 @@ def _listing_tui(
             longest_tag = max(
                 (ui.cells(_project_tag(row[3], row[4])) for row in rows), default=0
             )
-            repo_width = min(22, max(12, width // 5), max(8, longest_tag + 2))
+            repo_label = "Repo/Working Dir"
+            repo_width = min(22, max(len(repo_label) + 1, longest_tag + 2))
             # Columns give way as the window narrows, least needed first —
             # the kit pair, then turns, credits and the repository — and the
             # summary keeps _SUMMARY_MIN cells whatever else has to go, since
@@ -520,7 +521,8 @@ def _listing_tui(
                 theme["selected"] if sort_by == "relevance" else theme["header"],
             )
             for name, x, column_width in columns:
-                label = name.title() + (arrow if sort_by == name else "")
+                label = (repo_label if name == "repo" else name.title())
+                label += arrow if sort_by == name else ""
                 style = theme["selected"] if sort_by == name else theme["header"]
                 _addstr(screen, 3, x, f"{label:<{column_width}}", column_width, style)
             _addstr(screen, 4, 0, "─" * width, width, theme["separator"])
@@ -805,7 +807,7 @@ def cmd_search(term: str, sort_by: str | None = None, descending: bool | None = 
     conn = db.connect()
     rows, hits = db.search(conn, term)
     conn.close()
-    rows = _with_assets(rows)
+    rows = _with_assets(_visible(rows, True))
     title = f"Search · '{term}' · {len(rows)} session{'' if len(rows) == 1 else 's'}"
     if sort_by is None and sys.stdin.isatty() and sys.stdout.isatty():
         return _interactive_listing(
@@ -836,7 +838,7 @@ def cmd_files(pattern: str, sort_by: str | None = None,
     conn = db.connect()
     rows, hits = db.sessions_for_file(conn, pattern)
     conn.close()
-    rows = _with_assets(rows)
+    rows = _with_assets(_visible(rows, True))
     hits = {sid: (tool, _short_path(path, "")) for sid, (tool, path) in hits.items()}
     title = f"Files · '{pattern}' · {len(rows)} session{'' if len(rows) == 1 else 's'}"
     if sys.stdin.isatty() and sys.stdout.isatty():

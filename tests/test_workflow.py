@@ -54,8 +54,17 @@ class PinSortTest(StoreTest):
         """Pins floated to the top of every listing and search, so a pinned
         session sat above the best match. The mark stays; the order is the
         sort's. The Pinned view is where pins come first."""
+        import sqlite3
+
         from cs import ui
 
+        conn = sqlite3.connect(Path(os.environ["COPILOT_HOME"]) / "session-store.db")
+        conn.execute(
+            "INSERT INTO turns (session_id,turn_index,user_message,assistant_response)"
+            " VALUES ('sess-empty',0,'work happened','done')"
+        )
+        conn.commit()
+        conn.close()
         ui.pin_session("sess-alpha")
         # Force non-TTY render so we get the plain listing.
         code, out = self._run("all", "--sort", "summary", "--desc")

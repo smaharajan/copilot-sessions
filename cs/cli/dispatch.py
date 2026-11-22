@@ -412,7 +412,7 @@ def _emit_data(cmd: str, rest: list[str], fmt: str) -> int:
         conn = db.connect()
         rows, hits = db.search(conn, term)
         conn.close()
-        export.emit(export.search(term, _with_assets(rows), hits), fmt)
+        export.emit(export.search(term, _with_assets(_visible(rows, True)), hits), fmt)
         return 0
 
     if cmd in ("skills", "profiles", "agent-profiles"):

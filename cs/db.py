@@ -348,19 +348,32 @@ def _yaml_scalar(head: str, rest: list[str]) -> str:
     return joined
 
 
+_HELPER_TITLES = (
+    ("You monitor an AI coding agent that is partway through ONE task",
+     "Agent Monitor - Loop Review"),
+    ("You mine a DURABLE, REPO-SPECIFIC operating manual", "Agent Learning - Repo Manual"),
+)
+
+
+def _session_title(summary: str) -> str:
+    """Known helper prompts describe their role, not the work in the parent session."""
+    for prefix, title in _HELPER_TITLES:
+        if summary.startswith(prefix):
+            return title
+    return summary
+
+
 def _given_names(rows: list[tuple], names: dict[str, tuple[str, bool]]) -> list[tuple]:
     """Listing rows titled with the name you gave the session, where you gave one.
 
     Only a name you chose outranks the store's summary. Copilot's own
     generated names are left where they are: for most sessions the store's
     summary is the later and better of the two, and a generated name is
-    often the whole first prompt.
+    often the whole first prompt. Known helper prompts get a role label.
     """
     given = {sid: name for sid, (name, yours) in names.items() if yours}
-    if not given:
-        return rows
     return [
-        (row[0], row[1], given[row[0]], *row[3:]) if row[0] in given else row
+        (row[0], row[1], given.get(row[0], _session_title(row[2])), *row[3:])
         for row in rows
     ]
 
@@ -649,12 +662,19 @@ def search(
         f"{optional(conn, 'sessions', column, 's')} LIKE ?1"
         for column in ("summary", "repository", "cwd")
     )
+    helper_matches = [
+        prefix + "%" for prefix, title in _HELPER_TITLES
+        if term.casefold() in title.casefold()
+    ]
+    summary = optional(conn, "sessions", "summary", "s")
+    if helper_matches:
+        named += " OR " + " OR ".join(f"{summary} LIKE ?" for _ in helper_matches)
     meta = conn.execute(
         f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
             FROM sessions s
             WHERE {named}
             ORDER BY MAX(s.created_at, s.updated_at) DESC""",
-        (like,),
+        (like, *helper_matches),
     ).fetchall()
 
     # The names live on disk, not in the store, so they are matched here.
@@ -734,7 +754,7 @@ def session_detail(conn: sqlite3.Connection, session_id: str) -> tuple | None:
     named = session_name(session_id) if row else None
     if named and named[1]:
         return (named[0], *row[1:])
-    return row
+    return (_session_title(row[0]), *row[1:]) if row else None
 
 
 def session_turn_count(conn: sqlite3.Connection, session_id: str) -> int:
@@ -1022,16 +1042,10 @@ def stats(conn: sqlite3.Connection) -> dict:
         return conn.execute(sql, params).fetchone()
 
     repo = optional(conn, "sessions", "repository")
-    # Sessions that recorded *something* — the same rule `cli._never_used`
-    # applies to every listing row, in SQL. A plain COUNT(*) counted the
-    # blank rows the CLI writes at launch and then drops everywhere, so the
-    # landing strip claimed eight more sessions than `cs all` would list and
-    # no view on the menu agreed with the number above it.
+    # Match cli._never_used: a name alone is not activity.
     total = one(f"""
         SELECT COUNT(*) FROM sessions s
         WHERE EXISTS (SELECT 1 FROM turns t WHERE t.session_id = s.id)
-           OR TRIM(COALESCE({optional(conn, 'sessions', 'summary', 's', "''")},
-                            '')) <> ''
            OR {_aiu_sub(conn)} > 0
     """)[0]
     total_turns = one("SELECT COUNT(*) FROM turns")[0]
@@ -1041,10 +1055,15 @@ def stats(conn: sqlite3.Connection) -> dict:
     interactive = one(
         "SELECT COUNT(*) FROM sessions WHERE id IN (SELECT DISTINCT session_id FROM turns)"
     )[0]
+    known = {row[0] for row in conn.execute("SELECT id FROM sessions")}
+    extra = [row for row in unindexed_sessions(0, known) if row[5] or row[6]]
+    total += len(extra)
+    total_turns += sum(row[5] for row in extra)
+    interactive += sum(bool(row[5]) for row in extra)
     oldest = one("SELECT MIN(substr(created_at,1,10)) FROM sessions")[0]
     newest = one("SELECT MAX(substr(created_at,1,10)) FROM sessions")[0]
     avg_turns = one(
-        "SELECT ROUND(AVG(c), 1) FROM (SELECT COUNT(*) c FROM turns GROUP BY session_id)"
+        "SELECT ROUND(? * 1.0 / NULLIF(?, 0), 1)", (total_turns, interactive)
     )[0]
     top_repo = one(
         f"""SELECT COALESCE({repo}, '(ad-hoc)'), COUNT(*) c

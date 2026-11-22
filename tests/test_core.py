@@ -38,7 +38,7 @@ class CSTest(StoreTest):
         code, out = self._run("stats")
         self.assertEqual(code, 0)
         self.assertIn("sessions", out)
-        self.assertIn("2 (1 interactive)", out)
+        self.assertIn("1 (1 interactive)", out)
 
     def test_stats_reports_what_the_work_produced(self):
         """Commits, PRs, files and handoffs — the output side of the ledger."""
@@ -61,10 +61,64 @@ class CSTest(StoreTest):
         self.assertIn("sorted by active ↓", out)
         self.assertIn("Sort: --sort active|turns|credits|skills|agents|summary|repo", out)
 
-    def test_all_shows_empty(self):
+    def test_all_hides_sessions_with_no_turns_or_spend(self):
         code, out = self._run("all", "7")
         self.assertEqual(code, 0)
-        self.assertIn("Empty session", out)
+        self.assertNotIn("Empty session", out)
+        self.assertIn("1 total", out)
+        for cmd, args in (("all", ()), ("recent", ()), ("search", ("Empty",))):
+            with self.subTest(command=cmd):
+                import json
+
+                data = json.loads(self._run(cmd, *args, "--json")[1])
+                self.assertNotIn("sess-empty", [row["id"] for row in data["sessions"]])
+        code, out = self._run("search", "Empty")
+        self.assertEqual(code, 0)
+        self.assertIn("0 sessions", out)
+        self.assertNotIn("Empty session", out)
+
+    def test_helper_prompts_get_readable_titles_everywhere(self):
+        import json
+
+        from cs import db
+
+        cases = (
+            ("You monitor an AI coding agent that is partway through ONE task",
+             "Agent Monitor - Loop Review"),
+            ("You mine a DURABLE, REPO-SPECIFIC operating manual for a coding agent",
+             "Agent Learning - Repo Manual"),
+        )
+        for prompt, title in cases:
+            with self.subTest(prompt=prompt):
+                conn = sqlite3.connect(
+                    Path(os.environ["COPILOT_HOME"]) / "session-store.db"
+                )
+                conn.execute("UPDATE sessions SET summary=? WHERE id='sess-alpha'", (prompt,))
+                conn.commit()
+                conn.close()
+                for args in (("all",), ("search", prompt), ("search", title),
+                             ("show", "sess-alpha"),
+                             ("export", "sess-alpha"), ("all", "--json")):
+                    code, out = self._run(*args)
+                    self.assertEqual(code, 0)
+                    self.assertIn(title, out)
+                data = json.loads(self._run("search", title, "--json")[1])
+                self.assertEqual([row["id"] for row in data["sessions"]], ["sess-alpha"])
+                conn = db.connect()
+                try:
+                    self.assertEqual(
+                        db.sessions_by_id(conn, ["sess-alpha"])["sess-alpha"][2], title
+                    )
+                    self.assertEqual(
+                        conn.execute("SELECT summary FROM sessions WHERE id='sess-alpha'")
+                        .fetchone()[0], prompt,
+                    )
+                finally:
+                    conn.close()
+                self._name_session("sess-alpha", "name: My Session Title\nuser_named: true\n")
+                self.assertIn("My Session Title", self._run("show", "sess-alpha")[1])
+                self.assertIn("My Session Title", self._run("all")[1])
+                self._name_session("sess-alpha", f"name: {prompt}\nuser_named: false\n")
 
     def test_search(self):
         code, out = self._run("search", "portal")
@@ -898,7 +952,7 @@ class CSTest(StoreTest):
     def test_files_matches_wildcards_and_partials(self):
         _, exact = self._run("files", "portal/index.html")
         self.assertIn("Three.js portal", exact)
-        self.assertIn("Empty session", exact)     # both sessions touched it
+        self.assertNotIn("Empty session", exact)  # no turns or spend
         _, glob = self._run("files", "*.js")
         self.assertIn("Three.js portal", glob)
         self.assertNotIn("Empty session", glob)   # it never touched a .js file
@@ -1851,9 +1905,8 @@ class CSTest(StoreTest):
         any other table. There is nothing to read, brief or review, so they
         only padded the view out.
 
-        All three conditions are required, not turns alone: a zero-turn
-        session that was given a name, or that spent credits, recorded
-        something and stays. Dropping a row never hides a session from
+        A name alone is not activity; recorded turns or credits are.
+        Dropping a row never hides a session from
         `resume` — ids resolve against the store, not the listing.
         """
         import sqlite3 as sq
@@ -1879,8 +1932,8 @@ class CSTest(StoreTest):
         self.assertTrue(cli._never_used(blank))
         self.assertFalse(cli._never_used(blank[:5] + (1, 0)), "a turn is content")
         self.assertFalse(cli._never_used(blank[:5] + (0, 42)), "credits are content")
-        self.assertFalse(
-            cli._never_used(("x", "t", "Named", "", "", 0, 0)), "a name is content"
+        self.assertTrue(
+            cli._never_used(("x", "t", "Named", "", "", 0, 0)), "a name is not activity"
         )
 
         for command in ("all", "recent"):
@@ -1890,9 +1943,9 @@ class CSTest(StoreTest):
                 self.assertNotIn("(never used)", out)
                 self.assertNotIn("sess-unused", out)
 
-        # The zero-turn session that has a name is still carried by `cs all`.
+        # Even a named session needs a turn or spend to appear in `cs all`.
         _, all_out = self._run("all", "3650")
-        self.assertIn("Empty session", all_out)
+        self.assertNotIn("Empty session", all_out)
         self.assertIn("(untitled)", all_out)          # sess-noname, which has a turn
         # …and the header counts what it actually shows.
         import re as _re
@@ -2026,7 +2079,7 @@ class CSTest(StoreTest):
         missed it while it ran and after it ended."""
         from support import _event, _write_events
 
-        from cs import db
+        from cs import cli, db
 
         base = Path(os.environ["COPILOT_HOME"])
         sid = "acp-only-0001"
@@ -2045,12 +2098,33 @@ class CSTest(StoreTest):
 
         conn = db.connect()
         try:
-            row = {r[0]: r for r in db.recent_sessions(conn, 1)}[sid]
+            rows = db.recent_sessions(conn, 1)
+            row = {r[0]: r for r in rows}[sid]
+            self.assertEqual(db.stats(conn)["total"],
+                             len(cli._visible(rows, show_all=True)))
         finally:
             conn.close()
         self.assertEqual(row[2:], ("Hello what is sprint", "acme/phone", "", 1,
                                    2_500_000_000))
         self.assertIn("Hello what is sprint", self._run("recent")[1])
+
+    def test_log_only_sessions_are_included_in_the_average_turn_count(self):
+        from support import _event, _write_events
+
+        from cs import db
+
+        base = Path(os.environ["COPILOT_HOME"])
+        _write_events(base, "acp-five-turns", [
+            _event("user.message", f"2026-01-01T09:0{i}:00", {"content": "work"})
+            for i in range(5)
+        ])
+        conn = db.connect()
+        try:
+            stats = db.stats(conn)
+        finally:
+            conn.close()
+        self.assertEqual((stats["total_turns"], stats["interactive"]), (7, 2))
+        self.assertEqual(stats["avg_turns"], 3.5)
 
     def test_repos(self):
         code, out = self._run("repos")
@@ -2291,8 +2365,45 @@ class CSTest(StoreTest):
                 repo_x = _column_x(final, "Repo")
                 title_x = _column_x(final, "Summary")
                 self.assertLess(repo_x, title_x)
-                self.assertLessEqual(title_x - repo_x, len("widgets") + 2 + 1)
+                self.assertLessEqual(title_x - repo_x,
+                                     max(len("Repo/Working Dir") + 1, len("widgets") + 2))
                 self.assertEqual(final[(5, title_x)].strip(), "Short title")
+                self.assertEqual(final[(3, repo_x)].strip(), "Repo/Working Dir")
+
+    def test_repo_sort_orders_the_working_directory_when_no_repo_is_recorded(self):
+        from cs.cli import _sort_rows
+
+        rows = [
+            ("dir-z", "2026-01-01T12:00", "Z", "", "/tmp/Zebra", 1, 0),
+            ("repo-b", "2026-01-01T12:00", "B", "org/beta", "/tmp/x", 1, 0),
+            ("dir-a", "2026-01-01T12:00", "A", "", "/tmp/alpha", 1, 0),
+        ]
+        for descending, wanted in (
+            (False, ["dir-a", "repo-b", "dir-z"]),
+            (True, ["dir-z", "repo-b", "dir-a"]),
+        ):
+            with self.subTest(descending=descending):
+                ordered, _ = _sort_rows(rows, "repo", descending)
+                self.assertEqual([r[0] for r in ordered], wanted)
+
+    def test_a_paid_session_without_turns_or_summary_is_not_labelled_never_used(self):
+        import shutil
+        from unittest import mock
+
+        from cs import cli
+
+        rows = [("paid", "2026-01-01T12:00", "", "", "/tmp", 0, 1_000_000_000)]
+        screen = Screen([ord("q")])
+        cli._listing_tui(screen, rows, "Sessions")
+        frame = screen.frames[-1]
+        self.assertEqual(frame[(5, _column_x(frame, "Summary"))], "(no summary)")
+        with mock.patch.object(shutil, "get_terminal_size",
+                               return_value=os.terminal_size((100, 24))):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                cli._render_listing(rows, "Sessions", True)
+            self.assertIn("(no summary)", out.getvalue())
+            self.assertNotIn("(never used)", out.getvalue())
 
     def test_listing_preserves_titles_at_supported_widths(self):
         from cs import cli, ui

@@ -123,30 +123,18 @@ def _is_hidden(summary: str, turns: int, nano_aiu: int,
     """
     if not turns and not nano_aiu:
         return True
-    # A name is not enough on its own: `_visible` keeps the merely quiet
-    # sessions for `cs all`, and that is the distinction it is drawing.
     return any((summary or "").startswith(p) for p in prefixes)
 
 
 def _never_used(row: tuple) -> bool:
-    """A session that recorded nothing whatsoever, on any axis.
+    """No recorded turns or spend; a launch-time name is not activity.
 
-    The CLI writes a session row the moment it launches. Close it without an
-    exchange and that row is all there ever is: no turns, no summary, no
-    credits — and, checked against a real store, no checkpoints, files, refs
-    or usage events either. There is nothing to read, brief or review, so
-    listing it only pads the view out.
-
-    All three conditions are required rather than turns alone: a session
-    that spent credits, or that was given a name, recorded *something*, and
-    the point here is to drop only what is genuinely blank. Resuming is
-    unaffected — ids and prefixes resolve straight against the store, so a
-    dropped session can still be resumed by id if you know it.
+    Resume still resolves hidden sessions by id. Spend keeps live sessions
+    visible before their first turn has been persisted.
     """
     # Indexed rather than unpacked: a listing row grew two trailing columns
     # (skills, agents) and this rule reads none of them.
-    summary, turns, nano_aiu = row[2], row[5], row[6]
-    return not turns and not nano_aiu and not (summary or "").strip()
+    return not row[5] and not row[6]
 
 
 _KIT_MIN_WIDTH = 88
@@ -222,9 +210,7 @@ def _with_assets(rows: list[tuple]) -> list[tuple]:
 
 
 def _visible(rows: list[tuple], show_all: bool) -> list[tuple]:
-    """The rows a listing should carry. `show_all` keeps the merely quiet
-    ones — zero-turn sessions that still have a name, and anything matched
-    by the user's ignore file — but never the blank ones.
+    """`show_all` includes ignored sessions, but never unused launches.
 
     A zero-turn session that has spent credits is not quiet: it is running,
     and it is carried by every listing. See `_is_hidden`."""
@@ -236,17 +222,8 @@ def _visible(rows: list[tuple], show_all: bool) -> list[tuple]:
 
 
 def _no_summary(turns: int) -> str:
-    """What to show in place of a summary the session never got.
-
-    Almost every one of these is a session that was opened and closed
-    without a single exchange — the CLI writes the row at launch, and when
-    nothing follows there is nothing to summarise. Labelling those
-    "untitled" described the missing field instead of the session, which
-    made `cs all` read as a list of nameless work rather than what it is:
-    mostly abandoned launches. A session that does have turns but no
-    summary yet is the genuinely untitled case, and still says so.
-    """
-    return "(never used)" if turns == 0 else "(untitled)"
+    """A missing summary says nothing about whether the session was used."""
+    return "(no summary)" if turns == 0 else "(untitled)"
 
 
 _GENERIC_DIRS = {
@@ -882,6 +859,8 @@ def _sort_rows(
         )
 
     def key(row: tuple):
+        if index == 3:
+            return _project_tag(row[3], row[4]).casefold()
         return row[index] or ("" if index in (2, 3) else 0)
 
     return sorted(rows, key=key, reverse=direction), index == 1
