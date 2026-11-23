@@ -118,8 +118,8 @@ class _Tail:
                 self.last_failure = (tool, stamp)
 
 
-def _running(stamp: str) -> bool:
-    """Whether a session stamp is recent enough to call the session live."""
+def _recently_active(stamp: str) -> bool:
+    """Whether a session stamp is recent enough to show on Home."""
     text = (stamp or "").replace(" ", "T")[:16]
     try:
         when = datetime.fromisoformat(text).replace(tzinfo=timezone.utc)
@@ -151,18 +151,17 @@ def _watch_read(state: dict) -> None:
                        fields.get("repository", ""), fields.get("cwd", ""), 0, 0)
         else:
             latest = db.recent_sessions(conn, 1)
-            if not latest or not _running(latest[0][1]):
+            if not latest or not _recently_active(latest[0][1]):
                 state["session"] = None
                 return
             row = latest[0]
             sid = row[0]
-            running = [sid]
         now = datetime.now(timezone.utc)
         since = time.strftime("%Y-%m-%dT%H:%M:%S",
                               time.gmtime(time.time() - BURN_MINUTES * 60))
         burn = 0
         bins = [0] * BURN_MINUTES
-        spent = db.usage_stamps(conn, running)
+        spent = db.usage_stamps(conn, running or [sid])
         for when, nano in (stamp for stamps in spent.values() for stamp in stamps):
             if when < since:
                 continue
@@ -206,7 +205,7 @@ def _budget_text(session: dict) -> str:
 
 
 def _live_lines(state: dict, width: int) -> list[tuple[str, str]]:
-    """The home strip. Nothing — not an error — when no session is running.
+    """The home strip for confirmed live sessions or the latest recent one.
 
     One line below 100 columns. At 100 and wider, a small panel: the title,
     the burn against the budget, and a sparkline of the last ten minutes.
@@ -217,30 +216,30 @@ def _live_lines(state: dict, width: int) -> list[tuple[str, str]]:
     burn = f"{session['burn_per_minute']:,.2f} AIU/min"
     budget = _budget_text(session)
     title = session["summary"] or session["id"][:8]
-    live = session.get("live", 1)
-    count = f"{live} live" if live > 1 else "live"
+    live = session["live"]
+    status = f"{live} live" if live > 1 else "live" if live else "Recently active"
     tool = session["last_tool"] or "no tool yet"
     fail = (f" · fail {session['last_failure'][0]}"
             if session["last_failure"] else "")
     spark = ui.sparkline(session.get("burn") or []).rstrip()
     if width >= 100:
+        newest = "newest " if live > 1 else ""
         rows = [
-            (f"  ● {count}  newest {title}" if live > 1 else f"  ● live  {title}",
-             "active"),
+            (f"  ● {status}  {newest}{title}", "active"),
             (f"    burn {burn} · {budget}", "credits"),
             (f"    {spark}  {tool}{fail}".rstrip() if spark else f"    {tool}{fail}",
              "summary"),
         ]
     elif width >= 72:
-        rows = [(f"● {count} · {title} · {burn} · {budget}"
-                 if live > 1 else f"● {title} · {burn} · {budget}", "active")]
+        prefix, suffix = f"● {status} · ", f" · {burn} · {budget}"
+        title = ui.trunc(title, max(width - ui.cells(prefix + suffix), 0))
+        rows = [(prefix + title + suffix, "active")]
     else:
         left = ""
         if session["budget"] is not None and session["left"] is not None:
             left = f" · {max(session['left'], 0):,.0f} left"
-        rows = [(f"● {count} · {session['burn_per_minute']:,.2f}/min{left} · {title}"
-                 if live > 1 else
-                 f"● {title} · {session['burn_per_minute']:,.2f}/min{left}", "active")]
+        rows = [(f"● {status} · {session['burn_per_minute']:,.2f}/min{left} · {title}",
+                 "active")]
     return [(ui.trunc(text, width), role) for text, role in rows]
 
 

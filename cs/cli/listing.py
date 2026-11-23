@@ -30,6 +30,7 @@ from ._common import (
     _hit_text,
     _kit_cells,
     _kit_of,
+    _literal_ref,
     _mouse_event,
     _no_summary,
     _note,
@@ -40,6 +41,7 @@ from ._common import (
     _save_index,
     _short_path,
     _sort_rows,
+    _stable_ref,
     _visible,
     _window_label,
     _with_assets,
@@ -93,6 +95,7 @@ def _render_listing(
         else name.title()
         for name in ("active", "turns", "credits", "skills", "agents", "summary")
     }
+    labels["active"] = labels["active"].replace("Active", "Last Active")
     # The kit columns are the first thing to go on a narrow window: they are
     # a review column, and the row still has to be readable on a laptop
     # half-width. Below the threshold the summary gets their space back.
@@ -101,7 +104,7 @@ def _render_listing(
         f" {labels['skills']:>6} {labels['agents']:>6}" if kit else ""
     )
     pin_pad = " "
-    head = (f"{pin_pad}  #   {labels['active']:<7} {labels['turns']:<6}"
+    head = (f"{pin_pad}  #   {labels['active']:<12} {labels['turns']:<6}"
             f" {labels['credits']:<8}{kit_head} {labels['summary']}")
     print(f"  {ui.DIM}{ui._fit(head, width - 2)}{ui.RST}")
     # Sized to the window like every other view. The full-screen listing has
@@ -110,30 +113,29 @@ def _render_listing(
     print(f"  {ui.DIM}{'─' * (width - 4)}{ui.RST}")
 
     index: dict[int, str] = {}
-    current_day = ""
+    current_day = None
     stuck = loop_ids([row[0] for row in rows])
     for sid, started, summary, repo, cwd, turns, nano_aiu, *kit_values in rows:
         skills, agents = (kit_values + [0, 0])[:2]
         day = started[:10]
         clock = started[11:16] if len(started) >= 16 else "     "
         if group_by_day and day != current_day:
-            if current_day:
+            if current_day is not None:
                 print()
-            print(f"  {ui.AMBER}{ui.BOLD}{ui.friendly_day(day)}{ui.RST}")
+            print(f"  {ui.AMBER}{ui.BOLD}{ui.friendly_day(day) or 'Unknown date'}{ui.RST}")
             current_day = day
         n = numbers[sid]
         index[n] = sid
         # What is left after the fixed columns, split between the summary and
         # the repository tag — the tag capped, because past twenty-odd
         # characters it is a path and the summary is the thing being read.
-        # The fixed columns cost 25 plus the timestamp — five characters when
-        # the rows are grouped by day and carry a clock, eleven when they are
-        # not and carry a date. Whatever is left is the summary's, and on a
+        # The fixed columns cost 25 plus the timestamp. What is left is the
+        # summary's, and on a
         # window with nothing left the row is the numbers alone: a summary cut
         # to three characters is not a summary, and a row that runs off the
         # window is not a row.
         # A #N past 999 pushes its row one cell further per extra digit.
-        room = max(0, width - 25 - (5 if group_by_day else 11) - (14 if kit else 0)
+        room = max(0, width - 25 - 11 - (14 if kit else 0)
                    - max(0, len(str(n)) - 3))
         tag = _project_tag(repo, cwd)
         tag_span = min(22, room // 3) if tag and room >= 12 else 0
@@ -148,12 +150,12 @@ def _render_listing(
         cred = ui.fmt_aiu(nano_aiu)
         cred_txt = f"{ui.VIOLET}{cred:>7}{ui.RST}" if cred != "-" else f"{ui.DIM}{cred:>7}{ui.RST}"
         num = f"{ui.SKY}{n:>3}{ui.RST}"
-        active = clock if group_by_day else started[5:16]
+        active = (clock if group_by_day else started[5:16]) if started else "-"
         # One-cell marker so the # column stays aligned under the header.
         mark = f"{ui.AMBER}*{ui.RST}" if ui.is_pinned(sid) else " "
         # And one more in the gap after it, for a session that got stuck.
         loop = f"{ui.ROSE}!{ui.RST}" if sid in stuck else " "
-        row = (f"  {mark}{num}{loop} {ui.DIM}{active}{ui.RST}  {turns_txt}  {cred_txt}"
+        row = (f"  {mark}{num}{loop} {ui.DIM}{active:<11}{ui.RST}  {turns_txt}  {cred_txt}"
                f"{_kit_cells(skills, agents) if kit else ''}   {title_txt}{tag_txt}")
         print(row)
         if hits and sid in hits:
@@ -172,14 +174,14 @@ def _render_listing(
         # names are listed as words instead, so they can wrap.
         _note("Sort: --sort <column> [--asc|--desc] · columns: "
               + ", ".join(sortable.split("|")), width - 4, indent=2)
-    _note("Credits = AI units (AIU) spent  ·  cs show #1  ·  cs read #1  ·  "
-          "cs resume #1", width - 4, indent=2)
+    _note("Credits = AI units (AIU) spent  ·  cs show 1 and cs read 1 use the last listing",
+          width - 4, indent=2)
     if stuck:
         _note("! = a tool failed 3+ times in a row  ·  cs failures --loops",
               width - 4, indent=2)
     if kit:
         _note("Skills = skills the session used  ·  Agents = sub-agents it ran"
-              "  ·  cs show #1 names them and shows the evidence",
+              "  ·  cs show 1 names them and shows the evidence",
               width - 4, indent=2)
     print()
     _save_index(index)
@@ -287,18 +289,25 @@ def _interactive_listing(
         if not action:
             return True
         verb, session_id = action
+        ref = _literal_ref(session_id)
         # Looked up through the package namespace rather than imported here:
         # analysis imports this module, and an import inside the function
         # would hand back the un-lifted copy, whose `_page` cannot find the
         # reader it needs.
         if verb == "resume":
-            _resume_from_listing(session_id)
+            if _resume_from_listing(ref) is False:
+                return True
             continue
         # A pager already waited for the user, so returning is immediate;
         # output printed straight to the terminal needs an explicit pause,
         # otherwise the listing would wipe it before it could be read.
         viewer = {"read": cmd_read, "show": cmd_show}[verb]
-        dismissed = viewer(session_id)
+        try:
+            dismissed = viewer(ref)
+        except SystemExit as exc:
+            if exc.code != 1:
+                raise
+            dismissed = False  # The command already printed the error.
         if not dismissed and not _pause("Esc or Enter for the list · q quits "):
             return True
 
@@ -485,21 +494,21 @@ def _listing_tui(
             )
             repo_label = "Repo/Working Dir"
             repo_width = min(22, max(len(repo_label) + 1, longest_tag + 2))
-            # Columns give way as the window narrows, least needed first —
-            # the kit pair, then turns, credits and the repository — and the
-            # summary keeps _SUMMARY_MIN cells whatever else has to go, since
-            # it is what a listing is read for. At 40 columns the numbers
-            # used to take every cell there was and no title showed at all.
+            # Give the selected sort column first claim on optional space.
+            # If it cannot fit beside the summary, its value goes in the footer.
             # The mouse's column map is built from this same list, so a
             # column that has given way cannot be clicked either.
             spans = {"active": 12, "turns": 7, "credits": 9, "skills": 7,
                      "agents": 7, "repo": repo_width}
             room = width - 5 - spans["active"] - 1
             kept = {"active"}
+            if sort_by in spans and sort_by not in kept and room - spans[sort_by] >= _SUMMARY_MIN:
+                kept.add(sort_by)
+                room -= spans[sort_by]
             for group in (("repo",), ("credits",), ("turns",), ("skills", "agents")):
                 if group[0] == "skills" and width < _KIT_MIN_WIDTH:
                     break
-                cost = sum(spans[name] for name in group)
+                cost = sum(spans[name] for name in group if name not in kept)
                 if room - cost >= _SUMMARY_MIN:
                     kept.update(group)
                     room -= cost
@@ -521,20 +530,24 @@ def _listing_tui(
                 theme["selected"] if sort_by == "relevance" else theme["header"],
             )
             for name, x, column_width in columns:
-                label = (repo_label if name == "repo" else name.title())
+                label = {"repo": repo_label, "active": "Last Active"}.get(name, name.title())
                 label += arrow if sort_by == name else ""
                 style = theme["selected"] if sort_by == name else theme["header"]
                 _addstr(screen, 3, x, f"{label:<{column_width}}", column_width, style)
             _addstr(screen, 4, 0, "─" * width, width, theme["separator"])
 
+            hidden_metric = ""
             for line, row in enumerate(sorted_rows[offset : offset + visible], 5):
                 sid, started, summary, repo, cwd, turns, nano_aiu = row[:7]
                 skills, agents = _kit_of(row)
                 on_cursor = offset + line - 5 == cursor
                 tag = _project_tag(repo, cwd)
+                try:
+                    active = f"{date.fromisoformat(started[:10]):%d %b %Y}" if started else "·"
+                except ValueError:
+                    active = "·"
                 cells = {
-                    "active": (f"{date.fromisoformat(started[:10]):%d %b %Y}",
-                               theme["active"]),
+                    "active": (active, theme["active"]),
                     "turns": (str(turns), theme["turns"]),
                     "credits": (ui.fmt_aiu(nano_aiu),
                                 theme["credits"] if nano_aiu else theme["number"]),
@@ -555,6 +568,9 @@ def _listing_tui(
                     ), theme["summary"]),
                 }
                 if on_cursor:
+                    if sort_by in spans and sort_by not in kept:
+                        label = repo_label if sort_by == "repo" else sort_by.title()
+                        hidden_metric = f"{label}{arrow} {cells[sort_by][0]}"
                     _addstr(screen, line, 0, " " * width, width, theme["cursor"])
                 _addstr(
                     screen,
@@ -603,15 +619,16 @@ def _listing_tui(
                 _addstr(screen, height - 2, 0, text, width, theme["summary"])
 
             if sorted_rows:
-                number = numbers[sorted_rows[cursor][0]]
                 at, total = cursor + 1, len(sorted_rows)
-                forms = (
-                    f" {at} of {total:,} sessions · Enter resumes, or "
-                    f"'cs resume {number}' later ",
-                    f" {at} of {total:,} · ↵ resumes · cs resume {number} ",
-                    f" {at}/{total:,} · cs resume {number} ",
-                    f" {at}/{total:,} ",
-                )
+                ref = _stable_ref(sorted_rows[cursor][0])
+                forms = [f" {at} of {total:,} sessions · v details ",
+                         f" {at}/{total:,} · v details ", f" {at}/{total:,} "]
+                if ref:
+                    forms[:0] = [f" {at} of {total:,} sessions · cs show {ref} ",
+                                 f" {at}/{total:,} · cs show {ref} "]
+                if hidden_metric:
+                    prefix = f" {at}/{total:,} · "
+                    forms.insert(0, prefix + ui.trunc(hidden_metric, width - ui.cells(prefix) - 1))
             else:
                 forms = (
                     " no sessions match the filter · press / to edit, Esc to clear ",

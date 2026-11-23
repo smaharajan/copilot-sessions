@@ -8,6 +8,7 @@ import sys
 
 from .. import (
     db,
+    events,
     export,
     redact,
     ui,
@@ -29,6 +30,7 @@ from ._common import (
     _prompt,
     _resolve_ref,
     _short_path,
+    _stable_ref,
     _tail,
     _user_text,
     _why,
@@ -85,8 +87,8 @@ def _session_header(detail: tuple, turns: int, nano: int | None,
     folder = redact.one_line(redact.redact(_short_path(cwd, "") or ""))
     if folder and folder != repo:
         lines.append(ui.field("dir", _tail(folder, width - 12)))
-    span = f"{created[:16]} → {updated[:16]}".replace("T", " ")
-    lines.append(ui.field("span", span))
+    span = f"{(created or '-')[:16]} → {(updated or '-')[:16]}".replace("T", " ")
+    lines.append(ui.field("span", redact.one_line(redact.redact(span))))
     volume = f"{turns} turn{'' if turns == 1 else 's'}"
     if nano:
         volume += f" · {ui.fmt_aiu(nano)} AIU"
@@ -107,28 +109,24 @@ def _short_ref(session_id: str) -> str:
     """
     import sqlite3
 
-    # Shortening is for uuids. An id already short enough to read whole gains
-    # nothing from being clipped, and clipping it costs the reader the ability
-    # to recognise it — `sess-alpha` truncated to `sess-alp` saves two
-    # characters and throws away the only two that meant anything.
-    if len(session_id) <= 20:
-        return session_id
+    literal = _stable_ref(session_id)
+    if not literal or not re.fullmatch(r"[0-9a-fA-F-]{36}", session_id):
+        return literal
     try:
-        conn = db.connect()
+        conn = db.connect(fatal=False)
         try:
+            matches = db.session_ids_with_prefix(conn, session_id[:8].lower())
             for size in (8, 12, 16, 24):
                 prefix = session_id[:size]
-                count = conn.execute(
-                    "SELECT count(*) FROM sessions WHERE id LIKE ?",
-                    (prefix + "%",),
-                ).fetchone()[0]
-                if count <= 1:
+                if {sid for sid in matches if sid.lower().startswith(prefix.lower())} == {
+                    session_id
+                }:
                     return prefix
         finally:
             conn.close()
     except (sqlite3.Error, OSError):
         pass  # unreadable store: the full id is always correct
-    return session_id
+    return literal
 
 
 _VIEW_BLURBS = {
@@ -156,11 +154,11 @@ def _session_footer(session_id: str, others: str, width: int,
     rows = [
         (f"cs {verb} {short}", _VIEW_BLURBS.get(verb, ""))
         for verb in others.split("|")
-    ]
+    ] if short else []
     if extra:
         rows.append((extra, "") if isinstance(extra, str) else extra)
-    pad = max(len(command) for command, _ in rows) + 2
-    lines = [ui.rule(width), ui.field("id", session_id)]
+    pad = max((len(command) for command, _ in rows), default=0) + 2
+    lines = [ui.rule(width), ui.field("id", redact.one_line(redact.redact(session_id)))]
     for index, (command, blurb) in enumerate(rows):
         # The gloss is an aside, not a column: if it will not fit beside the
         # command it is dropped rather than wrapped, because a footer that
@@ -180,6 +178,18 @@ def _session_footer(session_id: str, others: str, width: int,
         lines.append(f"  {ui.MUTED}{note}{ui.RST}")
     lines.append("")
     return lines
+
+
+def _log_conversation(session_id: str) -> tuple[tuple, list[tuple], int]:
+    path = db.log_session_path(session_id)
+    row = db.log_session_row(session_id) if path else None
+    if path is None or row is None:
+        print(f"error: session not found: {redact.one_line(redact.redact(session_id))}",
+              file=sys.stderr)
+        sys.exit(1)
+    _, modified, summary, repo, cwd, _, nano = row
+    detail = (summary or "(no summary)", repo, cwd, "", "", modified)
+    return detail, events.log_transcript(session_id, path), nano
 
 
 def cmd_show(ref: str, short: bool = False, show_asks: bool = False) -> bool:
@@ -207,33 +217,37 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
     session_id = _resolve_ref(ref)
     conn = db.connect()
     detail = db.session_detail(conn, session_id)
-    if not detail:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
+    log_only = detail is None
+    try:
+        if detail is None:
+            detail, turns, total_nano = _log_conversation(session_id)
+            turn_count = len(turns)
+            prompts = [(i, prompt) for i, prompt, _, _ in turns if prompt]
+            last_reply = next((reply for _, _, reply, _ in reversed(turns) if reply), "")
+            checkpoint = split = governance = None
+            usage, refs, files, used_skills, used_agents, subagents = [], [], [], [], [], []
+        else:
+            turn_count = db.session_turn_count(conn, session_id)
+            usage = db.session_usage(conn, session_id)
+            total_nano = sum(u[2] for u in usage)
+            checkpoint = db.session_checkpoint(conn, session_id)
+            prompts = db.session_prompts(conn, session_id)
+            last_reply = db.session_last_reply(conn, session_id)
+            refs = db.session_refs(conn, session_id)
+            governance = _governance(conn, session_id)
+            files = db.session_files(conn, session_id) if not short else []
+            split = db.session_work_split(conn, session_id) if not short else None
+            used_skills, used_agents = _assets_used(conn, session_id) if not short else ([], [])
+            subagents = db.subagent_detail(conn, session_id) if not short else []
+    finally:
         conn.close()
-        sys.exit(1)
-    cwd = detail[2]
-    turn_count = db.session_turn_count(conn, session_id)
-    usage = db.session_usage(conn, session_id)
-    checkpoint = db.session_checkpoint(conn, session_id)
-    prompts = db.session_prompts(conn, session_id)
-    last_reply = db.session_last_reply(conn, session_id)
-    refs = db.session_refs(conn, session_id)
-    governance = _governance(conn, session_id)
-    # The inventory half is a further six queries, and `--short` exists
-    # precisely for the moment when you do not want to wait for them.
-    files = db.session_files(conn, session_id) if not short else []
-    split = db.session_work_split(conn, session_id) if not short else None
-    used_skills, used_agents = (
-        _assets_used(conn, session_id) if not short else ([], [])
-    )
-    subagents = db.subagent_detail(conn, session_id) if not short else []
-    conn.close()
 
     width = min(shutil.get_terminal_size().columns, _SESSION_WIDTH)
     inner = width - 4
     body = max(inner - 4, 40)
-    total_nano = sum(u[2] for u in usage)
+    cwd = detail[2]
     asks = [text for _, text in ((i, _user_text(t)) for i, t in prompts) if text]
+    other_views = "read" if log_only else "read|resume"
 
     print("\n".join(
         _session_header(detail, turn_count, total_nano, inner,
@@ -242,7 +256,10 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
 
     # A finding outranks everything: a credential in a transcript is not
     # something to meet after four screens of spend breakdown.
-    _print_governance(governance, session_id, cwd, inner)
+    if log_only:
+        print(f"    {ui.MUTED}Log-only session · event log{ui.RST}\n")
+    else:
+        _print_governance(governance, session_id, cwd, inner)
 
     # ── What it meant ────────────────────────────────────────────────
     # Still open leads: it is the only section that changes what you do next.
@@ -294,8 +311,8 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
         # decoration. This used to be said under the turn index at the foot
         # of the page; the index has gone — it was a third rendering of this
         # same list — so the one numbered list left says it instead.
-        print(f"    {ui.MUTED}open one with "
-              f"'cs read {_short_ref(session_id)} --turn N'{ui.RST}")
+        if ref := _short_ref(session_id):
+            print(f"    {ui.MUTED}open one with 'cs read {ref} --turn N'{ui.RST}")
         print()
 
     if refs:
@@ -312,11 +329,9 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
         print()
 
     if short:
-        extra: str | tuple[str, str] = (
-            f"cs show {_short_ref(session_id)}",
-            "the full page: spend, files, skills, turns",
-        )
-        print("\n".join(_session_footer(session_id, "read|resume", inner, extra)))
+        ref = _short_ref(session_id)
+        extra = (f"cs show {ref}", "the full page: spend, files, skills, turns") if ref else ""
+        print("\n".join(_session_footer(session_id, other_views, inner, extra)))
         return
 
     # ── What it used ─────────────────────────────────────────────────
@@ -369,7 +384,7 @@ def _render_show(ref: str, short: bool = False, show_asks: bool = False) -> None
     # line, so the explanation of why the two spend figures differ has to be
     # findable from here rather than only from a flag nobody was shown.
     _why_hint(inner)
-    print("\n".join(_session_footer(session_id, "read|resume", inner)))
+    print("\n".join(_session_footer(session_id, other_views, inner)))
 
 
 def _print_work_split(split: dict, width: int) -> None:
@@ -482,7 +497,7 @@ def _turn_body(text: str | None, absent: str, colour: str, inner: int) -> list[s
 
 def _render_transcript(
     session_id: str, detail: tuple, turns: list[tuple], only: int | None,
-    nano: int | None = None,
+    nano: int | None = None, log_only: bool = False,
 ) -> str:
     width = min(shutil.get_terminal_size().columns, _SESSION_WIDTH)
     inner = width - 4
@@ -492,6 +507,8 @@ def _render_transcript(
     # of contents is only distance from the text, and the same list was being
     # drawn three times. `cs show --asks` is the numbered list now.
     lines = _session_header(detail, len(turns), nano, inner, "read")
+    if log_only:
+        lines.extend([f"    {ui.MUTED}Log-only session · event log{ui.RST}", ""])
     if only is not None:
         turns = [turn for turn in turns if turn[0] == only]
         if not turns:
@@ -500,7 +517,8 @@ def _render_transcript(
     for index, prompt, reply, when in turns:
         lines.extend(_transcript_turn(index, prompt, reply, when, inner))
 
-    lines.extend(_session_footer(session_id, "brief|show|resume", inner))
+    lines.extend(_session_footer(session_id, "brief|show" if log_only else "brief|show|resume",
+                                 inner))
     return "\n".join(lines)
 
 
@@ -511,6 +529,8 @@ def _transcript_turn(index: int, prompt: str, reply: str, when: str,
     Shared with `cs replay`, which shows one of these per page.
     """
     stamp = when[11:16] if len(when) >= 16 else ""
+    if not re.fullmatch(r"[0-9]{2}:[0-9]{2}", stamp):
+        stamp = ""
     note = " · ".join(part for part in (stamp, _turn_size(prompt, reply)) if part)
     # The ask goes in the rule itself: scrolling a long transcript should
     # say what you are looking at, not just how far in you are. When and
@@ -990,18 +1010,20 @@ def cmd_read(ref: str, turn: int | None = None) -> bool:
     """Print a session's full transcript. True if a pager showed it."""
     session_id = _resolve_ref(ref)
     conn = db.connect()
-    detail = db.session_detail(conn, session_id)
-    if not detail:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
+    try:
+        detail = db.session_detail(conn, session_id)
+        log_only = detail is None
+        if detail is None:
+            detail, turns, nano = _log_conversation(session_id)
+        else:
+            turns = db.session_transcript(conn, session_id)
+            nano = sum(entry[2] for entry in db.session_usage(conn, session_id))
+    finally:
         conn.close()
-        sys.exit(1)
-    turns = db.session_transcript(conn, session_id)
-    nano = sum(entry[2] for entry in db.session_usage(conn, session_id))
-    conn.close()
     if not turns:
         print(f"\n  {ui.DIM}This session has no recorded turns.{ui.RST}\n")
         return False
-    return _page(_render_transcript(session_id, detail, turns, turn, nano))
+    return _page(_render_transcript(session_id, detail, turns, turn, nano, log_only))
 
 
 def cmd_export(ref: str, fmt: str = "md") -> None:
@@ -1021,8 +1043,13 @@ def cmd_export(ref: str, fmt: str = "md") -> None:
     conn = db.connect()
     detail = db.session_detail(conn, session_id)
     if not detail:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
         conn.close()
+        if db.log_session_path(session_id):
+            print("error: export is not available for a log-only session; use 'cs read <id>'",
+                  file=sys.stderr)
+        else:
+            print(f"error: session not found: {redact.one_line(redact.redact(session_id))}",
+                  file=sys.stderr)
         sys.exit(1)
     turns = db.session_transcript(conn, session_id)
     nano = sum(entry[2] for entry in db.session_usage(conn, session_id))

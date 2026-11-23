@@ -24,6 +24,24 @@ def _column_x(frame: dict, label: str) -> int:
 
 
 class CSTest(StoreTest):
+    def test_recent_uses_latest_turn_when_session_metadata_is_stale(self):
+        with sqlite3.connect(Path(self._tmp.name) / "session-store.db") as conn:
+            conn.execute(
+                "UPDATE sessions SET created_at = 'not a date', updated_at = '2020-01-01' "
+                "WHERE id = 'sess-alpha'"
+            )
+            conn.execute(
+                "UPDATE turns SET timestamp = datetime('now', '-1 hour') || 'Z' "
+                "WHERE id = 2"
+            )
+            day = conn.execute("SELECT date('now', '-1 hour')").fetchone()[0]
+        code, out = self._run("recent")
+        self.assertEqual(code, 0)
+        self.assertIn("Build Three.js portal", out)
+        from cs.ui import friendly_day
+
+        self.assertIn(friendly_day(day), out)
+
     def test_help(self):
         code, out = self._run("help")
         self.assertEqual(code, 0)
@@ -2126,6 +2144,34 @@ class CSTest(StoreTest):
         self.assertEqual((stats["total_turns"], stats["interactive"]), (7, 2))
         self.assertEqual(stats["avg_turns"], 3.5)
 
+    def test_log_only_session_can_be_found_and_read_but_not_resumed(self):
+        from support import _event, _write_events
+
+        base = Path(self._tmp.name)
+        sid = "acp-bridge"
+        log = _write_events(base, sid, [
+            _event("user.message", "2026-10-16T19:00:00", {"content": "Build a bridge"}),
+            _event("assistant.message", "2026-10-16T19:00:01",
+                   {"content": "Child output"}, agent="worker"),
+            _event("assistant.message", "2026-10-16T19:00:02", {"content": "Bridge built"}),
+        ])
+        log.with_name("workspace.yaml").write_text(
+            "name: Bridge Planning\nrepository: acme/mobile\ncwd: /tmp/bridge\n"
+        )
+        self.assertIn("Bridge Planning", self._run("search", "mobile")[1])
+        code, shown = self._run("show", sid)
+        self.assertEqual(code, 0)
+        self.assertIn("Bridge Planning", shown)
+        self.assertIn("Log-only", shown)
+        code, transcript = self._run("read", sid)
+        self.assertEqual(code, 0)
+        self.assertIn("Build a bridge", transcript)
+        self.assertIn("Bridge built", transcript)
+        self.assertNotIn("Child output", transcript)
+        code, err = self._run_err("resume", sid)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot resume", err)
+
     def test_repos(self):
         code, out = self._run("repos")
         self.assertEqual(code, 0)
@@ -3073,6 +3119,52 @@ class CSTest(StoreTest):
             _listing_tui(Screen([10]), rows, "Search", "relevance", hits),
             ("resume", "id-best"),
         )
+
+    def test_listing_command_still_names_the_same_session_after_search(self):
+        from cs.cli import _listing_tui
+
+        sid = "12345678"
+        with sqlite3.connect(Path(self._tmp.name) / "session-store.db") as conn:
+            conn.execute(
+                "INSERT INTO sessions (id, summary, created_at, updated_at) "
+                "VALUES (?, 'Numeric identifier', datetime('now'), datetime('now'))",
+                (sid,),
+            )
+        screen = Screen([ord("q")])
+        _listing_tui(screen, [(sid, "2026-08-01T10:00", "Numeric identifier", "", "", 1, 0)],
+                     "Sessions")
+        status = screen.frames[-1][(23, 0)]
+        match = re.search(r"\bcs show (\S+)", status)
+        self.assertIsNotNone(match, status)
+        self._run("search", "portal")
+        self.assertIn("Build Three.js portal", self._run("show", "1")[1])
+        self.assertIn("Numeric identifier", self._run("show", match[1])[1])
+
+    def test_arrow_sort_keeps_the_chosen_metric_visible_on_narrow_screens(self):
+        import curses
+
+        from cs.cli import _listing_tui
+
+        class NarrowScreen(Screen):
+            def getmaxyx(self):
+                return 24, 60
+
+        rows = [("sess-alpha", "2026-08-01T10:00", "Build the portal",
+                 "acme/portal", "/tmp/a", 21, 0)]
+        screen = NarrowScreen([curses.KEY_RIGHT, ord("q")])
+        _listing_tui(screen, rows, "Sessions")
+        frame = screen.frames[-1]
+        self.assertIn("sorted by turns", frame[(0, 0)])
+        self.assertEqual(frame[(5, _column_x(frame, "Turns↓"))].strip(), "21")
+        self.assertIn("Build the portal", frame[(5, _column_x(frame, "Summary"))])
+
+        class TightScreen(Screen):
+            def getmaxyx(self):
+                return 24, 40
+
+        screen = TightScreen([curses.KEY_RIGHT, ord("q")])
+        _listing_tui(screen, rows, "Sessions")
+        self.assertIn("Turns↓ 21", screen.frames[-1][(23, 0)])
 
     def test_arrow_key_sorts_immediately(self):
         import curses

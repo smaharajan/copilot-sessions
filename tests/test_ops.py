@@ -80,6 +80,17 @@ class WatchTest(StoreTest):
         self.assertEqual(tail.offset, self.log.stat().st_size - len(
             '{"type":"tool.execution_complete","data":{"toolCa'))
 
+    def test_home_calls_an_unlocked_session_recently_active_at_every_width(self):
+        from cs import cli
+
+        state: dict = {}
+        cli._watch_read(state)
+        for width in (40, 60, 80, 100, 140):
+            with self.subTest(width=width):
+                text = " ".join(line for line, _ in cli._watch_lines(state, width))
+                self.assertIn("Recently active", text)
+                self.assertNotRegex(text, r"\blive\b")
+
     def test_a_quiet_session_is_not_drawn(self):
         from cs import cli
 

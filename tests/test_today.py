@@ -164,6 +164,10 @@ class TodayTest(StoreTest):
             "INSERT INTO assistant_usage_events (session_id, turn_index, model, "
             "total_nano_aiu, created_at) VALUES ('sess-alpha', 0, 'gpt-5.5', "
             "2000000000, datetime('now', '-10 days'))")
+        self.conn.execute(
+            "UPDATE turns SET timestamp = ? WHERE session_id = ? AND turn_index = 4",
+            (_ago(2), CALM),
+        )
         self.conn.commit()
         _write_events(self.base, CALM, [
             *_tool("w1", "bash", _ago(2)[:19], False)])

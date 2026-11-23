@@ -124,6 +124,29 @@ def _stamp(event: dict) -> str:
     return value[:19] if isinstance(value, str) else ""
 
 
+def log_transcript(session_id: str, path: Path) -> list[tuple[int, str, str, str]]:
+    """Main-agent messages grouped by recorded user requests, oldest first."""
+    turns = []
+    replies: list[str] = []
+    prompt, stamp = "", ""
+    started = False
+    for event in iter_events(session_id, ("user.message", "assistant.message"), path=path):
+        if event.get("agentId"):
+            continue
+        text = event["data"].get("content")
+        text = text if isinstance(text, str) else ""
+        if event["type"] == "user.message":
+            if started:
+                turns.append((len(turns), prompt, "\n\n".join(replies), stamp))
+            prompt, stamp, started = text, _stamp(event), True
+            replies = []
+        elif started and text.strip():
+            replies.append(text)
+    if started:
+        turns.append((len(turns), prompt, "\n\n".join(replies), stamp))
+    return turns
+
+
 def _name(value) -> str:
     """An identifier from the log, or '' — never a structure, never long text."""
     return value[:120] if isinstance(value, str) else ""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,32 @@ class PinTest(StoreTest):
         self.assertEqual(code, 0)
         self.assertIn("No pinned sessions", out)
         self.assertIn("cs pin", out)
+
+    def test_pins_count_only_displayed_rows_and_allow_removing_missing_ids(self):
+        from cs import ui
+
+        base = Path(self._tmp.name)
+        helper = "You monitor an AI coding agent that is partway through ONE task"
+        with sqlite3.connect(base / "session-store.db") as conn:
+            conn.execute("UPDATE sessions SET summary = ? WHERE id = 'sess-alpha'", (helper,))
+        folder = base / "session-state" / "sess-alpha"
+        folder.mkdir(parents=True)
+        (folder / "workspace.yaml").write_text(f"name: {helper}\n")
+        for sid in ("sess-alpha", "sess-empty", "sess-gone"):
+            ui.pin_session(sid)
+
+        _, out = self._run("pins")
+        self.assertIn("Pinned · 1 session ·", out)
+        self.assertIn("Agent Monitor - Loop Review", out)
+        self.assertNotIn("You monitor", out)
+        self.assertIn("1 unused", out)
+        self.assertIn("1 missing", out)
+        self.assertEqual(self._run("unpin", "sess-gone")[0], 0)
+        self.assertEqual(self._run("unpin", "sess-alpha")[0], 0)
+        _, out = self._run("pins")
+        self.assertIn("No pinned sessions with recorded activity", out)
+        self.assertIn("1 unused", out)
+        self.assertNotIn("missing", out)
 
 
 class PinSortTest(StoreTest):

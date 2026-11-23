@@ -19,7 +19,7 @@ from .. import (
 )
 
 # ── #N shortcut index ────────────────────────────────────────────────
-# Listings number their rows; the map is persisted so `cs show #3` works
+# Listings number their rows; the map is persisted so `cs show 3` works
 # even in a new shell. Lives next to theme settings under the config home
 # (see ui.settings_path), never inside COPILOT_HOME — that store is opened
 # read-only, and cs has no business writing next to it.
@@ -49,6 +49,8 @@ def _resolve_ref(ref: str) -> str:
     is what the reports print — a full uuid on every line would crowd out the
     summary, and eight characters already identify a session here.
     """
+    if ref.startswith("id:"):
+        return ref[3:]
     hashed = ref.startswith("#")
     token = ref[1:] if hashed else ref
     # `#N` is always a row. A bare number could be either — session ids start
@@ -78,18 +80,31 @@ def _is_prefix(token: str) -> bool:
     return 6 <= len(token) < 36 and all(c in "0123456789abcdefABCDEF-" for c in token)
 
 
+def _literal_ref(session_id: str) -> str:
+    if session_id.isdigit() or _is_prefix(session_id) or session_id.startswith(("#", "id:")):
+        return "id:" + session_id
+    return session_id
+
+
+def _stable_ref(session_id: str) -> str:
+    """A shell-safe exact reference, independent of the last listing."""
+    if (re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", session_id)
+            and redact.redact(session_id) == session_id):
+        return _literal_ref(session_id)
+    return ""
+
+
 def _resolve_prefix(token: str) -> str:
     """The one session whose id starts with `token`, or '' if there is none."""
     conn = db.connect()
-    matches = [
-        row[0]
-        for row in conn.execute(
-            "SELECT id FROM sessions WHERE id LIKE ? ORDER BY id", (token.lower() + "%",)
-        )
-    ]
-    conn.close()
+    try:
+        matches = db.session_ids_with_prefix(conn, token.lower())
+    finally:
+        conn.close()
+    if token in matches:
+        return token
     if len(matches) == 1:
-        return matches[0]
+        return next(iter(matches))
     if not matches:
         return ""
     print(f"error: '{token}' matches {len(matches)} sessions — "
@@ -861,7 +876,7 @@ def _sort_rows(
     def key(row: tuple):
         if index == 3:
             return _project_tag(row[3], row[4]).casefold()
-        return row[index] or ("" if index in (2, 3) else 0)
+        return row[index] or ("" if index in (1, 2, 3) else 0)
 
     return sorted(rows, key=key, reverse=direction), index == 1
 

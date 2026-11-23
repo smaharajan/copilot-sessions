@@ -327,7 +327,7 @@ turn and `cs export` for Markdown or JSON.
 
 ### ▶️ Pick it back up
 
-`cs resume #3` `cd`s to the right directory and hands you to
+`cs resume 3` `cd`s to the right directory and hands you to
 `copilot --resume`. One keystroke from a listing — no UUID, no hunting.
 
 > **Every inference carries the evidence that produced it.** No view asks you
@@ -420,21 +420,22 @@ your `PATH` is shadowing it — `which -a cs` will show you what.
 cs                 # the home screen — every view is one keypress from here
 cs day             # today on one live dashboard: spend, sessions, repos, models
 cs search cache    # full-text across every turn and checkpoint
-cs read #3         # read the third session in the last listing
-cs resume #3       # jump back into it
+cs read 3          # read session number 3 from the last listing
+cs resume 3        # jump back into it
 ```
 
 You will rarely need more than that. **The home screen reaches every view**,
 and every view comes back to it; the commands exist for when you already know
 where you are going, or want the readings in a script.
 
-Listings number their rows so you never copy a UUID. `#N` identifies the
-**session**, not the row — sorting moves a row around the screen, but its
-number travels with it — and any unambiguous id prefix works anywhere a session
-is expected:
+`#N` refers to the **last listing**. Sorting keeps each session's number,
+but opening another listing can reassign it. To revisit a session later,
+copy the `cs show` command from the listing footer or use its full ID.
+An unambiguous hexadecimal prefix also works:
 
 ```bash
-cs show a1b2c3d4        # eight characters is plenty
+cs show a1b2c3d4        # a prefix, if unique
+cs show id:12345678    # an exact ID, even when it looks like a row number
 ```
 
 Most views take a window (`cs cost 90`, `cs stats all`) and speak `--json`,

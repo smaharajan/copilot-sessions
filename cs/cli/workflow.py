@@ -12,8 +12,10 @@ from .. import (
 from ._common import (
     _HOME_ACTIVE,
     _capture,
+    _literal_ref,
     _page,
     _resolve_ref,
+    _visible,
     _with_assets,
 )
 
@@ -26,8 +28,9 @@ def _require_session(ref: str) -> str:
         detail = db.session_detail(conn, session_id)
     finally:
         conn.close()
-    if detail is None:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
+    if detail is None and not db.log_session_path(session_id):
+        print(f"error: session not found: {redact.one_line(redact.redact(session_id))}",
+              file=sys.stderr)
         sys.exit(1)
     return session_id
 
@@ -37,15 +40,17 @@ def cmd_pin(ref: str) -> None:
     if not ui.pin_session(session_id):
         print("error: could not write settings", file=sys.stderr)
         sys.exit(1)
-    print(f"  pinned {session_id[:8]}")
+    print(f"  pinned {redact.one_line(redact.redact(session_id))[:8]}")
 
 
 def cmd_unpin(ref: str) -> None:
-    session_id = _require_session(ref)
+    session_id = _resolve_ref(ref)
+    if not ui.is_pinned(session_id):
+        _require_session(_literal_ref(session_id))
     if not ui.unpin_session(session_id):
         print("error: could not write settings", file=sys.stderr)
         sys.exit(1)
-    print(f"  unpinned {session_id[:8]}")
+    print(f"  unpinned {redact.one_line(redact.redact(session_id))[:8]}")
 
 
 def cmd_pins() -> bool:
@@ -67,41 +72,31 @@ def cmd_pins() -> bool:
 
     conn = db.connect()
     try:
-        all_rows = db.recent_sessions(conn, 0)
-        names = db.session_names()
+        by_id = db.sessions_by_id(conn, ids)
     finally:
         conn.close()
-    by_id = {row[0]: row for row in all_rows}
-    rows = []
-    missing = []
-    for sid in ids:
-        row = by_id.get(sid)
-        if row is None:
-            missing.append(sid)
-            continue
-        # Prefer the user-given / workspace name when the store has one.
-        named = names.get(sid)
-        if named and named[0]:
-            summary = named[0]
-            rows.append((row[0], row[1], summary, row[3], row[4], row[5], row[6],
-                         *(row[7:] if len(row) > 7 else ())))
-        else:
-            rows.append(row)
-    rows = _with_assets(rows)
+    present = [by_id[sid] for sid in ids if sid in by_id]
+    rows = _with_assets(_visible(present, show_all=True))
+    unused, missing = len(present) - len(rows), len(ids) - len(present)
+    omitted = ""
+    if unused:
+        omitted += f" · {unused} unused"
+    if missing:
+        omitted += f" · {missing} missing"
     title = f"Pinned · {len(rows)} session{'' if len(rows) == 1 else 's'}"
     if not rows:
-        print()
-        print(f"  {ui.DIM}Pinned ids are no longer in the store. "
-              f"Unpin with 'cs unpin <id>'.{ui.RST}")
-        print()
+        text = f"\n  No pinned sessions with recorded activity{omitted}.\n"
+        if missing:
+            text += "  Remove a missing pin with 'cs unpin <id>'.\n"
+        if _HOME_ACTIVE:
+            return _page(text + "\n")
+        print(text)
         return False
     if sys.stdin.isatty() and sys.stdout.isatty():
-        return _interactive_listing(rows, title, show_all=True)
+        return _interactive_listing(rows, title + omitted, show_all=True)
     _render_listing(rows, title, show_all=True)
-    if missing:
-        print(f"  {ui.DIM}({len(missing)} pinned id"
-              f"{'' if len(missing) == 1 else 's'} not in the store){ui.RST}")
-        print()
+    if omitted:
+        print(f"  {ui.DIM}Hidden pins{omitted}{ui.RST}\n")
     return False
 
 

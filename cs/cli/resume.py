@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 
-from .. import db
+from .. import db, redact
 from ._common import _drain_stdin, _pause, _resolve_ref
 
 
@@ -20,10 +20,17 @@ def _resume_target(ref: str) -> tuple[str, str, str] | None:
     """
     session_id = _resolve_ref(ref)
     conn = db.connect()
-    detail = db.session_detail(conn, session_id)
-    conn.close()
+    try:
+        detail = db.session_detail(conn, session_id)
+    finally:
+        conn.close()
     if not detail:
-        print(f"error: session not found: {session_id}", file=sys.stderr)
+        if db.log_session_path(session_id):
+            print("error: cannot resume a log-only session in Copilot CLI; "
+                  "use 'cs show <id>' or 'cs read <id>'", file=sys.stderr)
+        else:
+            print(f"error: session not found: {redact.one_line(redact.redact(session_id))}",
+                  file=sys.stderr)
         return None
     # Resolved before the chdir, not after: execvp walks $PATH from the
     # working directory, so a relative or empty $PATH entry would let a
@@ -49,9 +56,9 @@ def cmd_resume(ref: str) -> None:
     # Resume restores the transcript but not the working directory — without this
     # you get the conversation pointed at whatever folder you happened to be in.
     if cwd and cwd != os.getcwd():
-        print(f"cd {cwd}")
+        print(f"cd {redact.one_line(redact.redact(cwd))}")
         os.chdir(cwd)
-    print(f"Resuming {session_id} …", flush=True)  # ponytail: execvp discards unflushed stdout
+    print(f"Resuming {redact.one_line(redact.redact(session_id))} …", flush=True)
     try:
         os.execv(binary, ["copilot", "--resume", session_id])
     except OSError:
@@ -59,7 +66,7 @@ def cmd_resume(ref: str) -> None:
         sys.exit(1)
 
 
-def _resume_from_listing(ref: str) -> None:
+def _resume_from_listing(ref: str) -> bool:
     """Resume from inside the app, and come back to the listing afterwards.
 
     A child process, not execv. Enter on a row means "go and look at this
@@ -74,10 +81,9 @@ def _resume_from_listing(ref: str) -> None:
     """
     target = _resume_target(ref)
     if not target:
-        _pause("Esc or Enter for the list · q quits ")
-        return
+        return _pause("Esc or Enter for the list · q quits ")
     binary, session_id, cwd = target
-    print(f"Resuming {session_id} …", flush=True)
+    print(f"Resuming {redact.one_line(redact.redact(session_id))} …", flush=True)
     try:
         subprocess.run([binary, "--resume", session_id], cwd=cwd or None,
                        check=False)
@@ -85,9 +91,10 @@ def _resume_from_listing(ref: str) -> None:
         pass  # the child saw it too, and has already gone
     except OSError:
         print("error: could not start the 'copilot' CLI", file=sys.stderr)
-        _pause("Esc or Enter for the list · q quits ")
+        return _pause("Esc or Enter for the list · q quits ")
     # Copilot runs the terminal raw and with its own mouse reporting, so
     # whatever ended it — a stray ^C, a half-read mouse report — can still be
     # sitting in the buffer. The listing reads keys the moment it redraws,
     # and would take those bytes as typing.
     _drain_stdin()
+    return True

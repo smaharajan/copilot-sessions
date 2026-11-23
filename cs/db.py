@@ -455,6 +455,15 @@ def _aiu_sub(conn: sqlite3.Connection, alias: str = "s") -> str:
     return "0"
 
 
+def _last_active(conn: sqlite3.Connection) -> str:
+    candidates = ["datetime(s.created_at)", "datetime(s.updated_at)"]
+    if _has_columns(conn, "turns", "timestamp"):
+        candidates.append(
+            "(SELECT MAX(datetime(t.timestamp)) FROM turns t WHERE t.session_id = s.id)"
+        )
+    return "MAX(" + ", ".join(f"COALESCE({stamp}, '')" for stamp in candidates) + ")"
+
+
 def _session_cols(conn: sqlite3.Connection) -> str:
     """The shape every listing shares — with the optional parts filled in.
 
@@ -464,7 +473,7 @@ def _session_cols(conn: sqlite3.Connection) -> str:
     """
     return f"""
     s.id,
-    substr(MAX(s.created_at, s.updated_at), 1, 16) AS last_active,
+    replace(substr({_last_active(conn)}, 1, 16), ' ', 'T') AS last_active,
     COALESCE({optional(conn, 'sessions', 'summary', 's', "''")}, '') AS summary,
     COALESCE({optional(conn, 'sessions', 'repository', 's', "''")}, '') AS repo,
     COALESCE({optional(conn, 'sessions', 'cwd', 's', "''")}, '') AS cwd,
@@ -480,12 +489,13 @@ def recent_sessions(conn: sqlite3.Connection, days: int) -> list[tuple]:
     puts a silent expiry on the oldest sessions, and a store is meant to
     keep them.
     """
-    window = "WHERE MAX(s.created_at, s.updated_at) >= datetime('now', ?)" if days > 0 else ""
+    active = _last_active(conn)
+    window = f"WHERE {active} >= datetime('now', ?)" if days > 0 else ""
     rows = conn.execute(
         f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
             FROM sessions s
             {window}
-            ORDER BY MAX(s.created_at, s.updated_at) DESC""",
+            ORDER BY {active} DESC""",
         (f"-{days} days",) if days > 0 else (),
     ).fetchall()
     known = {row[0] for row in conn.execute("SELECT id FROM sessions")}
@@ -495,10 +505,10 @@ def recent_sessions(conn: sqlite3.Connection, days: int) -> list[tuple]:
     return _given_names(rows, session_names())
 
 
-_UNINDEXED: dict[str, tuple[tuple, tuple]] = {}
+_UNINDEXED: dict[Path, tuple[tuple, int, int]] = {}
 
 
-def _log_ids(days: int) -> list[str]:
+def _log_ids(days: int, prefix: str = "") -> list[str]:
     """Session folders whose log moved in the last `days` (all when <= 0)."""
     cutoff = time.time() - days * 86400 if days > 0 else 0
     try:
@@ -507,12 +517,21 @@ def _log_ids(days: int) -> list[str]:
         return []
     found = []
     for entry in entries:
+        if prefix and not entry.name.lower().startswith(prefix):
+            continue
         try:
             if os.stat(os.path.join(entry.path, "events.jsonl")).st_mtime >= cutoff:
                 found.append(entry.name)
         except OSError:
             continue
     return found
+
+
+def session_ids_with_prefix(conn: sqlite3.Connection, prefix: str) -> set[str]:
+    indexed = {row[0] for row in conn.execute(
+        "SELECT id FROM sessions WHERE id LIKE ?", (prefix + "%",)
+    )}
+    return indexed | {sid for sid in _log_ids(0, prefix.lower()) if log_session_path(sid)}
 
 
 def unindexed_sessions(days: int, known: set[str]) -> list[tuple]:
@@ -524,24 +543,38 @@ def unindexed_sessions(days: int, known: set[str]) -> list[tuple]:
     credits the log's own usage records. Each log is read again only when it
     changes.
     """
+    return [row for sid in _log_ids(days) if sid not in known
+            if (row := log_session_row(sid)) is not None]
+
+
+def log_session_path(session_id: str) -> Path | None:
+    path = _session_file(session_id, "events.jsonl")
+    try:
+        return path if path is not None and path.is_file() else None
+    except OSError:
+        return None
+
+
+def log_session_row(session_id: str) -> tuple | None:
+    """Listing metadata from a log and workspace, without caching conversation text."""
     from . import events  # events imports db
 
-    rows = []
-    for sid in _log_ids(days):
-        if sid in known:
-            continue
-        path = events.events_path(sid)
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        key = (stat.st_mtime, stat.st_size)
-        held = _UNINDEXED.get(sid)
-        if held and held[0] == key:
-            rows.append(held[1])
-            continue
+    path = log_session_path(session_id)
+    if path is None:
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    key = (stat.st_mtime_ns, stat.st_size)
+    held = _UNINDEXED.get(path)
+    if held and held[0] == key:
+        _, turns, nano = held
+    else:
         turns = nano = 0
-        for event in events.iter_events(sid, ("user.message", "session.usage_record")):
+        for event in events.iter_events(
+            session_id, ("user.message", "session.usage_record"), path=path
+        ):
             if event["type"] == "user.message":
                 turns += not event.get("agentId")
             else:
@@ -550,13 +583,14 @@ def unindexed_sessions(days: int, known: set[str]) -> list[tuple]:
                 spent = spent.get("totalNanoAiu") if isinstance(spent, dict) else 0
                 if isinstance(spent, (int, float)) and math.isfinite(spent):
                     nano += int(spent)
-        fields = session_workspace(sid, ("name", "repository", "cwd"))
-        last = time.strftime("%Y-%m-%dT%H:%M", time.gmtime(stat.st_mtime))
-        row = (sid, last, fields.get("name", ""), fields.get("repository", ""),
-               fields.get("cwd", ""), turns, nano)
-        _UNINDEXED[sid] = (key, row)
-        rows.append(row)
-    return rows
+        _UNINDEXED[path] = (key, turns, nano)
+    fields = session_workspace(session_id, ("name", "user_named", "repository", "cwd"))
+    title = fields.get("name", "")
+    if fields.get("user_named") != "true":
+        title = _session_title(title)
+    last = time.strftime("%Y-%m-%dT%H:%M", time.gmtime(stat.st_mtime))
+    return (session_id, last, title, fields.get("repository", ""),
+            fields.get("cwd", ""), turns, nano)
 
 
 def _has_fts(conn: sqlite3.Connection) -> bool:
@@ -673,7 +707,7 @@ def search(
         f"""SELECT {_session_cols(conn)}, {_aiu_sub(conn)} AS nano_aiu
             FROM sessions s
             WHERE {named}
-            ORDER BY MAX(s.created_at, s.updated_at) DESC""",
+            ORDER BY last_active DESC""",
         (like, *helper_matches),
     ).fetchall()
 
@@ -691,6 +725,11 @@ def search(
                 FROM sessions s WHERE s.id IN ({','.join('?' * len(chunk))})""",
             chunk,
         ))
+    indexed = {row[0] for row in conn.execute("SELECT id FROM sessions")}
+    meta.extend(
+        row for row in unindexed_sessions(0, indexed)
+        if any(wanted in value.casefold() for value in row[2:5])
+    )
     stored = {row[0]: row[2] or "" for row in meta}
     # Newest first, as the SQL had them; sorted() is stable, so the store's
     # own order survives among sessions active in the same minute.
@@ -910,7 +949,7 @@ def sessions_for_file(
             FROM session_files f
             JOIN sessions s ON s.id = f.session_id
             WHERE f.file_path LIKE ?
-            ORDER BY MAX(s.created_at, s.updated_at) DESC
+            ORDER BY {_last_active(conn)} DESC
             LIMIT {limit * 20}""",
         (like,),
     ).fetchall()
@@ -953,7 +992,11 @@ def sessions_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, tuple]
     # Only these sessions' names: reading every workspace.yaml in the store
     # to title a handful of rows cost a page its first frame.
     names = {sid: name for sid in found if (name := session_name(sid))}
-    return {row[0]: row for row in _given_names(list(found.values()), names)}
+    rows = {row[0]: row for row in _given_names(list(found.values()), names)}
+    for sid in ids:
+        if sid not in rows and (row := log_session_row(sid)) is not None:
+            rows[sid] = row
+    return rows
 
 
 def last_asks(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
