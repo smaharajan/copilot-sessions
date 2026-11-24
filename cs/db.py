@@ -24,6 +24,18 @@ def default_db_path() -> Path:
     return base / "session-store.db"
 
 
+def _read_only(path: Path) -> sqlite3.Connection:
+    """Open a Copilot SQLite file without ever writing beside it.
+
+    No -wal file means no writer is open. A plain read-only open of an idle
+    WAL file then fails on newer SQLite (it cannot create -shm) and writes
+    -shm/-wal into Copilot's home on older ones; immutable does neither.
+    """
+    # ponytail: a writer that starts mid-read can give a stale or torn read; callers already say try again.
+    idle = not path.with_name(path.name + "-wal").exists()
+    return sqlite3.connect(f"file:{path}?mode=ro{'&immutable=1' if idle else ''}", uri=True)
+
+
 def connect(db_path: Path | None = None, *, fatal: bool = True) -> sqlite3.Connection:
     """Open the session store read-only.
 
@@ -42,7 +54,7 @@ def connect(db_path: Path | None = None, *, fatal: bool = True) -> sqlite3.Conne
             file=sys.stderr,
         )
         sys.exit(1)
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn = _read_only(path)
     # `connect` itself does not read the file, so a path that is not a
     # database only fails on the first query — which was this one, and it
     # arrived as a traceback rather than as the sentence every other bad
@@ -240,7 +252,7 @@ def session_todos(session_id: str) -> list[tuple[str, str]]:
     if path is None or not path.is_file():
         return []
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        conn = _read_only(path)
         try:
             return [(str(status or ""), str(title or "")) for status, title in
                     conn.execute("SELECT status, title FROM todos ORDER BY rowid")]

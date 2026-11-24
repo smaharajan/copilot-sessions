@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An idle store opens.** A store in WAL mode whose Copilot has exited (for
+  example a separate `COPILOT_HOME` used by background agents) failed with
+  "unable to open database file" on newer SQLite, and on older SQLite `cs`
+  left `-shm`/`-wal` files in Copilot's home. With no writer open, `cs` now
+  reads the store as immutable and writes nothing. Session todos use the same
+  open.
+
 ## [2.5.0] — 2026-11-04
 
 ### Added

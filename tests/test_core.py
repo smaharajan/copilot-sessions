@@ -255,6 +255,24 @@ class CSTest(StoreTest):
         self.assertEqual(code, 0)
         self.assertIn("'quokka' · 520 sessions", out)
 
+    def test_an_idle_wal_store_still_opens(self):
+        """A WAL store whose writer has exited has no -shm file, which a plain read-only open cannot create."""
+        from cs import db
+
+        path = Path(os.environ["COPILOT_HOME"]) / "session-store.db"
+        raw = sqlite3.connect(path)
+        raw.execute("PRAGMA journal_mode=WAL")
+        raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        raw.close()
+        for suffix in ("-wal", "-shm"):  # Copilot's writer removes both when it exits
+            path.with_name(path.name + suffix).unlink(missing_ok=True)
+        conn = db.connect()
+        try:
+            self.assertGreater(conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0], 0)
+        finally:
+            conn.close()
+        self.assertFalse(path.with_name(path.name + "-shm").exists())  # nothing written into Copilot's home
+
     def test_search_without_fts_index_is_not_capped(self):
         """The turns scan behind an old store has no limit either."""
         from cs import db
