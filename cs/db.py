@@ -31,7 +31,8 @@ def _read_only(path: Path) -> sqlite3.Connection:
     WAL file then fails on newer SQLite (it cannot create -shm) and writes
     -shm/-wal into Copilot's home on older ones; immutable does neither.
     """
-    # ponytail: a writer that starts mid-read can give a stale or torn read; callers already say try again.
+    # ponytail: a writer that starts mid-read can give a stale or torn read;
+    # callers already say try again.
     idle = not path.with_name(path.name + "-wal").exists()
     return sqlite3.connect(f"file:{path}?mode=ro{'&immutable=1' if idle else ''}", uri=True)
 
